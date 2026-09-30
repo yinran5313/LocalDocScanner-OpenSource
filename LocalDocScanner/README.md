@@ -4,7 +4,7 @@ Android 离线扫描、文档库、PP-OCRv6 tiny/medium 和 PDF 工具。开发�
 
 支持多页拍摄与手动四角裁边、OpenCV 透视和增强、连续扫描换页判断、可调书籍双页拆分、OCR 与可搜索 PDF、PDF 批注/手写/表单、工作副本预览、另存和分享。文档保存在手机本地。
 
-**当前完整 Office 编辑仍使用外部 Collabora 联动。单 APK 内置完整 Office 引擎、曲面展平、任意 PDF 转可编辑 Office、证书数字签名尚未完成。** 现有简单 OpenXML 编辑不能替代完整排版引擎。详细源码审计和逐项复用入口见 [源码复用矩阵](docs/SOURCE_REUSE.md)。
+**当前完整 Office 编辑仍使用外部 Collabora 联动。单 APK 内置完整 Office 引擎、曲面展平、任意 PDF 转可编辑 Office、证书数字签名尚未完成。** 现有简单 OpenXML 编辑不能替代完整排版引擎。详细源码审计和逐项复用入口见 [源码复用矩阵](../docs/SOURCE_REUSE.md)。
 
 ## 构建
 
@@ -24,6 +24,6 @@ Windows 使用 `gradlew.bat`。`local.properties` 可配置本机 SDK，勿提�
 
 ## 许可
 
-本项目自有代码采用 [MIT](LICENSE)。上游文件、模型、字体和依赖保留各自许可，见 [THIRD_PARTY_NOTICES](LocalDocScanner/THIRD_PARTY_NOTICES.md)。没有复制 GPL/AGPL 参考仓库代码。未来 Collabora 整合须另外满足所用 MPL 文件及三方依赖的来源、修改与源码要求。
+本项目自有代码采用 [MIT](../LICENSE)。上游文件、模型、字体和依赖保留各自许可，见 [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES.md)。没有复制 GPL/AGPL 参考仓库代码。未来 Collabora 整合须另外满足所用 MPL 文件及三方依赖的来源、修改与源码要求。
 
 贡献请提供可复现样本与修改前后结果；请移除姓名、电话、账号、地址等私人信息后提交公开样本。

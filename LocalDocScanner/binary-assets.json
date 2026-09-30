@@ -1,0 +1,82 @@
+{
+  "archive_sha256": "d610585056d49d508b1f280cd204f82e338cfecd4ec9a8b2652736dd3ecdc19f",
+  "parts": [
+    {
+      "path": "asset-bundle.zip.001",
+      "sha256": "5541ae1658ea990b070574d594974482b44126ddc1287c9025e5fd9b23977f21",
+      "bytes": 20971520
+    },
+    {
+      "path": "asset-bundle.zip.002",
+      "sha256": "e520e894cf2984f87ffd67efad209084e9e65fd51a2fa9961e0b13c159e29697",
+      "bytes": 20971520
+    },
+    {
+      "path": "asset-bundle.zip.003",
+      "sha256": "c04df399306207f677eff9130bea5e15f660179beeafc7ee9704d2a29de714d6",
+      "bytes": 20971520
+    },
+    {
+      "path": "asset-bundle.zip.004",
+      "sha256": "f759c6205700977166674ddeb9f0b4fdf316f85f644440d65c05ad424733047e",
+      "bytes": 20971520
+    },
+    {
+      "path": "asset-bundle.zip.005",
+      "sha256": "42c0f0e09e6d378338ac5816daee8ce3e4f5d20b5688458f5069d0e6dac80717",
+      "bytes": 20971520
+    },
+    {
+      "path": "asset-bundle.zip.006",
+      "sha256": "6eb63c3a3265913aa06ca8f44172567aa9f42ff32a365ce3a5575cc0e89001f2",
+      "bytes": 14752455
+    }
+  ],
+  "assets": [
+    {
+      "path": "LocalDocScanner/app/src/main/assets/fonts/LXGWWenKai-Regular.ttf",
+      "sha256": "39ad71264b588165b469e35e6afb162a378dacd1f95348160240ba9038ac3009",
+      "bytes": 25575676
+    },
+    {
+      "path": "LocalDocScanner/app/src/test/resources/com/tom_roush/pdfbox/resources/ttf/LiberationSans-Regular.ttf",
+      "sha256": "76d04c18ea243f426b7de1f3ad208e927008f961dc5945e5aad352d0dfde8ee8",
+      "bytes": 410712
+    },
+    {
+      "path": "LocalDocScanner/app/src/test/resources/searchable-pdf-page.jpg",
+      "sha256": "f16174888d07a31d395d36f80320b934e09e69548a24df95547c418f299554f2",
+      "bytes": 3027
+    },
+    {
+      "path": "LocalDocScanner/gradle/wrapper/gradle-wrapper.jar",
+      "sha256": "2db75c40782f5e8ba1fc278a5574bab070adccb2d21ca5a6e5ed840888448046",
+      "bytes": 43583
+    },
+    {
+      "path": "LocalDocScanner/ppocr-sdk/src/androidTest/res/raw/android_ocr_benchmark_reference.png",
+      "sha256": "3ac37804e4e292f68c8960d553485147516cdc2e4154afeec6ca742a70e71dca",
+      "bytes": 398527
+    },
+    {
+      "path": "LocalDocScanner/ppocr-sdk/src/main/assets/models/medium/det/inference.onnx",
+      "sha256": "eb13b44b25bb36f89528b68720af8a61d9cf381176107f465db1757b65d086e1",
+      "bytes": 62032837
+    },
+    {
+      "path": "LocalDocScanner/ppocr-sdk/src/main/assets/models/medium/rec/inference.onnx",
+      "sha256": "9c09abf0957f7968c7586464b7397b84ad2387a0497a351af40e9acc71b673ba",
+      "bytes": 76554979
+    },
+    {
+      "path": "LocalDocScanner/ppocr-sdk/src/main/assets/models/tiny/det/inference.onnx",
+      "sha256": "193bab7a04fca699a6c82e6abb5b81bdb28177f0abd4062552b04908dafb19f8",
+      "bytes": 1780590
+    },
+    {
+      "path": "LocalDocScanner/ppocr-sdk/src/main/assets/models/tiny/rec/inference.onnx",
+      "sha256": "9ef676d6ed3c88256a2d92c640c44f25b0c40947e111b14b8be8f594091563e6",
+      "bytes": 4462639
+    }
+  ]
+}

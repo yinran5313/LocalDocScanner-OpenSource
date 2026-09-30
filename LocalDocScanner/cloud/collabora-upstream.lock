@@ -1,0 +1,13 @@
+# Collabora Online Android source lock (official GitHub read-only mirror)
+UPSTREAM_REPOSITORY=https://github.com/CollaboraOnline/online.mirror
+UPSTREAM_COMMIT=eeb7ea3495665a98dd3bba0bbb63bd6df673f2e6
+UPSTREAM_ARCHIVE_SHA256=9e26182993d3846f309f4c18850c055b0d9939c35457430a125a781ef97cd009
+# Official archive re-export; all Git blobs validated against the pinned commit.
+UPSTREAM_ARCHIVE_ALTERNATE_SHA256=163956ef7f7cf5a8596e107995aa857727aa10b25f5d0332e0551ee597080585
+UPSTREAM_ARCHIVE_URL=https://codeload.github.com/CollaboraOnline/online.mirror/tar.gz/eeb7ea3495665a98dd3bba0bbb63bd6df673f2e6
+ANDROID_ABI=arm64-v8a
+ANDROID_DISTRO=CPAndroidAarch64
+ANDROID_NDK_VERSION=29.0.14206865
+ANDROID_PLATFORM_PACKAGE='platforms;android-37.0'
+ANDROID_BUILD_TOOLS_VERSION=37.0.0
+ANDROID_GRADLE_PLUGIN_VERSION=9.3.0

@@ -1,0 +1,9 @@
+39ad71264b588165b469e35e6afb162a378dacd1f95348160240ba9038ac3009  app/src/main/assets/fonts/LXGWWenKai-Regular.ttf
+3ddf9be5c28fe27dad143a5dc76eea25222ad1dd68934a047064e56ed2fa40c5  app/src/main/assets/third_party/google_material_symbols_LICENSE.txt
+1a25e35da1031c6c3436fde545bb9cb5aca954e9873afe510c834b8b79bd21a0  app/src/main/assets/third_party/lxgw-wenkai_OFL.txt
+eb13b44b25bb36f89528b68720af8a61d9cf381176107f465db1757b65d086e1  ppocr-sdk/src/main/assets/models/medium/det/inference.onnx
+9c09abf0957f7968c7586464b7397b84ad2387a0497a351af40e9acc71b673ba  ppocr-sdk/src/main/assets/models/medium/rec/inference.onnx
+991b700facf5b50a7de193468207d5f4255b538dde0d312ae3b7c7a9b6873129  ppocr-sdk/src/main/assets/models/medium/rec/inference.yml
+193bab7a04fca699a6c82e6abb5b81bdb28177f0abd4062552b04908dafb19f8  ppocr-sdk/src/main/assets/models/tiny/det/inference.onnx
+9ef676d6ed3c88256a2d92c640c44f25b0c40947e111b14b8be8f594091563e6  ppocr-sdk/src/main/assets/models/tiny/rec/inference.onnx
+66170210bad538e83fff3c4a3867e547d6bf20b50d64b20347c4b913f3034ea1  ppocr-sdk/src/main/assets/models/tiny/rec/inference.yml
