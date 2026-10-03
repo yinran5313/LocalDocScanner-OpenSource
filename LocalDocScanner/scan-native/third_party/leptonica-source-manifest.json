@@ -1,0 +1,1031 @@
+{
+  "repository": "https://github.com/DanBloomberg/leptonica",
+  "commit": "8fdef8f58ea3747ea3ae6525d03c3568a9f3fdf6",
+  "license": "BSD-2-Clause",
+  "files": [
+    {
+      "path": ".gitignore",
+      "sha256": "5819339c232dbeda58f654ce59f166a17404eb7f76898b40f7002f84b9fa3bca"
+    },
+    {
+      "path": "autogen.sh",
+      "sha256": "4baad4545292c7c52dc1846894d1ff1b490b5a5003a0c455d9af7905dfefde8d"
+    },
+    {
+      "path": "cmake/Configure.cmake",
+      "sha256": "f5160764a4870d35e213a119507697fa65a4ce966ac626ddd016de9c134f40c2"
+    },
+    {
+      "path": "cmake/LeptonicaFunc.cmake",
+      "sha256": "9d8875856f7b988db30d8ec1c2093c9f4121cde1824a24ac49426d44019bf668"
+    },
+    {
+      "path": "cmake/templates/cmake_uninstall.cmake.in",
+      "sha256": "0ca327038d0eeb8effa70c9be90af429459ab5a5f1507fd8e187b0792af96995"
+    },
+    {
+      "path": "cmake/templates/LeptonicaConfig-version.cmake.in",
+      "sha256": "f1c0657bf175456ac1654309a0ba5b714b5a429e2bbd097c32d747b42b0db6c8"
+    },
+    {
+      "path": "cmake/templates/LeptonicaConfig.cmake.in",
+      "sha256": "455db6c6d155415310d5c3adf366b57dc89f57f279b19e681a63ad4e1eb5581b"
+    },
+    {
+      "path": "CMakeLists.txt",
+      "sha256": "92d7b7aa779f61ab3e8bef95a63616bbab22ad0b46cceffbb771da710d24e60b"
+    },
+    {
+      "path": "configure.ac",
+      "sha256": "9ceddf487a3507d9107326b9fa79bedf6ad3113d0e343a1a676b1e7f15058c51"
+    },
+    {
+      "path": "Doxyfile",
+      "sha256": "8c823086cbe9d6605de572af01feaed082efe5bfc6f5c66827cda81395f2c5fa"
+    },
+    {
+      "path": "lept.pc.cmake",
+      "sha256": "299d26b1f06c5fe08afec8bd37dd241d72c585e9d0a5ded74313d2b21374ab10"
+    },
+    {
+      "path": "lept.pc.in",
+      "sha256": "b019cdcd4ad514f8e7b74719e8fee160f59ae42b34993069052a8db4ae05b650"
+    },
+    {
+      "path": "leptonica-license.txt",
+      "sha256": "4af89052bb48065a0e6b286ba94b2537a1e032734bac4c7970a50d775f68e1f2"
+    },
+    {
+      "path": "lok.lua",
+      "sha256": "bcf9d016f89af9a444111d73755403e6c4c360bdb4c790027c0403ce4165c9e4"
+    },
+    {
+      "path": "make-for-auto",
+      "sha256": "6b4fbe87212b83563e2319a95dd577dd58a59ea31a3bdc6dd3a17d488e012cfb"
+    },
+    {
+      "path": "make-for-local",
+      "sha256": "70d77a1697da471806594bc334db713abb6b023864d47b6e2ee3e0878bef3d74"
+    },
+    {
+      "path": "Makefile.am",
+      "sha256": "d4ea1d0d6dc17db0600fc7fa1b25d4a984de0fac9ed0611283b99e16fa32f19d"
+    },
+    {
+      "path": "README.html",
+      "sha256": "32172a331f42939075a99a8a6ae248943d9cfe8d4b1f886b4f2b2654930006fa"
+    },
+    {
+      "path": "README.md",
+      "sha256": "4bd15099248bf14d57622bb3202807d2cbb172795b519da35ffffd7f72e88228"
+    },
+    {
+      "path": "src/adaptmap.c",
+      "sha256": "3c0fcff59db7684903a3a267bf8a7168ae8bd24d08aeaa9b3239c829515b615f"
+    },
+    {
+      "path": "src/affine.c",
+      "sha256": "d5a9c0142cdbbe4ff084f6b36cd01dcecc0e548aa647ec18b603931f0cdf9693"
+    },
+    {
+      "path": "src/affinecompose.c",
+      "sha256": "401c0dcd4219edbc9402734e64b22627a61c676dda6e41ca634ced1e4d363bca"
+    },
+    {
+      "path": "src/allheaders.h",
+      "sha256": "0ec5b9d26ba7fab554cb4026ffcc956432b5113720df3e690f5f48e2d483e08e"
+    },
+    {
+      "path": "src/allheaders_bot.txt",
+      "sha256": "a87ccddf370d9315b295f76fb512d9b372da74acdcadc33a152382b7efa3e2b7"
+    },
+    {
+      "path": "src/allheaders_top.txt",
+      "sha256": "a9f41e0486c838185825ab4e73447e8e711f7be95498263c7103396829068847"
+    },
+    {
+      "path": "src/alltypes.h",
+      "sha256": "b2695ae798daeef40b8e8ec6cdbb44ee6a850270a62aba7a3ffd2e6f9b127724"
+    },
+    {
+      "path": "src/array.h",
+      "sha256": "aab1d385566a2119ddddfecb3cc868d5f2cbfc33a7cabdfe9e7bfb0d175c6cb1"
+    },
+    {
+      "path": "src/array_internal.h",
+      "sha256": "bcc4d6a8953c7684446a148e13192d66822483cc07d0e626ab1666482c2fd376"
+    },
+    {
+      "path": "src/arrayaccess.c",
+      "sha256": "dfeee3b3f56be5a4c6f8da80435d684ba8da356049106a0d4f30e1f1863947f4"
+    },
+    {
+      "path": "src/arrayaccess.h",
+      "sha256": "202ade2efbb1a3c0dd1b67eccf6995b3a1b1620ddf77f35560aa5ab80fa095f6"
+    },
+    {
+      "path": "src/bardecode.c",
+      "sha256": "bf822f100e1253ef4e661b89f64ca388add9c9543d54838bd7221aa96bd688b6"
+    },
+    {
+      "path": "src/baseline.c",
+      "sha256": "0f2dd926baf7982df5901d9f8b5e77ba3f358e7b7d9afdcc0f8a050b716e0c07"
+    },
+    {
+      "path": "src/bbuffer.c",
+      "sha256": "19c4975b9a637f051a308f702075938cefed8862d7b0655cfd56db3fa79cb066"
+    },
+    {
+      "path": "src/bbuffer.h",
+      "sha256": "d500741fde1fb5f57e2b8be5c6c85007c8a08e4ab5f8e31b404e80a27303c394"
+    },
+    {
+      "path": "src/bilateral.c",
+      "sha256": "5699bed09f917893c86745685268360a2eb0671c8d5a7a3a474404d64dcec63c"
+    },
+    {
+      "path": "src/bilateral.h",
+      "sha256": "4667ec35bae21efde599ff7dc0ee1edc1d98390d2437d15b32be5bb2369c9eea"
+    },
+    {
+      "path": "src/bilinear.c",
+      "sha256": "9e2824bd92ac63e2be94b715a97a99c1e13ca7516df44eedbd41f132f63ca9ca"
+    },
+    {
+      "path": "src/binarize.c",
+      "sha256": "a4d7475f6bbcce135368ed6622c21af89cd4856d3cde3f1863b414ae5e19e5c6"
+    },
+    {
+      "path": "src/binexpand.c",
+      "sha256": "12c166d8cd95ffcdf2a60ae9aa39668bdcd68adaab8cd6d0b4e8d0c9d011836c"
+    },
+    {
+      "path": "src/binreduce.c",
+      "sha256": "85310a141046ef41c82daa097258caec9b508ce54b29aa4737933046e71910e0"
+    },
+    {
+      "path": "src/blend.c",
+      "sha256": "41c5f8d5de4ac469aa1afc29c65b5760476a02b52ed5cea3df2e18a061b44586"
+    },
+    {
+      "path": "src/bmf.c",
+      "sha256": "4f2c1d394ba983e2fbfa3c40a0648a21db63502d6fed6f639ff6d45a3a9235e3"
+    },
+    {
+      "path": "src/bmf.h",
+      "sha256": "23cca9a7b65123639095f9474be5a2957df859a4448685d7d5bd0cfd27212929"
+    },
+    {
+      "path": "src/bmfdata.h",
+      "sha256": "15734eaed35a5689b34caafa4abee5d5a8b081ddbb6a14bbcd5297827782429b"
+    },
+    {
+      "path": "src/bmp.h",
+      "sha256": "880b749f32a022aaf78619684252f69608f4be2998e98101610665859756bf53"
+    },
+    {
+      "path": "src/bmpio.c",
+      "sha256": "5407c9969b7f9e7a0418d7054d0e52a0241eb1b038b25155efa1033018532287"
+    },
+    {
+      "path": "src/bmpiostub.c",
+      "sha256": "1e2b0da94c60b7c657dfa2f5f2088d19244a2d1724093867caa18528233fb5f8"
+    },
+    {
+      "path": "src/bootnumgen1.c",
+      "sha256": "48a24539ba5094caf315ec8721d4cb12ab05a1dbd5a6bab72891c202d5f47a18"
+    },
+    {
+      "path": "src/bootnumgen2.c",
+      "sha256": "30f70b6e7aac59bcad5fb78ac2559c3cd93976156948e79f570e1975073db838"
+    },
+    {
+      "path": "src/bootnumgen3.c",
+      "sha256": "f9eb6255b04505b7daf0cd59b3c89b24e8452b7e2653fa8e3bc7cc9dd411f8a3"
+    },
+    {
+      "path": "src/bootnumgen4.c",
+      "sha256": "8403f92e043a7bd87c62b6268973c7d9ccbe93c10ae82283d2cc2f4db8e11ee7"
+    },
+    {
+      "path": "src/boxbasic.c",
+      "sha256": "69a811779e41fbd6182683b1cf1a0ef80715111c7c9af1b153146bfbad630ea1"
+    },
+    {
+      "path": "src/boxfunc1.c",
+      "sha256": "80adb60a601a1028d2f1dd0ab789980d2e1034ca98c7291fae9f0f7dfffc32e6"
+    },
+    {
+      "path": "src/boxfunc2.c",
+      "sha256": "b66bb7bbc63696e35de1d54def287e7136a383528bc465b9bef8df578ef5b6e3"
+    },
+    {
+      "path": "src/boxfunc3.c",
+      "sha256": "5a9eb7c32ce50fe2fd6432c742835cd7301f0e63af38dd50796ccdae21d9a552"
+    },
+    {
+      "path": "src/boxfunc4.c",
+      "sha256": "6ee60bb5c9efe06c59b6dfe49efcaf643d0f2a47368caac78a06aeb8a160b998"
+    },
+    {
+      "path": "src/boxfunc5.c",
+      "sha256": "f5c8777010f28e84a4f19a6ef9c0247bd65277f84b93fa57ca91d0e32533a1cf"
+    },
+    {
+      "path": "src/bytearray.c",
+      "sha256": "340208e89744e1e2e03e7847a44f5423d84ab7fa2b4fab1aabcd1f08e9b393f9"
+    },
+    {
+      "path": "src/ccbord.c",
+      "sha256": "40f91a8e433b678827b7a010f66e71e6d55a6315fb028f2dd2b475629e647ef5"
+    },
+    {
+      "path": "src/ccbord.h",
+      "sha256": "9c1210437b0b72c0be0104d8fc786548384883d35a26470b720f940a51befcb8"
+    },
+    {
+      "path": "src/ccbord_internal.h",
+      "sha256": "c0fe5ecaba7c258fe79bf7d7707ca95607e397f4c58d98cfa4461a501793ce2a"
+    },
+    {
+      "path": "src/ccthin.c",
+      "sha256": "3c0de0ce6b85b3b8793017a99a186baf5c405583ab41536cbcf9809dfa1e2a5e"
+    },
+    {
+      "path": "src/checkerboard.c",
+      "sha256": "d28cc2e8dcbd32ea22f93265d375e02821ba14d794646eff8ad4a891bc431bbc"
+    },
+    {
+      "path": "src/classapp.c",
+      "sha256": "8304b32e5891c92b612beb73e8c925d968cb42364e6bdd8a87afde0eb16fcd0d"
+    },
+    {
+      "path": "src/CMakeLists.txt",
+      "sha256": "ed16270aa78ac74bbde0b4e8b72cb7065febcc9c2d1fdaa4da5b55765ccca14a"
+    },
+    {
+      "path": "src/colorcontent.c",
+      "sha256": "d68f2b09d3b343aa68a9f652a43e7e7bc7516911ca73008f3536969cd30aa624"
+    },
+    {
+      "path": "src/colorfill.c",
+      "sha256": "417543f54d3afb82011af4872daac84159b8df29e861117e26d393d21d12ec57"
+    },
+    {
+      "path": "src/colorfill.h",
+      "sha256": "63fa9df943e265fb492571c7dda4b36220fa48c6fd6a03e74750ab06ebe96f00"
+    },
+    {
+      "path": "src/coloring.c",
+      "sha256": "3540776713358ed2a6cd9eda08f29e3b0351bb0144c4631de268b3463ba7b230"
+    },
+    {
+      "path": "src/colormap.c",
+      "sha256": "759f4a1f73a160d7c927550ec299d839df233c2089196e94be10e49e98464daa"
+    },
+    {
+      "path": "src/colormorph.c",
+      "sha256": "78c01639e74c90ad254c8f127358e25903b1ad6d510968fa7492b19614f8a93e"
+    },
+    {
+      "path": "src/colorquant1.c",
+      "sha256": "3632e991c61a5367736dfa70b67c7b1a733024f3dcbaf959f33d50d862d82fe5"
+    },
+    {
+      "path": "src/colorquant2.c",
+      "sha256": "42b38fd20019d3ce277138b783b15659b93e8e997eff1798b345f3ea37e2009f"
+    },
+    {
+      "path": "src/colorseg.c",
+      "sha256": "7a0610a3315721866aeeb36e5eb2d243e231d2eaa459158e0330881645167df9"
+    },
+    {
+      "path": "src/colorspace.c",
+      "sha256": "aa9fce6c9772ea93aace42463199cda4b4f0014f1f3e50ef4d7b5fbc99b52b18"
+    },
+    {
+      "path": "src/compare.c",
+      "sha256": "75612b2b8dac737177b5a2a94fad53e3d88398cfcbd9311f75e10a417b9cf9a1"
+    },
+    {
+      "path": "src/conncomp.c",
+      "sha256": "fb9ce13a680b154b56d586598400c439ed675b9f85b44a4082753f33cdc78ddd"
+    },
+    {
+      "path": "src/convertfiles.c",
+      "sha256": "483dc2fc1816db370d2a09ca3965fce24b4afadc1b3bdb082791559e7c798ea2"
+    },
+    {
+      "path": "src/convolve.c",
+      "sha256": "4735bb537b7da26fef91607b0f2d78c932c2453471c7aff9446bea17af8190bc"
+    },
+    {
+      "path": "src/correlscore.c",
+      "sha256": "c7cc7c84d9aa6b860d6cf20e96c2b296174de9bea3b6b137ceb995aaaa6c613c"
+    },
+    {
+      "path": "src/dewarp.h",
+      "sha256": "c99ab26ff6a8fa4de52c020917de0d803c78494058a8c21414a2babd342ed39f"
+    },
+    {
+      "path": "src/dewarp1.c",
+      "sha256": "6a9060cd847c179106f1d3ecb78c9a3ad185dec4e5baebffece3b8939998838f"
+    },
+    {
+      "path": "src/dewarp2.c",
+      "sha256": "f1e4bd36d9cb9284a0f108d0e0ef0cfabd4e54e327da0c5d0dc0f328cbaf95bf"
+    },
+    {
+      "path": "src/dewarp3.c",
+      "sha256": "fcd9c018d1aa1ced9c07ecb2d39eb99e1b6262ae0c62994c00325e5dddc26fea"
+    },
+    {
+      "path": "src/dewarp4.c",
+      "sha256": "5c6a5781461c759dc4d0fc193e139a0447c9ded2621371f4ba5cf0798d2889db"
+    },
+    {
+      "path": "src/dnabasic.c",
+      "sha256": "e14a8bfbf01d1a6cedc54712d3ea65b46ce3bfb4ccaa9faa2eed2363d5c1e58e"
+    },
+    {
+      "path": "src/dnafunc1.c",
+      "sha256": "7031a8eb0a5adad854daa17576d4a1fe35546967996afe442030a5cf2d8ea1e3"
+    },
+    {
+      "path": "src/dnahash.c",
+      "sha256": "b8ed552dd14b5a8a9da07eb17ecc23536e0291e2dd37e29b61d7262ff3611b2b"
+    },
+    {
+      "path": "src/dnahash_remnant.c.notused",
+      "sha256": "36a91a02aa588dac62441b68dd8ab38d6d5f5b41b1439e67aeba3a4a465406b9"
+    },
+    {
+      "path": "src/dwacomb.2.c",
+      "sha256": "4770ed31c28d9af3dc0936b763caf9ac34e7b8c2fe690cf183f20ed95e35d1a3"
+    },
+    {
+      "path": "src/dwacomblow.2.c",
+      "sha256": "f76a6ea9c45f917c2c8b02e3e18a6c827c3566f6bcb37ac9b670b9a305aaf9d9"
+    },
+    {
+      "path": "src/edge.c",
+      "sha256": "c97bb7e442bc91fb3a618eeb82374bf249d6326125afe5cd8d64ebe0a4b57d57"
+    },
+    {
+      "path": "src/encoding.c",
+      "sha256": "5bc6a49232c2383922953c008b68d822cc5d9315cf3d7c5d3fc662266b9b5ff0"
+    },
+    {
+      "path": "src/endianness.h.in",
+      "sha256": "99b2b593d9144cb446baece5714c9ea41e6560516e2f70392f979d1f975e4659"
+    },
+    {
+      "path": "src/enhance.c",
+      "sha256": "c6765114f67a0827e066a101ef8822733f2b21649519506fd0ec7f549b5d09f5"
+    },
+    {
+      "path": "src/environ.h",
+      "sha256": "647cd70060873a8192292534a0ef34fef50d5e65f632393bba908a575b943eb8"
+    },
+    {
+      "path": "src/fhmtauto.c",
+      "sha256": "295d8c7f0f35775b1e65c39604cdb49b12428017317624df2135bf7382e858ee"
+    },
+    {
+      "path": "src/fhmtgen.1.c",
+      "sha256": "ac1e3f06502d97a886e742cd3f1f766b8609745852ee3b9b66db9c87b4286bc3"
+    },
+    {
+      "path": "src/fhmtgenlow.1.c",
+      "sha256": "52276c80419b7355aa6b4c16e6919da99d98a263ca163221e37f4a19373dd35d"
+    },
+    {
+      "path": "src/finditalic.c",
+      "sha256": "de29146c3fa425da8e4d695ed41d8d0b53c1954f9831fcc1339eb9e5d58e7d24"
+    },
+    {
+      "path": "src/flipdetect.c",
+      "sha256": "e167d1147a9ce00db484ce3eb60223c61d92f6657c5701d613992f50278e7704"
+    },
+    {
+      "path": "src/flipdetectdwa.c.notused",
+      "sha256": "9b7530d80868c0073b87a01e7230ee393533c767021edb64be4f02a9595c8c7c"
+    },
+    {
+      "path": "src/fliphmtgen.c.notused",
+      "sha256": "167a20442d20ebfc94ebecafefbae9fd534592851a90a73d11d75e968a7f687a"
+    },
+    {
+      "path": "src/fmorphauto.c",
+      "sha256": "96c2952a45b97bcb57e022157cea2f4445b840ffc8d2190811cb5d48184487cf"
+    },
+    {
+      "path": "src/fmorphgen.1.c",
+      "sha256": "2430f7b9577b6efe5e374e3689d2e302da7e3c644ddb431d12ccf18bf97a1716"
+    },
+    {
+      "path": "src/fmorphgenlow.1.c",
+      "sha256": "cabe90362f61f70292a68af77fcef16f1797dec6e71c08816cdff587b84e107d"
+    },
+    {
+      "path": "src/fpix1.c",
+      "sha256": "4f30afe9779e95da6cd1139b31d61d902cc787996e3b9467aa7442a301946d03"
+    },
+    {
+      "path": "src/fpix2.c",
+      "sha256": "bba1e1867ad2a7de961e33414ee462ddc9bf59e62bc16dad31a71d021cddf266"
+    },
+    {
+      "path": "src/gifio.c",
+      "sha256": "a3765343404cb011d6ea896e53a0b6166fb229a1b2b7844d96281707165b083a"
+    },
+    {
+      "path": "src/gifiostub.c",
+      "sha256": "a341c2eecde071df089c36d8099c2d2b3f8e01513e13c5dd108b1a9d7bf9625c"
+    },
+    {
+      "path": "src/gplot.c",
+      "sha256": "64ac1bcf0fdfc5a47f94198f58e1b7021ef5001025adbeec68ebd0c524f0e4a7"
+    },
+    {
+      "path": "src/gplot.h",
+      "sha256": "192f7bcedc677e8045385c00aad23e063b88a1b7e22c77dd2ad64dd9a9692fcd"
+    },
+    {
+      "path": "src/graphics.c",
+      "sha256": "c0cb5131209f042d6098826eaac5f143ae22e8fb72872d17aeb6b42489011b9b"
+    },
+    {
+      "path": "src/graymorph.c",
+      "sha256": "b16dd9f7fa008f223d932b8186396cb6481a018b773d0a54d5a59b6396bac938"
+    },
+    {
+      "path": "src/grayquant.c",
+      "sha256": "5cf413c1bc1381ce9fd62050a108c3f7e2e3bb55fdf03d2ffb87a6e332d3fb00"
+    },
+    {
+      "path": "src/hashmap.c",
+      "sha256": "48693710cc9323fb3b418d91b9e3cf9a1773a8cdec7aec3c9b1a6b9b0929fb24"
+    },
+    {
+      "path": "src/hashmap.h",
+      "sha256": "ac3025f59e91f468e9dbea4e1fe44b36baaacb275e367774e77f2cea56613dbb"
+    },
+    {
+      "path": "src/heap.c",
+      "sha256": "26e140f0433593dd8d6c4ad63a43b86f4d9ed4ddb6a43db654886225b89f9e27"
+    },
+    {
+      "path": "src/heap.h",
+      "sha256": "04354dc5a62b91d889e97d0ec876d9abad6f6876d51130337d665494923ae936"
+    },
+    {
+      "path": "src/hmttemplate1.txt",
+      "sha256": "dcb4e63ccd74bebfbb0414563d2d2755234163236e725bc616792540a02f0f76"
+    },
+    {
+      "path": "src/hmttemplate2.txt",
+      "sha256": "9675052d488516abf9b8528ee42b8553e64f67a01ed2f9d19cf4308fcd211f53"
+    },
+    {
+      "path": "src/imageio.h",
+      "sha256": "5be4d001052670391df535610f5ec33544c2ffb02fe924f625bdb7697784dc2f"
+    },
+    {
+      "path": "src/jbclass.c",
+      "sha256": "12db7881894fa3db313500277b3e43178446c4814457951d564f57e67b3d8b48"
+    },
+    {
+      "path": "src/jbclass.h",
+      "sha256": "32ead3fb97a1745fd8c16cd631c52665dd6e248816eeca1795790a9f5dd80d57"
+    },
+    {
+      "path": "src/jp2kheader.c",
+      "sha256": "ea567b20db919918bbb53838007fb1ae5b5041ea56b21db3ec88af9da2f1db23"
+    },
+    {
+      "path": "src/jp2kheaderstub.c",
+      "sha256": "ef999b2ef94a1d0060105965634796c0f72fbc658ace6899e3189dd33ec46ffa"
+    },
+    {
+      "path": "src/jp2kio.c",
+      "sha256": "ee07d02296b8b47fae82c1c3ae5c4dfe42c6bac5bcbb0b027cf4f0c79d501e10"
+    },
+    {
+      "path": "src/jp2kiostub.c",
+      "sha256": "83d37b0ab8a0d95b74f86019d047fb54c3cdd786936f9a81cb5f59010e245e82"
+    },
+    {
+      "path": "src/jpegio.c",
+      "sha256": "b385984ccb52220772c9f7122a9ee0eae61a46bef12b52514173b2a950bd963b"
+    },
+    {
+      "path": "src/jpegiostub.c",
+      "sha256": "5b861417c287311722bd289b9880156e626789a1afbfd105210f94ea92a0158b"
+    },
+    {
+      "path": "src/kernel.c",
+      "sha256": "58227d6aaed8d25c6b3c9b57c5a1978862cfdb07b2f9862de4eebdfda17bb3c4"
+    },
+    {
+      "path": "src/leptonica-license.txt",
+      "sha256": "4af89052bb48065a0e6b286ba94b2537a1e032734bac4c7970a50d775f68e1f2"
+    },
+    {
+      "path": "src/leptwin.c",
+      "sha256": "a58d739a7d8d6df38d7400357ec9c855ff13ae92d4dadaf6199e26115c62a93f"
+    },
+    {
+      "path": "src/leptwin.h",
+      "sha256": "2dd3b027bbb8ab91bd45894bd6f149c93ab2f312cb9e55def377a63a0e42faad"
+    },
+    {
+      "path": "src/libversions.c",
+      "sha256": "9a92997528bbd4f0028680f234bc69f575a14caba58aa766bd736c3082c520c8"
+    },
+    {
+      "path": "src/list.c",
+      "sha256": "b0762436b3e4ea067d6376434e3764482d513d47c99579ee040802f69dc994bb"
+    },
+    {
+      "path": "src/list.h",
+      "sha256": "d72b54f78716a13f6cee617f71c9310d90e8ad3f7fc0136adf7f6f3f4d027216"
+    },
+    {
+      "path": "src/mainpage.txt",
+      "sha256": "464a6602a7a6571e6446660ca68a01bfb3bf5f72476a6c2c1637bf8edf20a867"
+    },
+    {
+      "path": "src/Makefile.am",
+      "sha256": "0729f292a7ff08c2e197c21a6565603aedc2558a53f968997a2f1e505fa933e7"
+    },
+    {
+      "path": "src/makefile.static",
+      "sha256": "e26715cd25df5f6cb0d7be7c1082687c32974083ba7ab2ef0d07fecb91402665"
+    },
+    {
+      "path": "src/map.c",
+      "sha256": "f3308da7f5d4fdddf191a28b785f2d4527a7c94373f94f71ef9481e38cc9e4fe"
+    },
+    {
+      "path": "src/maze.c",
+      "sha256": "f8bf3fcc673b082ccc8e374c578c6b02c3f4e486f665e2363dde0f6b3013a8a7"
+    },
+    {
+      "path": "src/morph.c",
+      "sha256": "a0fe8f4fc1330d36df7740feac679a18a7169f8349bf509d51df6b1883a07dd0"
+    },
+    {
+      "path": "src/morph.h",
+      "sha256": "e9a17076d70cc69ace044f1210cb8419abfdb7d4804d8fe88c8299810e58afbf"
+    },
+    {
+      "path": "src/morphapp.c",
+      "sha256": "fa90de2b5d74b986077d296d55358493bc19f4a795c4199549022aef9469894c"
+    },
+    {
+      "path": "src/morphdwa.c",
+      "sha256": "86a591d8ed4a133f56da0eb5b7bf701de33b36528fa20d6bb49d7484f2607da0"
+    },
+    {
+      "path": "src/morphseq.c",
+      "sha256": "91b31bda74fbb2e8ca57fbc74b986b8608cc30056112efbd96dd7d9f0688a612"
+    },
+    {
+      "path": "src/morphtemplate1.txt",
+      "sha256": "fd7ee812d2e253650c8b6a363d6bc5f5f26dee1856613623d7912ecbb0bfb5d5"
+    },
+    {
+      "path": "src/morphtemplate2.txt",
+      "sha256": "b40b6d9b7c59cd92d26196341554f324fd0baf66cfe9249acfdf1e6e2cddd4e7"
+    },
+    {
+      "path": "src/numabasic.c",
+      "sha256": "4e6e849a40c6b3398a4747bb93eba0f606f45cb7c37a4eb0c4eaa4e6435c3316"
+    },
+    {
+      "path": "src/numafunc1.c",
+      "sha256": "28c29fcb1385588925329e4bf45742d40a59d2ee428cb220c9eb16310e6ab787"
+    },
+    {
+      "path": "src/numafunc2.c",
+      "sha256": "0a6faeaf15f430152ea9e67cef5d8185e3b3465f55bca48b9bca2b90bb491f01"
+    },
+    {
+      "path": "src/pageseg.c",
+      "sha256": "8e971324f930acec67c9d3f9508445ef91f6f5e1477b2184272e138d59ec7b84"
+    },
+    {
+      "path": "src/paintcmap.c",
+      "sha256": "d76b0da6d35d17aa91929b1174fb3835965757c674b344689ef2cfca27c76ed9"
+    },
+    {
+      "path": "src/parseprotos.c",
+      "sha256": "40a7d06f111fed5c642a2f1abbb804a2e521704f697a3249fa838826cf1b02b3"
+    },
+    {
+      "path": "src/partify.c",
+      "sha256": "1d40a57ee0a018b8d61e24b3ba78bce082d14ace1f9a5bb78a298a7231404e81"
+    },
+    {
+      "path": "src/partition.c",
+      "sha256": "86efef935aad98344f069210cacab8fa5b17f14b7715bccb8f1a9ed67f1cb120"
+    },
+    {
+      "path": "src/pdfapp.c",
+      "sha256": "f696d9b940c9ab41d81d688d3844bffe690abe23ccaaf62524b8b79638dda062"
+    },
+    {
+      "path": "src/pdfappstub.c",
+      "sha256": "71d3865f4ad344f1e2a7817224c546bfad1c355e9ec11bab331719b1728476c7"
+    },
+    {
+      "path": "src/pdfio1.c",
+      "sha256": "2dad2fb18612ca12ef8e02b887597904eeb9e869f066b9bd4b3e2263380bb766"
+    },
+    {
+      "path": "src/pdfio1stub.c",
+      "sha256": "3a71bdb88937fec62963aa51008d1332c11ae34ce7414277c123c664ebf46e4e"
+    },
+    {
+      "path": "src/pdfio2.c",
+      "sha256": "9d53dc41ec3a453dd055931fb8fe5640aab4057fe01216b615cdd51e66541d7e"
+    },
+    {
+      "path": "src/pdfio2stub.c",
+      "sha256": "49c2d021434a3e85441aa18daa21c9875bf966ac00a24ff586276d9e82f38ff6"
+    },
+    {
+      "path": "src/pix.h",
+      "sha256": "21e8058ba23e40a4154c89421ca34df4f21c8e284f02c422656196155a1f9aff"
+    },
+    {
+      "path": "src/pix1.c",
+      "sha256": "d4dc4ed9b6534a01593fec96fe7dca019c1cf285c08d1824fbe02f87a17dee77"
+    },
+    {
+      "path": "src/pix2.c",
+      "sha256": "b5e215d83f096928f21b1ad20fab1debdfd8d7ca72b790772947208c07c41a5a"
+    },
+    {
+      "path": "src/pix3.c",
+      "sha256": "f3539fc6fe122e6bb8fe659815ef482e6bc6b0da19a1746f45da0603095471c4"
+    },
+    {
+      "path": "src/pix4.c",
+      "sha256": "e7c3f223be082c6fea5f89a7aaf6aa1a2cbc50bb2ec46cebddbbc357b61d1e6e"
+    },
+    {
+      "path": "src/pix5.c",
+      "sha256": "0760838c2d565bc3705c09c08a01db1ef9ed775fa889ce2fd2430b55a4cffc40"
+    },
+    {
+      "path": "src/pix_internal.h",
+      "sha256": "50742cf12b49e42ab892439efdb9c0252f7aa608044483c1ca4d6b586365a9f6"
+    },
+    {
+      "path": "src/pixabasic.c",
+      "sha256": "4574415e6755d5afa4577ecefa73d89fce725fc75982ab727582b7e14726d967"
+    },
+    {
+      "path": "src/pixacc.c",
+      "sha256": "b454eac3b98ef09126568d9957d1c77e36d98157d684e045faa6eb9477186602"
+    },
+    {
+      "path": "src/pixafunc1.c",
+      "sha256": "3838f5c2ce9ecc9bf817cc459069216a1df99584912f8da828beb80675719887"
+    },
+    {
+      "path": "src/pixafunc2.c",
+      "sha256": "a584b18c8f88e61673e2850b2fb15e83e963e349c163718e87f775f83f80b61a"
+    },
+    {
+      "path": "src/pixalloc.c",
+      "sha256": "d099629bf4652524bab748275c46910cf9dd46ab357bf8c97d2857486130426d"
+    },
+    {
+      "path": "src/pixarith.c",
+      "sha256": "4d632572edef4cd9350d38b4a273827635409273ba4cb57e65338a1a78583c6e"
+    },
+    {
+      "path": "src/pixcomp.c",
+      "sha256": "fc7f4971352051e7045277c00ee0babcd61f031b585d18ac76b6a52737ddcc7d"
+    },
+    {
+      "path": "src/pixconv.c",
+      "sha256": "641c84120e2c55933099048aba091651e49ed97edbb54552bb0d957576e21a62"
+    },
+    {
+      "path": "src/pixlabel.c",
+      "sha256": "2ed2825419bef6dec2004f1476e1f294751224f7116fd28abd19b63f5c25e69e"
+    },
+    {
+      "path": "src/pixtiling.c",
+      "sha256": "22645d170eb3b14f4823ed1fcdecd499a9cd3908aacf161b93b730231f74a15e"
+    },
+    {
+      "path": "src/pngio.c",
+      "sha256": "3040ea02ae6343881abac729eb257dfe05ade99b20d4b9683eabbb0378165904"
+    },
+    {
+      "path": "src/pngiostub.c",
+      "sha256": "f6ba6435dff8e688236ea9c74ffc571edee1435476bcf421e1debcd946145c51"
+    },
+    {
+      "path": "src/pnmio.c",
+      "sha256": "9ff5d402ece79a6a24e55cd4cd10df901ddeb7e962d0ced5bff2aac8955c981d"
+    },
+    {
+      "path": "src/pnmiostub.c",
+      "sha256": "09efe7c9acb948e0498fb5e1a61f19c8bcbc745c288fbb7278e826077232c602"
+    },
+    {
+      "path": "src/projective.c",
+      "sha256": "adbb11ec00ef9ae026f42ca76318aac3f8fa4a6eb73689400d42fc99aebc3574"
+    },
+    {
+      "path": "src/psio1.c",
+      "sha256": "1dbd279e0173140c39392b419cd854caa2550f87d4c0d161ebacacb896cd0201"
+    },
+    {
+      "path": "src/psio1stub.c",
+      "sha256": "5a6cab40884b7d93d8a015b38471c06dffdaf0cdf6f628be5fb1f09f23b78ea2"
+    },
+    {
+      "path": "src/psio2.c",
+      "sha256": "ad09e2c9922f57eeb8a2586b4c8befa9fed020a52aa31ed58432fe05e0381319"
+    },
+    {
+      "path": "src/psio2stub.c",
+      "sha256": "5f3941227d8bd016ecfd7923a37187b74f4cb727b9766d7ce20f1c8a6ef3007f"
+    },
+    {
+      "path": "src/ptabasic.c",
+      "sha256": "fd1f40f8622984b804223cda05d6dd1f540f25a573acd0a0f20a79c64a5c67db"
+    },
+    {
+      "path": "src/ptafunc1.c",
+      "sha256": "4d8e5b7098d1efdd89fb3ca82ba52b26a6812dff16acf8e7bbee967c1574a5a8"
+    },
+    {
+      "path": "src/ptafunc2.c",
+      "sha256": "da05afc1deb2fa5ff6239f8ea7a018ea23fd3630983a750213c43ac4800d1f84"
+    },
+    {
+      "path": "src/ptra.c",
+      "sha256": "b2f7ff4d929213598a216c7974a2fe56c4dc6538a0eb80225c2ae0faa9bc655b"
+    },
+    {
+      "path": "src/ptra.h",
+      "sha256": "4f4ab7daa86a873fd47b0c93ed631b152e6fdc009e483e519d4755e699e00a65"
+    },
+    {
+      "path": "src/quadtree.c",
+      "sha256": "0224f80d457f978c3f80c1c363e090b56dce4f582509ff91530ab79aaaa50394"
+    },
+    {
+      "path": "src/queue.c",
+      "sha256": "73c854fca0c2a81bfd171de2b29303f585b41c3d5a08ea7fc71aaef419682082"
+    },
+    {
+      "path": "src/queue.h",
+      "sha256": "7053c64c1b6e10212af7aee58bc0aa5e17ccc59b39fabfc678495160fe96d227"
+    },
+    {
+      "path": "src/rank.c",
+      "sha256": "84935626fb76177ccabcb62023b3d15d5864847c81a9dbecebe40b2cb09e5d8f"
+    },
+    {
+      "path": "src/rbtree.c",
+      "sha256": "dae9dc03c2744de66ccf07cf2e19866af0de2a1fc84e8daa4a4c6eb1153f013e"
+    },
+    {
+      "path": "src/rbtree.h",
+      "sha256": "634c8ab9d334e6449ff06f98a33c44751c888eb4ffdc38299b2c58431f95ddee"
+    },
+    {
+      "path": "src/readbarcode.c",
+      "sha256": "380f9a08abab535e2f8fdee304b3cb9a248619b27a50cacf792909521db37df5"
+    },
+    {
+      "path": "src/readbarcode.h",
+      "sha256": "a979042f3eb64f7ed88f68b3d9c83b734a830d313ef6d3cd3c5ba79e8a45eba6"
+    },
+    {
+      "path": "src/readfile.c",
+      "sha256": "2afbccc2a5903da3ea1b2d99585e80841872dcb70e7f584a12e1f17e049f04d4"
+    },
+    {
+      "path": "src/recog.h",
+      "sha256": "65ad6f5094e4859119be56f880774094cd2e99471f404b437a8997edd57f70cb"
+    },
+    {
+      "path": "src/recogbasic.c",
+      "sha256": "1ab317e1f4d7fe49916af05f829c1a941f6408b7b9efa212dca2a9d74d5ecb06"
+    },
+    {
+      "path": "src/recogdid.c",
+      "sha256": "3f2736f6d260c6d8d7fc1a85c78071801bdbd66b2d2836bc07b8b008b049b97b"
+    },
+    {
+      "path": "src/recogident.c",
+      "sha256": "22950ca3118d89f72a9777f4a05e172443113375b9a0785429e034a665b8832b"
+    },
+    {
+      "path": "src/recogtrain.c",
+      "sha256": "45bef64c0449c01064c7e2a2a74afdea79ffde6fc56ea750763de9579994efe3"
+    },
+    {
+      "path": "src/regutils.c",
+      "sha256": "c6a2d8d6e7a75a71be8918f2a40df52e421a2215386dc7079f57bd4f47a18538"
+    },
+    {
+      "path": "src/regutils.h",
+      "sha256": "83512c52e372708358ae1edf3da3f66fd44f898cc6b9e5ec4d65b53c518461cd"
+    },
+    {
+      "path": "src/renderpdf.c",
+      "sha256": "ada77d7c69c4f750b371eb2d06c374caa04ba1d8919876bd59e32eabcffb6fba"
+    },
+    {
+      "path": "src/rop.c",
+      "sha256": "03da083586e567b215fcf45f51ee28895e50c132748b17e6ecb9cc7be037d657"
+    },
+    {
+      "path": "src/roplow.c",
+      "sha256": "3fb567187d6bf56c4cff7f55e9df4774449e49c9ad76b89da7682160f5b79ac3"
+    },
+    {
+      "path": "src/rotate.c",
+      "sha256": "8c6ba0e8030668a8d186d287c6cec901439a214d433d0d6bbc701202ca97abb7"
+    },
+    {
+      "path": "src/rotateam.c",
+      "sha256": "16c2673a5a4bc42d6238d9301420b2eebc36463b14ab1e26dedf7e30186df960"
+    },
+    {
+      "path": "src/rotateorth.c",
+      "sha256": "17af21d23daa46c8fc6efe33769fb2717a64f5865e8f51239961f236e138bf69"
+    },
+    {
+      "path": "src/rotateshear.c",
+      "sha256": "25c695813aae056b616fe48f3d3a4bf927648eae580bd7b4ef23fc62c755650a"
+    },
+    {
+      "path": "src/runlength.c",
+      "sha256": "7b3bbce797a0f71321da0e10d2b2e9e8a71bdffedee794479ecb867fdd3d8582"
+    },
+    {
+      "path": "src/sarray1.c",
+      "sha256": "02287774930f30e6e97467153f54232e2d5be16a17c2080e99f2a381046e9cde"
+    },
+    {
+      "path": "src/sarray2.c",
+      "sha256": "c3c0a7f9b8831dab6548c92ac120321d3a6e6eb60da762edf7a2b14448411231"
+    },
+    {
+      "path": "src/scale1.c",
+      "sha256": "11485a93594667a9d46fdc472d7d6e26130974ede6ba987f1fee12d638c54418"
+    },
+    {
+      "path": "src/scale2.c",
+      "sha256": "9d9b43dbba7c45f794ad244b2229bc2fc6c73abc7e7ee0095a2199c4cb0774ae"
+    },
+    {
+      "path": "src/seedfill.c",
+      "sha256": "82cb599f6dc4f4d9c1b38cd912aa1eb3d9eac3ff549bb6d442c2cf75d201e42a"
+    },
+    {
+      "path": "src/sel1.c",
+      "sha256": "f1e3a99322f3445d6d13acf36f3564420888a7b2456d58c9c123fc0c1b53e712"
+    },
+    {
+      "path": "src/sel2.c",
+      "sha256": "6d6ec79b831b5b4c4e98c3da2fe64867455ea6d6cd393c8e39bcd511db256ebf"
+    },
+    {
+      "path": "src/selgen.c",
+      "sha256": "d3ed2ab4659d13502ed46ba9002baef4e36c7edcd27fca7f09618749abf64c21"
+    },
+    {
+      "path": "src/shear.c",
+      "sha256": "403b1466eb266265cfde514c333fafe6f31c47ff43fe5eff8f1b7b5ed924571a"
+    },
+    {
+      "path": "src/skew.c",
+      "sha256": "0081b8670ab332fa326ee08d2cd0b3c697f202441a772b3b2ae835e18f41a938"
+    },
+    {
+      "path": "src/spixio.c",
+      "sha256": "5beed7939ff9f5e5942065ffea8adf6379600affdbffb6184883dcab3c0bd157"
+    },
+    {
+      "path": "src/stack.c",
+      "sha256": "cda39e0ea200feaf65a4fe3c478d0b82ea38905ec54ff5520272ee0b51194097"
+    },
+    {
+      "path": "src/stack.h",
+      "sha256": "48f4f90f3b4f40a1844e490e26dc9dde80dd51456c24610e3433367622a88dda"
+    },
+    {
+      "path": "src/stringcode.c",
+      "sha256": "0f0c64628c97fb81a92f8c102db80b9d40ee7dd23396b518e3822f220253a610"
+    },
+    {
+      "path": "src/stringcode.h",
+      "sha256": "6664bfc669031105237b0da5d9d5a27306eeabc155dfc20c48bf8514da97df18"
+    },
+    {
+      "path": "src/stringtemplate1.txt",
+      "sha256": "c289224c2d257f764cacb63775c22005e479ca94f472e8707e6668107a7afa9a"
+    },
+    {
+      "path": "src/stringtemplate2.txt",
+      "sha256": "25c5b239630ef5fe97329709a2f3925930e200993bc26d2d62f6401a666526ec"
+    },
+    {
+      "path": "src/strokes.c",
+      "sha256": "e0804a9f82b099aa87bee4f7fbe7a3baac18bc24ec0acf1514b30244b7aa9c4c"
+    },
+    {
+      "path": "src/sudoku.c",
+      "sha256": "03724cec537f157a1f3e83e893508dea0e144c76158b9dc620ec27fbca0a52fb"
+    },
+    {
+      "path": "src/sudoku.h",
+      "sha256": "7c2cfa1f0887f3877f97e35a0a9440946a26950e69670f18da527a331dd7d4ff"
+    },
+    {
+      "path": "src/textops.c",
+      "sha256": "ed7a32bacc273b22ef4d1789fa6f3d3ecbd619cd2ef72b807d01fbf6c274054d"
+    },
+    {
+      "path": "src/tiffio.c",
+      "sha256": "efbc495d1e27f928717d1407383368e52c5ea9f4b0bce6685b346cb533ed0461"
+    },
+    {
+      "path": "src/tiffiostub.c",
+      "sha256": "e132e151b3fda79577b420ae9f9ce633298079a349553e819f596f5145fa7266"
+    },
+    {
+      "path": "src/utils1.c",
+      "sha256": "502bf65c0bbcc921133774b637ed1f41dc186a80443e7bec802894ec3658bfef"
+    },
+    {
+      "path": "src/utils2.c",
+      "sha256": "220c227c662a92de7466002f2cb1ad6eb95526b4dd1e75370378bc89e6379ddf"
+    },
+    {
+      "path": "src/warper.c",
+      "sha256": "fe72453d0809a62c16a1a82ef49d841eff420bdb7749d9aa741f9e1a6ec26d4f"
+    },
+    {
+      "path": "src/watershed.c",
+      "sha256": "8363814a5d66f11adb08c6b86297a3d8c8675d03767389677b10ce4e722d4ae4"
+    },
+    {
+      "path": "src/watershed.h",
+      "sha256": "cc643ed5e29c6bdfdc9199c6fed51cf4c588d1a37fdb3c32fe4aeb4e10adc775"
+    },
+    {
+      "path": "src/webpanimio.c",
+      "sha256": "ac08f47a6d7418e21f60435660880b57c0064d5bf70ff04bb46fb1fec71dd94b"
+    },
+    {
+      "path": "src/webpanimiostub.c",
+      "sha256": "f2a59cf2e36cfe933106daf1daa95d9b6d6674293114caf474fd38be25968704"
+    },
+    {
+      "path": "src/webpio.c",
+      "sha256": "1637752c9687b3de2687bc59c552349b8471993ab16056aa40228d198feb91c8"
+    },
+    {
+      "path": "src/webpiostub.c",
+      "sha256": "a18dec12a9f36736e6a272b484a0f9782276d2a630ce19937ed30754f8bb184c"
+    },
+    {
+      "path": "src/writefile.c",
+      "sha256": "a6c466e689e0db5c3465c73972383a485aad40cb00364d914ee05b5c17d4d6fd"
+    },
+    {
+      "path": "src/zlibmem.c",
+      "sha256": "8d727603fca0d3b914694cd7fdb368d703ddbf64ad8c960ccad80b9f5c4cb278"
+    },
+    {
+      "path": "src/zlibmemstub.c",
+      "sha256": "1e067047a8962e3b5ff039fb95f746a04578647fcb2ee8109d6a6499e4a86078"
+    },
+    {
+      "path": "style-guide.txt",
+      "sha256": "9d3258e541cd37911bec5fd166b8a9e2f71103c122b07464b85edf23e423d0a1"
+    },
+    {
+      "path": "sw.cpp",
+      "sha256": "76281f6ccc46a007bf287baa4b43e982c95f5d385f96702e638b142b0f08541e"
+    },
+    {
+      "path": "version-notes.html",
+      "sha256": "03188bc5ae2c3d873ddd755ca905bebe10509ab4112a34be395e53ac15ba1f5f"
+    }
+  ]
+}

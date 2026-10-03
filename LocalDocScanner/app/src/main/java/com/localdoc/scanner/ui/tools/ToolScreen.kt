@@ -35,6 +35,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -67,6 +68,7 @@ import coil.compose.AsyncImage
 import com.localdoc.scanner.barcode.BarcodeDecoder
 import com.localdoc.scanner.cv.ScanFilter
 import com.localdoc.scanner.cv.DocumentLayouts
+import com.localdoc.scanner.cv.BookDewarp
 import com.localdoc.scanner.cv.Stitch
 import com.localdoc.scanner.cv.applyFilter
 import com.localdoc.scanner.data.FileStore
@@ -611,7 +613,7 @@ private fun PdfCompressFlow(
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("压缩档位", style = MaterialTheme.typography.titleSmall)
             ChipRow(listOf("微信", "邮件", "打印", "高清归档"), tier) { tier = it }
-            Text("说明：以栅格重编码方式压缩，文字层会变成位图。",
+            Text("仅压缩图片，保留可搜索文字、表单和批注。图片清晰度会降低；已经较小的文件保持原样。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -625,16 +627,17 @@ private fun PdfCompressFlow(
         val quality = intArrayOf(58, 70, 86, 94)[tier]
         val before = src.length()
         val out = File(FileStore.exportDir(ctx), "compress_${stamp()}.pdf")
-        val ok = PdfTools.compress(src, out, dpi, quality)
-        val after = if (ok) out.length() else 0L
+        val result = PdfTools.compressPreservingContent(src, out, dpi, quality)
+        val after = out.length()
         val saved = if (before > 0) ((before - after) * 100 / before) else 0
         FlowOutcome(
             listOf(
                 "压缩前" to fmtSize(before),
                 "压缩后" to fmtSize(after),
-                "节省" to "$saved%"
+                "节省" to "$saved%",
+                "图片处理" to if (result.retainedOriginal) "没有可进一步缩小的图片，已保留原文件内容" else "已优化${result.optimizedImages}张图片，文字与表单保留"
             ),
-            if (ok) listOf(out) else emptyList()
+            listOf(out)
         )
     }
 }
@@ -1272,6 +1275,8 @@ private fun ImageEditFlow(
     var mode by remember { mutableIntStateOf(0) }
     var bookSplit by remember { mutableFloatStateOf(0.5f) }
     var bookHint by remember { mutableStateOf("拖动分割线位置，预览左右页") }
+    var flattenBook by remember { mutableStateOf(false) }
+    var flattenHint by remember { mutableStateOf("") }
     LaunchedEffect(request.files, mode) {
         if (mode == 1) withContext(Dispatchers.Default) {
             ImageIo.loadFromFile(request.files.first(), 640)?.let { image ->
@@ -1283,15 +1288,26 @@ private fun ImageEditFlow(
         }
     }
     var livePreview by remember(request.files) { mutableStateOf<Bitmap?>(null) }
-    LaunchedEffect(request.files.map { it.absolutePath }, filter, rotation, mode, bookSplit) {
-        val next = withContext(Dispatchers.Default) {
+    LaunchedEffect(request.files.map { it.absolutePath }, filter, rotation, mode, bookSplit, flattenBook) {
+        if (mode == 1 && flattenBook) kotlinx.coroutines.delay(250)
+        var pendingPreview: Bitmap? = null
+        var pendingHint = ""
+        try {
+        withContext(Dispatchers.Default) {
+            pendingPreview =
             when (mode) {
                 1 -> {
-                    val source = ImageIo.loadFromFile(request.files.first(), 1400) ?: return@withContext null
-                    val (left, right) = DocumentLayouts.splitBookSpread(source, splitRatio = bookSplit)
-                    val combined = Stitch.vertical(listOf(left, right), 900)
-                    source.recycle(); left.recycle(); right.recycle()
-                    combined
+                    val source = ImageIo.loadFromFile(request.files.first(), if (flattenBook) 4000 else 1400) ?: return@withContext null
+                    val owned = mutableListOf(source)
+                    try {
+                        val (left, right) = DocumentLayouts.splitBookSpread(source, splitRatio = bookSplit)
+                        owned.addAll(listOf(left, right))
+                        val pages = if (flattenBook) listOf(left, right).map { page ->
+                            BookDewarp.flatten(page).also { owned.add(it.bitmap) }
+                        } else emptyList()
+                        pendingHint = pages.mapIndexed { index, page -> "${if (index == 0) "左页" else "右页"}：${page.note}" }.joinToString("\n")
+                        Stitch.vertical(if (flattenBook) pages.map { it.bitmap } else listOf(left, right), 900)
+                    } finally { owned.forEach { it.recycle() } }
                 }
                 2 -> {
                     val front = request.files.getOrNull(0)?.let { ImageIo.loadFromFile(it, 1200) }
@@ -1310,8 +1326,12 @@ private fun ImageEditFlow(
                 }
             }
         }
+        val next = pendingPreview
         livePreview?.takeIf { it !== next }?.recycle()
         livePreview = next
+        pendingPreview = null
+        flattenHint = pendingHint
+        } finally { pendingPreview?.recycle() }
     }
     DisposableEffect(Unit) { onDispose { livePreview?.recycle() } }
 
@@ -1325,6 +1345,12 @@ private fun ImageEditFlow(
                 Text("左页 ${ (bookSplit * 100).toInt() }% · 右页 ${ ((1f - bookSplit) * 100).toInt() }%")
                 Slider(value = bookSplit, onValueChange = { bookSplit = it }, valueRange = .2f.. .8f)
                 Text("调整书缝位置，拆分后的左右页可以分别裁边。", style = MaterialTheme.typography.bodySmall)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("按文字行曲率展平")
+                    Switch(checked = flattenBook, onCheckedChange = { flattenBook = it })
+                }
+                if (flattenBook) Text(flattenHint.ifBlank { "正在建立左右页展平模型…" }, style = MaterialTheme.typography.bodySmall)
             }
             if (mode == 2 && request.files.size < 2) {
                 Text("证件双面拼版需要一次选择正反面两张图片。", color = MaterialTheme.colorScheme.error)
@@ -1348,16 +1374,25 @@ private fun ImageEditFlow(
         if (mode == 1) {
             val source = ImageIo.loadFromFile(request.files.first(), 4000)
             if (source == null) return@ToolFlow FlowOutcome(listOf("结果" to "图片读取失败"), emptyList())
+            val owned = mutableListOf(source)
+            try {
             val (left, right) = DocumentLayouts.splitBookSpread(source, splitRatio = bookSplit)
+            owned.addAll(listOf(left, right))
+            val pages = if (flattenBook) listOf(left, right).map { page ->
+                BookDewarp.flatten(page).also { owned.add(it.bitmap) }
+            } else emptyList()
             val leftFile = File(FileStore.exportDir(ctx), "book_${stamp()}_左页.jpg")
             val rightFile = File(FileStore.exportDir(ctx), "book_${stamp()}_右页.jpg")
-            val ok = ImageIo.saveJpeg(left, leftFile, 94) && ImageIo.saveJpeg(right, rightFile, 94)
-            left.recycle(); right.recycle(); source.recycle()
+            val ok = ImageIo.saveJpeg(pages.getOrNull(0)?.bitmap ?: left, leftFile, 94) &&
+                ImageIo.saveJpeg(pages.getOrNull(1)?.bitmap ?: right, rightFile, 94)
+            val flattenSummary = pages.mapIndexed { index, page -> "${if (index == 0) "左页" else "右页"}：${page.note}" }.joinToString("；")
+            if (!ok) { leftFile.delete(); rightFile.delete() }
             return@ToolFlow FlowOutcome(
-                listOf("结果" to if (ok) "已拆为左右2页" else "保存失败"),
+                listOf("结果" to if (ok) "已拆为左右2页${if (flattenBook) "；$flattenSummary" else ""}" else "保存失败"),
                 if (ok) listOf(leftFile, rightFile) else emptyList(),
                 if (ok) listOf(leftFile, rightFile) else emptyList()
             )
+            } finally { owned.forEach { it.recycle() } }
         }
         if (mode == 2) {
             if (request.files.size < 2) return@ToolFlow FlowOutcome(listOf("结果" to "请重新选择正反面两张图片"), emptyList())

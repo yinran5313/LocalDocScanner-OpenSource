@@ -17,6 +17,7 @@ object Stitch {
                 b
             }
         }
+        try {
         val width = scaled.maxOf { it.width }
         val total = scaled.sumOf { it.height }
         if (width <= 0 || total <= 0) return null
@@ -29,5 +30,10 @@ object Stitch {
             y += bmp.height
         }
         return out
+        } finally {
+            scaled.forEachIndexed { index, bitmap ->
+                if (bitmap !== images[index]) bitmap.recycle()
+            }
+        }
     }
 }

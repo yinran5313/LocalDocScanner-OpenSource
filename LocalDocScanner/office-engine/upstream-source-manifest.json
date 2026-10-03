@@ -1,0 +1,362 @@
+[
+  {
+    "path": "android/lib/src/main/java/org/libreoffice/androidlib/COWebView.java",
+    "sha256": "b060db9fc7b9cb83ca8471952247e72eeab24628b887fb7e4330f8670308da00"
+  },
+  {
+    "path": "android/lib/src/main/java/org/libreoffice/androidlib/COWebViewClient.java",
+    "sha256": "b4b8ea1af4b7bcc635087c4c3ee762bb5e196c496f111dce1ba5bc0b441f94b1"
+  },
+  {
+    "path": "android/lib/src/main/java/org/libreoffice/androidlib/LOActivity.java",
+    "sha256": "0601228efd5c869092ba2fb87c23cb92b4f8b6ec233a251bc9dd1b9cfe797eb6"
+  },
+  {
+    "path": "android/lib/src/main/java/org/libreoffice/androidlib/lok/LokClipboardData.java",
+    "sha256": "4db2d38db81c0ea34d1f3fcc9b7dd2b956485d353d71ce7f2c06ff87fc3996c3"
+  },
+  {
+    "path": "android/lib/src/main/java/org/libreoffice/androidlib/lok/LokClipboardEntry.java",
+    "sha256": "c0e64bc967c15684c78bb7b295165b2f21e08f4df5373604d498b62191fd506c"
+  },
+  {
+    "path": "android/lib/src/main/java/org/libreoffice/androidlib/MobileSocket.java",
+    "sha256": "7fffba6a3c598de1617a048c341aa91f18538a1fd9ac61f5b0ddd4713875efc7"
+  },
+  {
+    "path": "android/lib/src/main/java/org/libreoffice/androidlib/PrintAdapter.java",
+    "sha256": "8d1838ec7a951e0dcca7b982b20133de2bc09bc4c6e7dda87f717f12bb3607cb"
+  },
+  {
+    "path": "android/lib/src/main/java/org/libreoffice/androidlib/ProgressDialog.java",
+    "sha256": "ded6690cb71fe18bf90e8ef14e783b19000ceaa1721ebaed9b9e4b489ec804a7"
+  },
+  {
+    "path": "android/lib/src/main/java/org/libreoffice/androidlib/RateAppController.java",
+    "sha256": "4c499c450e24ca1f57cb9ce72c07099ab0532545af517e044335f8a6e8bc0db5"
+  },
+  {
+    "path": "android/lib/src/main/java/org/libreoffice/androidlib/SlideShowActivity.java",
+    "sha256": "89a815f6c8eda65fae51e250a29169f96b65edf0aaaec5e08ce8f553c86222bb"
+  },
+  {
+    "path": "android/lib/src/main/java/org/libreoffice/androidlib/UriPathResolver.java",
+    "sha256": "20682495254ba06299c2ae2a2be49de65b228323aee4a3b5eaf19880a930c8b9"
+  },
+  {
+    "path": "android/lib/src/main/res/layout/lolib_activity_main.xml",
+    "sha256": "fa9d47e93253f09b1389ff8b563bb4e339f740d5b02edce0c50fb53d1cabe7a1"
+  },
+  {
+    "path": "android/lib/src/main/res/layout/lolib_activity_slide_show.xml",
+    "sha256": "7748eb4dc45e4a024d429e08d6b1b8b537cdc5dd3481ef49330494450709926a"
+  },
+  {
+    "path": "android/lib/src/main/res/layout/lolib_dialog_loading.xml",
+    "sha256": "9c6b6da2ba265a125036f50abb4d65c6e0a0629bc07d2023a7db57a6149b400b"
+  },
+  {
+    "path": "android/lib/src/main/res/layout/rate_app_layout.xml",
+    "sha256": "5d8042a3969018b1423337a56f4a76c9e7b4e75bb3822891572e394fef5bea79"
+  },
+  {
+    "path": "android/lib/src/main/res/values/strings.xml",
+    "sha256": "59fb0f507bf85c9fd840c3d326a7ba24411532b6eeb475d2de8b4017ef032791"
+  },
+  {
+    "path": "android/lib/src/main/res/values/values.xml",
+    "sha256": "ff23a5443b60c6502cdf96edc38929b15959bbcfbd11da1a79955adc8e9433fa"
+  },
+  {
+    "path": "android/lib/src/main/res/values-af/strings.xml",
+    "sha256": "5ecf6bc0108038c789bb06791c9965d8bdd4a3e9fc517fd363cd7c7556c83694"
+  },
+  {
+    "path": "android/lib/src/main/res/values-ar/strings.xml",
+    "sha256": "e7a50b0e2c7b3e679353c334242f1d7ebe793e0d7894ace745671b6a899de2a3"
+  },
+  {
+    "path": "android/lib/src/main/res/values-ast/strings.xml",
+    "sha256": "b0dfa7d535f0c77067d9b1963c3456450ea0b788a12e711c115fd4315ddad5a9"
+  },
+  {
+    "path": "android/lib/src/main/res/values-az/strings.xml",
+    "sha256": "0aed495e21a70cab045e3b4792a02f2c7ad68fc1687d73474a09db0b269bc041"
+  },
+  {
+    "path": "android/lib/src/main/res/values-b+be+Latn/strings.xml",
+    "sha256": "bfbb57a7801bd4275be84b2dc91bcfa4d5d71a7db4f40edd8dbd7681c8665495"
+  },
+  {
+    "path": "android/lib/src/main/res/values-bar/strings.xml",
+    "sha256": "2846c21a270f7e8f3e190ee821ac811229638dbad8c1c943d866fcbd2ccd58a6"
+  },
+  {
+    "path": "android/lib/src/main/res/values-bg/strings.xml",
+    "sha256": "50ed9655ff563b733050cffd0e58bc979c90e77b1166974d3d6f7d5870ebe7a6"
+  },
+  {
+    "path": "android/lib/src/main/res/values-bn/strings.xml",
+    "sha256": "8876748a074a704c63bee8cc291092072e490323acb69125b9f1da7e5ce7212c"
+  },
+  {
+    "path": "android/lib/src/main/res/values-br/strings.xml",
+    "sha256": "bfbb57a7801bd4275be84b2dc91bcfa4d5d71a7db4f40edd8dbd7681c8665495"
+  },
+  {
+    "path": "android/lib/src/main/res/values-brh/strings.xml",
+    "sha256": "0aed495e21a70cab045e3b4792a02f2c7ad68fc1687d73474a09db0b269bc041"
+  },
+  {
+    "path": "android/lib/src/main/res/values-ca/strings.xml",
+    "sha256": "bea36cf5ed9d11150f061cc7be045add9612b214be2f82efd927b0592402b8fb"
+  },
+  {
+    "path": "android/lib/src/main/res/values-cs/strings.xml",
+    "sha256": "8be08ef3b31f97cf20254d262745ce79dbf971be040c1d5ba8663dcccf3540e5"
+  },
+  {
+    "path": "android/lib/src/main/res/values-cy/strings.xml",
+    "sha256": "aa677fdb39a7c370941e66bdc5cacddabecaaaf1a2b6393f1a56097b677473f0"
+  },
+  {
+    "path": "android/lib/src/main/res/values-da/strings.xml",
+    "sha256": "9375be0ecbfa47ff5a12b36f90bea68a984267e88ded64f918c6ceb79b69166e"
+  },
+  {
+    "path": "android/lib/src/main/res/values-de/strings.xml",
+    "sha256": "c8e8d52ab47ef1fafd12bcc33bc302ad8d660ddf600a4156ebe7a32e5ffc6dc1"
+  },
+  {
+    "path": "android/lib/src/main/res/values-dsb/strings.xml",
+    "sha256": "d33f9cea786bc28063f5e4e6a67f6e678d3987ba5e52cc5da1481080e832086e"
+  },
+  {
+    "path": "android/lib/src/main/res/values-el/strings.xml",
+    "sha256": "e363444a7b8ec1a0bc7fb24c91ca8898bf7f5c338cfac0dc1e1e3c9e10b3f1ac"
+  },
+  {
+    "path": "android/lib/src/main/res/values-en-rAU/strings.xml",
+    "sha256": "6c0afabf20b5a7cd02972e98c90ad0c63324eb06ec4fefbe71e1306ef0d63d9e"
+  },
+  {
+    "path": "android/lib/src/main/res/values-en-rCA/strings.xml",
+    "sha256": "57936faab71d583b9f4f80c0b5535c0330fa5c08dc7ec4a67ff94cd5d1ca5255"
+  },
+  {
+    "path": "android/lib/src/main/res/values-en-rGB/strings.xml",
+    "sha256": "3243cbb9b0c78dfaed6a64cb243c57f84969367400a600c63f71fc53b5d41c62"
+  },
+  {
+    "path": "android/lib/src/main/res/values-en-rNZ/strings.xml",
+    "sha256": "e011161817616b68533fc7015017b4b378a5c624d2983f6d8ccdb301874f950a"
+  },
+  {
+    "path": "android/lib/src/main/res/values-en-rZA/strings.xml",
+    "sha256": "e011161817616b68533fc7015017b4b378a5c624d2983f6d8ccdb301874f950a"
+  },
+  {
+    "path": "android/lib/src/main/res/values-eo/strings.xml",
+    "sha256": "c16b6a990d93a7ad392b57a0e799eb0dc170b3cc2497abe5fe81d8d67993b5b8"
+  },
+  {
+    "path": "android/lib/src/main/res/values-es/strings.xml",
+    "sha256": "86e99f37083c80ed2bd179e1bd35a69a3570af2ed3e729df825f28b218eb4a10"
+  },
+  {
+    "path": "android/lib/src/main/res/values-et/strings.xml",
+    "sha256": "1ff1d5203b7ec62da2ee4a9654bc676ba764d252cb30bfc914bf90f60e997ff8"
+  },
+  {
+    "path": "android/lib/src/main/res/values-eu/strings.xml",
+    "sha256": "cc96307f26e2b262d39bd96e21017635df57f45a32338091d6df0db147880c58"
+  },
+  {
+    "path": "android/lib/src/main/res/values-fa/strings.xml",
+    "sha256": "c5587663ba393bdac3741c065d5b11b2850fc3b2c4eb26653e2443f395e6ae2c"
+  },
+  {
+    "path": "android/lib/src/main/res/values-fi/strings.xml",
+    "sha256": "5a5065d2ddab27079ecb8db227f16376933879004ccdee5dcfd561d601078c88"
+  },
+  {
+    "path": "android/lib/src/main/res/values-fr/strings.xml",
+    "sha256": "331e31690ac62a841d8d431ae82f187fcc6c4cd81b739a803522a40a508d508d"
+  },
+  {
+    "path": "android/lib/src/main/res/values-fy/strings.xml",
+    "sha256": "bfbb57a7801bd4275be84b2dc91bcfa4d5d71a7db4f40edd8dbd7681c8665495"
+  },
+  {
+    "path": "android/lib/src/main/res/values-ga/strings.xml",
+    "sha256": "a1a3ea9392942d6984111e0a82b45ddbc8f09a901088ef8ed4202fe985cfbbab"
+  },
+  {
+    "path": "android/lib/src/main/res/values-gl/strings.xml",
+    "sha256": "600570a3a8f12015623bdc8b8ff4304f55ddeef935b2be844c86fc71a0fabb3c"
+  },
+  {
+    "path": "android/lib/src/main/res/values-he/strings.xml",
+    "sha256": "c3caa763b37eb3a80dcd11c52524fe42eda710d4dd2747cdde363066edbb032b"
+  },
+  {
+    "path": "android/lib/src/main/res/values-hi/strings.xml",
+    "sha256": "421f483f13a00b2f0a1abf26100e2797bade719d6a94e231901afb4e8c0c428f"
+  },
+  {
+    "path": "android/lib/src/main/res/values-hr/strings.xml",
+    "sha256": "82b712a00fe2e7c56d3f5f7e02423efe7615127d6dbfd22f8290406a86002906"
+  },
+  {
+    "path": "android/lib/src/main/res/values-hsb/strings.xml",
+    "sha256": "9280438bf36d241fedf958a58e80ea0de6f045f497e06bc5ba0923a35b32f08d"
+  },
+  {
+    "path": "android/lib/src/main/res/values-hu/strings.xml",
+    "sha256": "27263d975cba185e4719a88672e15c193fe6eff1cb02ff6b228beef8718357c9"
+  },
+  {
+    "path": "android/lib/src/main/res/values-hy/strings.xml",
+    "sha256": "5fd67f9226f234a6eea5bb750c2cd65fa1be7a4363fa67465ea648e41076664d"
+  },
+  {
+    "path": "android/lib/src/main/res/values-ia/strings.xml",
+    "sha256": "4ef375d59d57c4badb900b74c10fac61cfd9131e91a67fdef1c46d62b2707d14"
+  },
+  {
+    "path": "android/lib/src/main/res/values-id/strings.xml",
+    "sha256": "8a1b352934c1177c2b9372f37cc1377afea9a10a390079e47373f7d5884532e2"
+  },
+  {
+    "path": "android/lib/src/main/res/values-is/strings.xml",
+    "sha256": "3a637f1b573f6dbf812f862e3e9b13a7a4c2eb7447ca9d3dd63e6405c9f06d31"
+  },
+  {
+    "path": "android/lib/src/main/res/values-it/strings.xml",
+    "sha256": "3c74c3d7c748fb3d93168bd0b5e322dfc1c3eef2bfd72ebd7c65fbd746a8bf3e"
+  },
+  {
+    "path": "android/lib/src/main/res/values-ja/strings.xml",
+    "sha256": "91c60f2d702acf216d8da8aace6052f418354310c1293e4e4062cd8818abd4e7"
+  },
+  {
+    "path": "android/lib/src/main/res/values-jv/strings.xml",
+    "sha256": "bfbb57a7801bd4275be84b2dc91bcfa4d5d71a7db4f40edd8dbd7681c8665495"
+  },
+  {
+    "path": "android/lib/src/main/res/values-kab/strings.xml",
+    "sha256": "0126ed0eacec7a40c3b52d71da88f6bbab977b70c4a9854f07d00055fcc32324"
+  },
+  {
+    "path": "android/lib/src/main/res/values-ko/strings.xml",
+    "sha256": "4065a98714411b67bcf446bbdfa7f1b6e7fecdc66fb7580a253973b619c0a8c1"
+  },
+  {
+    "path": "android/lib/src/main/res/values-large/large-screen.xml",
+    "sha256": "5c83742c3e92a366f56cb6d772d0c563eb4c82a30d34300ed5f138bc3875098b"
+  },
+  {
+    "path": "android/lib/src/main/res/values-lo/strings.xml",
+    "sha256": "9616be4fd0ead950ca3ff34c6f83fd7f6834600e4f25862b5fdebbe04e8ca600"
+  },
+  {
+    "path": "android/lib/src/main/res/values-ml/strings.xml",
+    "sha256": "5fef381be57f9a6c1228509d8aedc035a0fba49016cb7345b4a372dd58b44acb"
+  },
+  {
+    "path": "android/lib/src/main/res/values-nb-rNO/strings.xml",
+    "sha256": "c547c9b0f10c4a883d1fe7feee30b8ea2ee1e8a8cef67a9dbb5e46488c9b31e4"
+  },
+  {
+    "path": "android/lib/src/main/res/values-ne/strings.xml",
+    "sha256": "c179c1798903bea5912b01cc16fa8e1ebc74931c52d1a08f033870bc4de77d29"
+  },
+  {
+    "path": "android/lib/src/main/res/values-nl/strings.xml",
+    "sha256": "1ef1418f0e10ee84ddc0f22ddfff45d61fb412a7f9f50b591b4a920d3a7d8446"
+  },
+  {
+    "path": "android/lib/src/main/res/values-nn/strings.xml",
+    "sha256": "bfbb57a7801bd4275be84b2dc91bcfa4d5d71a7db4f40edd8dbd7681c8665495"
+  },
+  {
+    "path": "android/lib/src/main/res/values-oc/strings.xml",
+    "sha256": "bfbb57a7801bd4275be84b2dc91bcfa4d5d71a7db4f40edd8dbd7681c8665495"
+  },
+  {
+    "path": "android/lib/src/main/res/values-or/strings.xml",
+    "sha256": "bfbb57a7801bd4275be84b2dc91bcfa4d5d71a7db4f40edd8dbd7681c8665495"
+  },
+  {
+    "path": "android/lib/src/main/res/values-pl/strings.xml",
+    "sha256": "c37b07660cbedc1fd0e8acc6eb809e6c4489a61e5497215fa98ac020022caac7"
+  },
+  {
+    "path": "android/lib/src/main/res/values-pt/strings.xml",
+    "sha256": "378f72f67327a7667b18fa2a4356727e1c42f100006100b25ec5a2b81929e687"
+  },
+  {
+    "path": "android/lib/src/main/res/values-pt-rBR/strings.xml",
+    "sha256": "182cda37db05f0ee9f18c3ee16300bc431767c7ea6ca9c9280be3997fdf5609d"
+  },
+  {
+    "path": "android/lib/src/main/res/values-ro/strings.xml",
+    "sha256": "51da9bec84f51d2808ccdf20e07f3918c940d9a889fb14034a1395ae5c9017d2"
+  },
+  {
+    "path": "android/lib/src/main/res/values-ru/strings.xml",
+    "sha256": "2661d759d393245399e155c051f7966c6f1f4d346183fe4c2bb89e30d15837d1"
+  },
+  {
+    "path": "android/lib/src/main/res/values-si/strings.xml",
+    "sha256": "4f996545084e548ea5723c43ef4f9b8e5d1d8bdcc9ab429af65ebfc404fbab8d"
+  },
+  {
+    "path": "android/lib/src/main/res/values-sk/strings.xml",
+    "sha256": "ae86e749e14531a80144411e5d050ccb38b37ffe2581f3e7eb461990ae2d6a36"
+  },
+  {
+    "path": "android/lib/src/main/res/values-sl/strings.xml",
+    "sha256": "532087155041dfe4f3e47134346d396bb905131eb62d09c5a6842f348cbfea96"
+  },
+  {
+    "path": "android/lib/src/main/res/values-sq/strings.xml",
+    "sha256": "9e47ccbef71192002b8c35a42557a90adae620b2b79665cc348be9ad3909230c"
+  },
+  {
+    "path": "android/lib/src/main/res/values-su/strings.xml",
+    "sha256": "0aed495e21a70cab045e3b4792a02f2c7ad68fc1687d73474a09db0b269bc041"
+  },
+  {
+    "path": "android/lib/src/main/res/values-sv/strings.xml",
+    "sha256": "1ca1d2bc29f7e6c289a3b77bca383db969249c008785e17db087e6ed806686c5"
+  },
+  {
+    "path": "android/lib/src/main/res/values-ta/strings.xml",
+    "sha256": "c8a856d62ef6bc0ac9ca5f53bd4af2666975dcde6a05e31f25f8e9c85d8b2d95"
+  },
+  {
+    "path": "android/lib/src/main/res/values-tr/strings.xml",
+    "sha256": "e5f32ca43ad5280cb2de8c7ff810275f926969f493bf79907d1902448dfb22ef"
+  },
+  {
+    "path": "android/lib/src/main/res/values-uk/strings.xml",
+    "sha256": "30497878ec34cfcf8e4d293f0b7e06889b8e541f22eb148efdb067ba93ab1506"
+  },
+  {
+    "path": "android/lib/src/main/res/values-ur/strings.xml",
+    "sha256": "0aed495e21a70cab045e3b4792a02f2c7ad68fc1687d73474a09db0b269bc041"
+  },
+  {
+    "path": "android/lib/src/main/res/values-vi/strings.xml",
+    "sha256": "311c38ed4c85f7d3dbe8371db21731eafb1dbbd3538c6cd28ac509c24f997507"
+  },
+  {
+    "path": "android/lib/src/main/res/values-zh-rCN/strings.xml",
+    "sha256": "0b4fe3cf5b23f5533185e37fb3a75720b8e1b58f9476dc3bc11c0ae438f45edb"
+  },
+  {
+    "path": "android/lib/src/main/res/values-zh-rTW/strings.xml",
+    "sha256": "dfc4c29293fe0052293767f5724473f790df757e199589bbcd6e5c6e7a525ebe"
+  }
+]

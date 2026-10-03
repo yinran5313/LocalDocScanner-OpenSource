@@ -23,3 +23,5 @@ dependencyResolutionManagement {
 rootProject.name = "LocalDocScanner"
 include(":app")
 include(":ppocr-sdk")
+include(":office-engine")
+include(":scan-native")

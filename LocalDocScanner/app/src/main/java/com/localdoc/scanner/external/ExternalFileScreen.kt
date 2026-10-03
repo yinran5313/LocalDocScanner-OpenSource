@@ -90,6 +90,7 @@ fun ExternalFileScreen(
     var hashBeforeEngine by remember(external) { mutableStateOf("") }
     var textDirty by remember(external) { mutableStateOf(false) }
     var confirmClose by remember(external) { mutableStateOf(false) }
+    var openOfficeOnLoad by remember(external) { mutableStateOf(isOffice) }
     val edits = remember(external) { mutableStateMapOf<String, String>() }
 
     BackHandler {
@@ -139,7 +140,7 @@ fun ExternalFileScreen(
         onDispose { if (!latestRetain) latestFile?.delete() }
     }
 
-    val engineLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+    val engineLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { engineResult ->
         scope.launch {
             busy = true
             delay(500)
@@ -156,8 +157,10 @@ fun ExternalFileScreen(
                 OutputHistoryStore.recordGenerated(context, file, resolvedMime)
                 status = if (hashBeforeEngine.isNotBlank() && refreshed.first != hashBeforeEngine) {
                     "完整引擎的修改已回到工作副本；请预览后保存到手机。"
-                } else {
+                } else if (engineResult.resultCode == android.app.Activity.RESULT_OK) {
                     "已从完整引擎返回。工作副本已保留，可再次打开或保存到手机。"
+                } else {
+                    "编辑器已关闭，未检测到修改。工作副本已保留；若编辑器未能打开，可重试。"
                 }
             }
             engineInfo = OfficeEngineBridge.installed(context)
@@ -216,6 +219,13 @@ fun ExternalFileScreen(
                 status = "完整引擎已安装，但没有找到可编辑此格式的页面"
                 busy = false
             }
+        }
+    }
+
+    LaunchedEffect(localFile, busy) {
+        if (openOfficeOnLoad && localFile != null && !busy && engineInfo?.embedded == true) {
+            openOfficeOnLoad = false
+            openFullEngine()
         }
     }
 
@@ -423,7 +433,7 @@ private fun OfficeWorkspaceBody(
                     } else {
                         Text("完整引擎：${engine.label} ${engine.versionName}")
                         Text("点“完整Office编辑”进入真实排版界面；完成后用返回键回到这里，再保存到手机。")
-                        if (!engine.officialFdroidSignature) {
+                        if (!engine.embedded && !engine.officialFdroidSignature) {
                             Text("当前引擎签名与官方F-Droid版不同，请确认安装来源。", color = MaterialTheme.colorScheme.error)
                         }
                     }

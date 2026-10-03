@@ -13,4 +13,7 @@ keystore.properties
 *.aab
 *.part
 __pycache__/
-
+.asset-cache/
+.cxx/
+office-engine/src/main/assets/
+office-engine/src/main/jniLibs/

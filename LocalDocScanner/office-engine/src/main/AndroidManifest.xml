@@ -1,0 +1,14 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity android:name="org.libreoffice.androidlib.LOActivity"
+            android:exported="false" android:process=":office"
+            android:theme="@style/LocalDocOfficeTheme"
+            android:configChanges="orientation|screenSize|screenLayout|keyboard|keyboardHidden|uiMode"
+            android:windowSoftInputMode="adjustResize" />
+        <activity android:name="org.libreoffice.androidlib.SlideShowActivity"
+            android:exported="false" android:process=":office"
+            android:theme="@style/LocalDocOfficeTheme"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
+            android:screenOrientation="sensorLandscape" />
+    </application>
+</manifest>

@@ -8,7 +8,7 @@ weights, fonts or dependencies. Preserve their notices when redistributing.
 | OpenCV | `org.opencv:opencv:4.12.0`, [opencv/opencv 4.12.0](https://github.com/opencv/opencv/tree/4.12.0) | Apache-2.0, `app/src/main/assets/third_party/opencv_Apache-2.0.txt` | Native contours, perspective transform, morphology, LAB processing; reused binary shared with OCR |
 | ZynkSoftware scanner | [f6e20370](https://github.com/zynkware/Document-Scanning-Android-SDK/tree/f6e20370deb5ad30aa5742cf8e9f4838926067d3), `DocumentScanner/src/main/java/com/zynksoftware/documentscanner/common/utils/PerspectiveTransformation.kt` and `OpenCvNativeBridge.kt` | MIT **file headers**, Copyright 2020 ZynkSoftware SRL; `ZynkSoftware_MIT.txt` | Adapted perspective and contour pipeline in `OpenCvDocument.kt`; no TinyOpenCV or upstream UI bundled |
 | flatpage | [6e86a5f8](https://github.com/chaxus/flatpage/tree/6e86a5f834f3bd8d03466e3b4f39848d560dc003), `tools/dewarp.py` `_estimate_background`, `flatten_illumination` | MIT, Copyright 2026 chaxus; `flatpage_MIT.txt` | LAB background closing/division port; target background adjusted to 235; not a claim of full curve dewarping |
-| Leptonica | [8fdef8f5](https://github.com/DanBloomberg/leptonica/tree/8fdef8f58ea3747ea3ae6525d03c3568a9f3fdf6), `src/pix3.c` `pixCountPixelsByColumn` | BSD-2-Clause, Copyright 2001-2020 Leptonica; `leptonica_BSD.txt` | Column projection adaptation for book gutter suggestion; **dewarp native library not bundled** |
+| Leptonica | [8fdef8f5](https://github.com/DanBloomberg/leptonica/tree/8fdef8f58ea3747ea3ae6525d03c3568a9f3fdf6), `src/pix3.c`, `dewarp2.c`, `dewarp3.c`, `dewarp4.c` | BSD-2-Clause; original license and headers retained under `scan-native/third_party/leptonica` | Native text-line page dewarping with model validation and unchanged fallback; image codecs and utility programs disabled |
 | PaddleOCR | [dab3fe35](https://github.com/PaddlePaddle/PaddleOCR/tree/dab3fe35379033fdcb2d0e9572fac0b36c9a9ebf), `deploy/ppocr-android/ppocr-sdk/` | Apache-2.0; `ppocr-sdk/LICENSE-PaddleOCR.txt`; original per-file headers retained | Vendored SDK, local adaptations; PP-OCRv6 tiny/medium ONNX assets |
 | PP-OCRv6 ONNX weights | Official PaddlePaddle tiny/medium detection and recognition repositories; exact revisions in `app/src/main/assets/third_party/ocr_models_sources.json` | Apache-2.0 on each official model card; binary hashes in `binary-assets.json` | Offline OCR; the SDK license alone is not used to infer the model license |
 | ONNX Runtime | `com.microsoft.onnxruntime:onnxruntime-android:1.21.1` | MIT, `onnxruntime_MIT.txt`, dependency notices | Local OCR inference |
@@ -23,10 +23,23 @@ weights, fonts or dependencies. Preserve their notices when redistributing.
 
 GPL/AGPL repositories inspected for comparison are kept outside this app and are
 not copied or included in its distribution. ScanTailor's page splitting is a
-reference only. `mzucker/page_dewarp` (MIT) and Leptonica's BSD dewarp model are
-researched candidates, not implemented features.
+reference only. `mzucker/page_dewarp` (MIT) remains a researched alternative.
 
-The current Office bridge starts an independently installed official Collabora.
-No Collabora source/native editor is embedded in this version. A future embedded
-build must have its own complete MPL-2.0/file-level and dependency inventory;
-the main MIT license cannot replace those obligations.
+## Embedded Office 26.04.3.1
+
+`office-engine` compiles Java and Android resources from the matching official
+[20a46c332c38 source](https://github.com/CollaboraOnline/online.mirror/tree/20a46c332c380925803a1fe538a545c6f9b8fce7).
+`LOActivity.java` is modified under MPL-2.0; original headers and `office-engine/COPYING`
+remain. Native libraries and engine/browser data come from the verified official
+ARM64 runtime listed in `office-engine/runtime-manifest.json` (all paths and hashes).
+No upstream APK dex, Android app shell, manifest, certificate, or private key is copied.
+See `office-engine/README.md` for exact modifications and source recovery.
+
+The upstream combined license and NOTICE are distributed unchanged at
+`assets/license.html` and `assets/notice.txt`, accessible in Settings → Office许可与源码.
+They include the licenses/attribution for the native engine, NSS/NSPR, LLVM C++ runtime,
+browser components and fonts. Cairo/Hunspell components offering MPL are used under
+that option; merely mentioning GPL in a multi-license notice does not select GPL.
+Independent spell dictionaries/extensions are excluded from the curated runtime
+because their exact individual license inventory has not been established.
+The main MIT license does not replace any MPL/other component obligations.

@@ -98,7 +98,7 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit, modifier: Modifier = Mo
                     Text("完整Office引擎", style = MaterialTheme.typography.titleMedium)
                     val engine = officeEngine
                     if (engine == null) {
-                        Text("尚未检测到Collabora Office。安装官方引擎后，可完整编辑Word、Excel、PPT及旧版Office文件。")
+                        Text("内置Office组件没有就绪，请检查安装包是否完整。")
                         Button(
                             onClick = { OfficeEngineBridge.openInstallPage(context) },
                             modifier = Modifier.fillMaxWidth()
@@ -106,15 +106,19 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit, modifier: Modifier = Mo
                     } else {
                         Text("已连接：${engine.label} ${engine.versionName}")
                         Text(
-                            if (engine.officialFdroidSignature) "签名与官方F-Droid稳定版一致。"
+                            if (engine.embedded) "已内置在本应用，可离线阅读和编辑Word、Excel、PPT。"
+                            else if (engine.officialFdroidSignature) "签名与官方F-Droid稳定版一致。"
                             else "当前安装包签名与官方F-Droid版不同；可能来自Google Play或其他渠道。",
-                            color = if (engine.officialFdroidSignature) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                            color = if (engine.embedded || engine.officialFdroidSignature) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                         )
                     }
                     TextButton(
                         onClick = { officeEngine = OfficeEngineBridge.installed(context) },
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("重新检测") }
+                    TextButton(onClick = {
+                        context.startActivity(android.content.Intent(context, com.localdoc.scanner.office.OfficeLicenseActivity::class.java))
+                    }) { Text("Office许可与源码") }
                 }
             }
             Card(Modifier.fillMaxWidth()) {

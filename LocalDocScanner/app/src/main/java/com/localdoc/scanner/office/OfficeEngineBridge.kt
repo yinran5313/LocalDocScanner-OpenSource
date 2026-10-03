@@ -5,6 +5,7 @@ import android.content.ClipData
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.ComponentName
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -17,11 +18,12 @@ data class OfficeEngineInfo(
     val label: String,
     val versionName: String,
     val officialFdroidSignature: Boolean,
-    val snapshot: Boolean
+    val snapshot: Boolean,
+    val embedded: Boolean = false
 )
 
 /**
- * 将Office工作副本交给官方Collabora/LibreOffice完整引擎。
+ * 将 Office 工作副本交给同一应用包中的 Collabora 完整引擎。
  * 主App仅授予当前content URI读写权限，不授予整个文档库目录。
  */
 object OfficeEngineBridge {
@@ -30,10 +32,19 @@ object OfficeEngineBridge {
     const val OFFICIAL_FDROID_CERT_SHA256 = "573258c84e149b5f4d9299e7434b2b69a8410372921d4ae586ba91ec767892cc"
     const val OFFICIAL_INSTALL_PAGE = "https://www.collaboraonline.com/collabora-office-android-ios/"
     private val packages = listOf(STABLE_PACKAGE, SNAPSHOT_PACKAGE)
+    const val EMBEDDED_ACTIVITY = "org.libreoffice.androidlib.LOActivity"
 
     @SuppressLint("InlinedApi")
     fun installed(context: Context): OfficeEngineInfo? {
         val pm = context.packageManager
+        val embedded = runCatching {
+            @Suppress("DEPRECATION")
+            pm.getActivityInfo(ComponentName(context.packageName, EMBEDDED_ACTIVITY), 0)
+        }.getOrNull()
+        if (embedded != null && embedded.enabled) {
+            return OfficeEngineInfo(context.packageName, "Collabora Office（内置）", "26.04.3.1",
+                officialFdroidSignature = false, snapshot = false, embedded = true)
+        }
         return packages.firstNotNullOfOrNull { packageName ->
             runCatching {
                 val info = if (Build.VERSION.SDK_INT >= 33) {
@@ -71,7 +82,8 @@ object OfficeEngineBridge {
 
     fun editIntent(context: Context, uri: Uri, mime: String, engine: OfficeEngineInfo): Intent =
         Intent(Intent.ACTION_EDIT).apply {
-            setPackage(engine.packageName)
+            if (engine.embedded) component = ComponentName(context.packageName, EMBEDDED_ACTIVITY)
+            else setPackage(engine.packageName)
             setDataAndType(uri, mime)
             clipData = ClipData.newUri(context.contentResolver, "Office工作副本", uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
