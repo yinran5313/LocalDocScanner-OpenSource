@@ -18,7 +18,9 @@ data class DocEntity(
     val ocrText: String = "",
     val locked: Boolean = false,
     val deleted: Boolean = false,
-    @ColumnInfo(defaultValue = "") val coverPath: String = ""
+    @ColumnInfo(defaultValue = "") val coverPath: String = "",
+    @ColumnInfo(defaultValue = "''") val ocrCorrection: String = "",
+    @ColumnInfo(defaultValue = "''") val ocrLegacyText: String = ""
 )
 
 @Entity(tableName = "pages", indices = [Index("docId")])

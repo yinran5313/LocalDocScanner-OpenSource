@@ -11,5 +11,6 @@ data class DocItem(
     val folder: String? = null,
     val tags: String = "",
     val ocrText: String = "",
-    val createdAt: Long = updatedAt
+    val createdAt: Long = updatedAt,
+    val legacyOcrText: String = ""
 )

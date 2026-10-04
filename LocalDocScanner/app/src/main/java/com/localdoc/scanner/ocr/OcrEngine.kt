@@ -29,12 +29,6 @@ interface OcrEngine {
     suspend fun close() = Unit
 }
 
-object PlaceholderOcrEngine : OcrEngine {
-    override val available: Boolean get() = false
-    override val label: String get() = "PP-OCRv6（尚未内置）"
-    override suspend fun recognize(bitmap: Bitmap, precise: Boolean) = OcrOutcome("", 0, 0, 0)
-}
-
 class PaddleOcrEngine(context: Context) : OcrEngine {
     private val app = context.applicationContext
     // UI tools and background jobs share one model pool and one inference lock.

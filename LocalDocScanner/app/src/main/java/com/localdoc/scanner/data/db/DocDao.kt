@@ -25,15 +25,14 @@ interface DocDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertDoc(doc: DocEntity)
 
-    @Update
-    suspend fun updateDoc(doc: DocEntity)
-
     @Query("UPDATE docs SET title = :title, updatedAt = :now WHERE id = :id")
     suspend fun renameDoc(id: String, title: String, now: Long)
     @Query("UPDATE docs SET folder = :folder, tags = :tags, updatedAt = :now WHERE id = :id")
     suspend fun organizeDoc(id: String, folder: String?, tags: String, now: Long)
     @Query("UPDATE docs SET ocrText = :text, updatedAt = :now WHERE id = :id")
     suspend fun setDocOcr(id: String, text: String, now: Long)
+    @Query("UPDATE docs SET ocrCorrection = :text, updatedAt = :now WHERE id = :id")
+    suspend fun setDocCorrection(id: String, text: String, now: Long)
     @Query("UPDATE docs SET pageCount = :count, sizeBytes = :bytes, coverPath = :cover, updatedAt = :now WHERE id = :id")
     suspend fun setDocMeta(id: String, count: Int, bytes: Long, cover: String, now: Long)
 
@@ -73,9 +72,6 @@ interface DocDao {
     @Query("DELETE FROM pages WHERE docId = :docId")
     suspend fun deletePages(docId: String)
 
-    @Query("DELETE FROM pages WHERE id = :pageId")
-    suspend fun deletePageForever(pageId: String)
-
-    @Query("SELECT * FROM docs WHERE deleted = 0 AND (title LIKE '%' || :q || '%' OR ocrText LIKE '%' || :q || '%') ORDER BY updatedAt DESC")
+    @Query("SELECT * FROM docs WHERE deleted = 0 AND (title LIKE '%' || :q || '%' OR ocrText LIKE '%' || :q || '%' OR ocrCorrection LIKE '%' || :q || '%') ORDER BY updatedAt DESC")
     suspend fun search(q: String): List<DocEntity>
 }

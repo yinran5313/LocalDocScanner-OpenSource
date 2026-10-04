@@ -32,3 +32,7 @@ python tools/check_embedded_office.py app/build/outputs/apk/debug/app-debug.apk
 恢复脚本核验原官方APK SHA256，只导入清单允许的库/数据；不覆盖已存在但内容不同的文件。可用`--apk`指定已下载原包，`--verify`只校验。Gradle构建也会核验每个保留文件，缺失时直接失败。
 
 最终APK检查覆盖内容哈希、ABI、ELF依赖、JNI入口和16KB LOAD对齐；它不执行Android代码。中文DOCX分页、XLSX公式和PPTX对象修改→保存→重开→分享仍须在手机上验收。
+
+## V4.4.2 宿主应用锁会话
+
+本项目修改LOActivity.java及SlideShowActivity.java的resume/stop生命周期，在未解锁时覆盖编辑器并请求宿主解锁，保留现有编辑器实例和自动保存逻辑。两份上游文件继续遵守原MPL-2.0头。新增com/localdoc/scanner/office/HostLockSession.java为本项目自有MIT代码，使用应用私有文件锁同步主/Office进程，不存PIN。

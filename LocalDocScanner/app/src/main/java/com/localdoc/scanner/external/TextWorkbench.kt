@@ -52,9 +52,20 @@ private fun CsvGrid(text: String, onTextChange: (String) -> Unit, tabSeparated: 
     var page by rememberSaveable { mutableIntStateOf(0) }
     var pageInput by rememberSaveable { mutableStateOf("1") }
     val delimiter = listOf(',', '\t', ';')[delimiterIndex]
-    val parsed = remember(text, delimiter) { runCatching { CsvDocument.parse(text, delimiter) } }
+    var parsed by remember(delimiter) { mutableStateOf(runCatching { CsvDocument.parse(text, delimiter) }) }
+    var emitted by remember(delimiter) { mutableStateOf<String?>(null) }
+    LaunchedEffect(text, delimiter) {
+        if (text != emitted) parsed = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { runCatching { CsvDocument.parse(text, delimiter) } }
+    }
     val document = parsed.getOrNull()
-    fun commit(rows: List<List<String>>) { if (document != null) onTextChange(document.encode(rows)) }
+    fun commit(rows: List<List<String>>) {
+        if (document != null) {
+            val next = document.copy(rows = rows)
+            val serialized = next.encode(rows)
+            parsed = Result.success(next); emitted = serialized
+            onTextChange(serialized)
+        }
+    }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             listOf("逗号", "制表符", "分号").forEachIndexed { i, label ->

@@ -24,7 +24,6 @@ data class OutputRecord(
 object OutputHistoryStore {
     private const val PREFS = "output_history"
     private const val KEY = "records"
-    private const val LIMIT = 100
     private val lock = Any()
 
     fun all(context: Context): List<OutputRecord> = synchronized(lock) {
@@ -64,7 +63,7 @@ object OutputHistoryStore {
         )
         if (existing >= 0) current.removeAt(existing)
         current.add(0, record)
-        write(context, current.take(LIMIT))
+        write(context, current)
         record
     }
 
@@ -83,11 +82,13 @@ object OutputHistoryStore {
             createdAt = System.currentTimeMillis()
         )
         current.add(0, updated)
-        write(context, current.take(LIMIT))
+        write(context, current)
         updated
     }
 
     fun recordDirectSaved(context: Context, name: String, mime: String, uri: Uri, label: String): OutputRecord = synchronized(lock) {
+        runCatching { context.contentResolver.takePersistableUriPermission(uri,
+            android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
         val record = OutputRecord(
             id = UUID.randomUUID().toString(),
             name = displayName(context, uri).ifBlank { name },
@@ -99,7 +100,7 @@ object OutputHistoryStore {
             savedLabel = label
         )
         val current = allUnlocked(context).toMutableList().apply { add(0, record) }
-        write(context, current.take(LIMIT))
+        write(context, current)
         record
     }
 

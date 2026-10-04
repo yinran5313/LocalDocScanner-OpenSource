@@ -35,6 +35,7 @@ class FullTextIndex(context: Context) : SQLiteOpenHelper(context.applicationCont
         require(body.isNotBlank()) { "${file.name}没有文字层或受密码保护，请先OCR/解锁" }
         put("file:${file.absolutePath}", name, file.absolutePath, body)
     }
+    fun removeScan(id: String) { writableDatabase.delete("content_index", "item_key=?", arrayOf("scan:$id")) }
     fun clear() { writableDatabase.delete("content_index", null, null) }
     fun search(query: String): List<SearchHit> {
         val literal = "%" + query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"

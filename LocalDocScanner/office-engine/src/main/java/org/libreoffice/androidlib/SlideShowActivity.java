@@ -22,6 +22,9 @@ import android.webkit.WebView;
 
 public class SlideShowActivity extends AppCompatActivity {
 
+    private final com.localdoc.scanner.office.HostLockSession.OfficeGate localDocLockGate = new com.localdoc.scanner.office.HostLockSession.OfficeGate();
+    @Override protected void onResume() { super.onResume(); localDocLockGate.resume(this); }
+    @Override protected void onStop() { localDocLockGate.leave(this); super.onStop(); }
     private WebView slideShowWebView;
     private String slidesSvgUri;
 

@@ -24,6 +24,6 @@ internal object SensitiveRegionDetector {
                     if (right <= x || bottom <= y) null else SensitiveRegion(page, labels.joinToString("、"), box.text, NormalizedRect(x, y, right - x, bottom - y))
                 }
             }
-        } finally { bitmap.recycle(); engine.close() }
+        } finally { bitmap.recycle(); kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { engine.close() } }
     }
 }

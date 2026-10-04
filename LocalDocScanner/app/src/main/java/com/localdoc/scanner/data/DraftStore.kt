@@ -23,6 +23,7 @@ data class ScanDraft(
     val title: String = "",
     val appendDocId: String? = null,
     val pages: List<DraftPage> = emptyList(),
+    val recoveryError: String = "",
     val updatedAt: Long = System.currentTimeMillis()
 )
 
@@ -39,12 +40,13 @@ object DraftStore {
         return runCatching {
             val json = JSONObject(file.readText(Charsets.UTF_8))
             val pagesJson = json.optJSONArray("pages") ?: JSONArray()
+            val missing = mutableListOf<Int>()
             val pages = buildList {
                 for (index in 0 until pagesJson.length()) {
                     val item = pagesJson.optJSONObject(index) ?: continue
                     val source = item.optString("sourcePath")
                     val rendered = item.optString("renderedPath")
-                    if (!File(source).exists() || !File(rendered).exists()) continue
+                    if (!File(source).isFile || !File(rendered).isFile) missing += index + 1
                     val filter = runCatching { ScanFilter.valueOf(item.optString("filter", "AUTO")) }
                         .getOrDefault(ScanFilter.AUTO)
                     add(
@@ -71,9 +73,10 @@ object DraftStore {
                 title = json.optString("title"),
                 appendDocId = json.optString("appendDocId").takeIf { it.isNotBlank() },
                 pages = pages,
+                recoveryError = if (missing.isEmpty()) "" else "草稿第${missing.joinToString()}页文件缺失，请先备份原始草稿，再修复或明确放弃。",
                 updatedAt = json.optLong("updatedAt", System.currentTimeMillis())
             )
-        }.getOrElse { ScanDraft() }
+        }.getOrElse { ScanDraft(recoveryError = "草稿清单无法读取：${it.message}。原文件保留，请先备份后处理。") }
     }
 
     fun start(context: Context, appendDocId: String? = null): ScanDraft {
@@ -164,6 +167,7 @@ object DraftStore {
     }
 
     private fun save(context: Context, draft: ScanDraft) {
+        require(draft.recoveryError.isBlank()) { draft.recoveryError }
         val root = FileStore.draftDir(context)
         val target = File(root, MANIFEST)
         val staged = File(root, "$MANIFEST.tmp")

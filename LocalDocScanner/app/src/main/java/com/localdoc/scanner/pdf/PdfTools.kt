@@ -39,6 +39,20 @@ object PdfTools {
 
     fun pageCount(file: File): Int = withRenderer(file) { it.pageCount } ?: 0
 
+    /** Bounded single-page rendering allows export tasks to checkpoint each page. */
+    fun renderPageAtDpi(file: File, index: Int, dpi: Int): Bitmap? = withRenderer(file) { renderer ->
+        if (index !in 0 until renderer.pageCount) return@withRenderer null
+        renderer.openPage(index).use { page ->
+            val scale = minOf(dpi.coerceIn(72, 300) / 72f, 5000f / maxOf(page.width, page.height))
+            val width = (page.width * scale).toInt().coerceAtLeast(1)
+            val height = (page.height * scale).toInt().coerceAtLeast(1)
+            Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also { bitmap ->
+                bitmap.eraseColor(Color.WHITE)
+                page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+            }
+        }
+    }
+
     fun render(file: File, dpi: Int = 150): List<Bitmap> {
         val out = mutableListOf<Bitmap>()
         withRenderer(file) { renderer ->

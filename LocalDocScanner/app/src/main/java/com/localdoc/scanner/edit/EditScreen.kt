@@ -92,10 +92,11 @@ fun EditScreen(
     pageIndex: Int,
     modifier: Modifier = Modifier,
     initialRecipe: EditRecipe? = null,
-    onConfirm: (EditResult) -> Unit,
+    onConfirm: suspend (EditResult) -> Unit,
     onRetake: () -> Unit,
     onBack: () -> Unit
 ) {
+    val ownership = remember { com.localdoc.scanner.util.BitmapOwnership() }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var source by remember { mutableStateOf<Bitmap?>(null) }
@@ -110,6 +111,7 @@ fun EditScreen(
     var pan by remember { mutableStateOf(Offset.Zero) }
     var showOriginal by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
+    androidx.activity.compose.BackHandler(enabled = busy) {}
     var qualityWarnings by remember { mutableStateOf<List<String>>(emptyList()) }
     var history by remember { mutableStateOf<List<StableState>>(emptyList()) }
     var future by remember { mutableStateOf<List<StableState>>(emptyList()) }
@@ -144,31 +146,35 @@ fun EditScreen(
     }
 
     LaunchedEffect(sourcePath) {
-        val loaded = withContext(Dispatchers.IO) {
-            ImageIo.loadFromFile(File(sourcePath), MAX_OUTPUT_SIDE)
-        }
-        source = loaded
-        loaded?.let { bitmap ->
-            val warnings = withContext(Dispatchers.Default) { DocumentQuality.analyze(bitmap).warnings }
-            if (initialRecipe == null) {
-                val detected = withContext(Dispatchers.Default) { autoCornersNormalized(bitmap) }
-                corners = detected
-                qualityWarnings = if (detected == defaultCropCorners()) {
-                    warnings + "没有识别到完整纸张边缘，请检查四个角"
-                } else warnings
-            } else {
-                qualityWarnings = warnings
+        var pending: Bitmap? = null
+        try {
+            val loaded = withContext(Dispatchers.IO) {
+                ImageIo.loadFromFile(File(sourcePath), MAX_OUTPUT_SIDE)?.also { pending = ownership.adopt(it) }
             }
-        }
+            source = loaded; pending = null
+            loaded?.let { bitmap ->
+                if (ownership.acquire(bitmap)) try {
+                    val warnings = withContext(Dispatchers.Default) { DocumentQuality.analyze(bitmap).warnings }
+                    if (initialRecipe == null) {
+                        val detected = withContext(Dispatchers.Default) { autoCornersNormalized(bitmap) }
+                        corners = detected
+                        qualityWarnings = if (detected == defaultCropCorners()) warnings + "没有识别到完整纸张边缘，请检查四个角" else warnings
+                    } else qualityWarnings = warnings
+                } finally { ownership.release(bitmap) }
+            }
+        } finally { ownership.retire(pending) }
     }
 
     var rotatedPreview by remember { mutableStateOf<Bitmap?>(null) }
     LaunchedEffect(source, quarterTurns) {
         val input = source ?: return@LaunchedEffect
-        val next = withContext(Dispatchers.Default) { ImageIo.rotate(input, quarterTurns * 90f) }
-        val old = rotatedPreview
-        rotatedPreview = next
-        if (old != null && old !== source && old !== next) old.recycle()
+        if (!ownership.acquire(input)) return@LaunchedEffect
+        var pending: Bitmap? = null
+        try {
+            val next = withContext(Dispatchers.Default) { ImageIo.rotate(input, quarterTurns * 90f).also { pending = ownership.adopt(it) } }
+            val old = rotatedPreview; rotatedPreview = next; pending = null
+            if (old !== source && old !== next) ownership.retire(old)
+        } finally { if (pending !== source) ownership.retire(pending); ownership.release(input) }
     }
 
     var processedPreview by remember { mutableStateOf<Bitmap?>(null) }
@@ -176,20 +182,17 @@ fun EditScreen(
         if (step != EditStep.ENHANCE) return@LaunchedEffect
         delay(90)
         val input = rotatedPreview ?: return@LaunchedEffect
-        val output = withContext(Dispatchers.Default) {
-            renderProcessed(input, corners, filter, brightness, contrast, PREVIEW_SIDE, fineRotation)
-        }
-        val old = processedPreview
-        processedPreview = output
-        if (old != null && old !== rotatedPreview && old !== output) old.recycle()
+        if (!ownership.acquire(input)) return@LaunchedEffect
+        var pending: Bitmap? = null
+        try {
+            val output = withContext(Dispatchers.Default) {
+                renderProcessed(input, corners, filter, brightness, contrast, PREVIEW_SIDE, fineRotation).also { pending = ownership.adopt(it) }
+            }
+            val old = processedPreview; processedPreview = output; pending = null
+            if (old !== rotatedPreview && old !== output) ownership.retire(old)
+        } finally { if (pending !== input) ownership.retire(pending); ownership.release(input) }
     }
-    DisposableEffect(Unit) {
-        onDispose {
-            processedPreview?.takeIf { it !== source && it !== rotatedPreview }?.recycle()
-            rotatedPreview?.takeIf { it !== source }?.recycle()
-            source?.recycle()
-        }
-    }
+    DisposableEffect(Unit) { onDispose { ownership.dispose() } }
 
     fun rotate() {
         pushUndo()
@@ -214,31 +217,26 @@ fun EditScreen(
 
     fun save() {
         val original = source ?: return
-        if (busy) return
+        if (busy || !ownership.acquire(original)) return
+        val recipe = EditRecipe(quarterTurns, corners.toList(), filter, brightness, contrast, fineRotation)
         busy = true
-        scope.launch(Dispatchers.IO) {
-            val rotated = ImageIo.rotate(original, quarterTurns * 90f)
-            val rendered = renderProcessed(rotated, corners, filter, brightness, contrast, MAX_OUTPUT_SIDE, fineRotation)
-            val out = File(FileStore.draftWorkDir(context), "render_${System.currentTimeMillis()}.jpg")
-            val ok = ImageIo.saveJpeg(rendered, out, 94)
-            val width = rendered.width
-            val height = rendered.height
-            if (rendered !== rotated) rendered.recycle()
-            if (rotated !== original) rotated.recycle()
-            withContext(Dispatchers.Main) {
-                busy = false
-                if (ok) {
-                    onConfirm(
-                        EditResult(
-                            sourceFile = File(sourcePath),
-                            renderedFile = out,
-                            recipe = EditRecipe(quarterTurns, corners, filter, brightness, contrast, fineRotation),
-                            width = width,
-                            height = height
-                        )
-                    )
+        scope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    val rotated = ImageIo.rotate(original, recipe.quarterTurns * 90f)
+                    var rendered: Bitmap? = null
+                    try {
+                        rendered = renderProcessed(rotated, recipe.corners, recipe.filter, recipe.brightness, recipe.contrast, MAX_OUTPUT_SIDE, recipe.fineRotation)
+                        val out = File(FileStore.draftWorkDir(context), "render_${java.util.UUID.randomUUID()}.jpg")
+                        check(ImageIo.saveJpeg(rendered, out, 94)) { "无法保存页面，请检查手机空间" }
+                        EditResult(File(sourcePath), out, recipe, rendered.width, rendered.height)
+                    } finally { if (rendered !== rotated) rendered?.recycle(); if (rotated !== original) rotated.recycle() }
                 }
-            }
+                onConfirm(result)
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                android.widget.Toast.makeText(context, "保存失败：${e.message}", android.widget.Toast.LENGTH_LONG).show()
+            } finally { ownership.release(original); busy = false }
         }
     }
 
@@ -248,7 +246,7 @@ fun EditScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            TextButton(onClick = onBack) { Text("返回", color = Color.White) }
+            TextButton(onClick = onBack, enabled = !busy) { Text("返回", color = Color.White) }
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("第 ${pageIndex + 1} 页", color = Color.White, style = MaterialTheme.typography.titleMedium)
                 Text(
@@ -257,7 +255,7 @@ fun EditScreen(
                     style = MaterialTheme.typography.labelSmall
                 )
             }
-            TextButton(onClick = onRetake) { Text("重拍", color = Color.White) }
+            TextButton(onClick = onRetake, enabled = !busy) { Text("重拍", color = Color.White) }
         }
 
         Box(modifier = Modifier.weight(1f).fillMaxWidth().background(Color.Black)) {

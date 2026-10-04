@@ -84,6 +84,22 @@ fun AppNav(modifier: Modifier = Modifier, vm: AppViewModel = viewModel()) {
         return
     }
 
+    val draftBackup = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        if (uri != null) scope.launch {
+            try {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    context.contentResolver.openOutputStream(uri, "w")?.use { out -> java.util.zip.ZipOutputStream(out).use { zip ->
+                        val root = com.localdoc.scanner.data.FileStore.draftDir(context)
+                        root.walkTopDown().filter { it.isFile }.forEach { file ->
+                            zip.putNextEntry(java.util.zip.ZipEntry(file.relativeTo(root).invariantSeparatorsPath))
+                            file.inputStream().use { it.copyTo(zip) }; zip.closeEntry()
+                        }
+                    } } ?: error("无法创建备份")
+                }
+                vm.notify("原始草稿已备份，应用内草稿仍保留")
+            } catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; vm.notify("草稿备份失败：${e.message}") }
+        }
+    }
     val importPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
         if (uris.isNotEmpty()) {
             scope.launch {
@@ -117,8 +133,11 @@ fun AppNav(modifier: Modifier = Modifier, vm: AppViewModel = viewModel()) {
             HomeScreen(
                 docs = docs,
                 draftCount = session.size,
+                draftProblem = vm.draftProblem,
+                onBackupDraft = { draftBackup.launch("扫描草稿原始文件.zip") },
                 onCaptureClick = {
-                    if (session.isNotEmpty()) {
+                    if (vm.draftProblem.isNotBlank()) vm.notify(vm.draftProblem)
+                    else if (session.isNotEmpty()) {
                         vm.resumeDraft()
                         navController.navigate(Route.SESSION)
                     } else {
@@ -127,14 +146,16 @@ fun AppNav(modifier: Modifier = Modifier, vm: AppViewModel = viewModel()) {
                     }
                 },
                 onImportClick = {
-                    if (session.isEmpty()) vm.startNewScan()
-                    importPicker.launch(arrayOf("image/*"))
+                    if (vm.draftProblem.isNotBlank()) vm.notify(vm.draftProblem)
+                    else { if (session.isEmpty()) vm.startNewScan(); importPicker.launch(arrayOf("image/*")) }
                 },
                 onOpenFileClick = { openFilePicker.launch(arrayOf("*/*")) },
                 onResumeDraft = { vm.resumeDraft(); navController.navigate(Route.SESSION) },
                 onDiscardDraft = { vm.discardDraft() },
                 onTrashClick = { navController.navigate(Route.TRASH) },
                 onOutputHistoryClick = { navController.navigate(Route.OUTPUT_HISTORY) },
+                onStorage = { navController.navigate("storage") },
+                onToolTasks = { navController.navigate("tool-tasks") },
                 onLibraryWorkbench = { navController.navigate("library-workbench") },
                 onSettingsClick = { navController.navigate(Route.SETTINGS) },
                 onToolClick = { tool ->
@@ -188,7 +209,7 @@ fun AppNav(modifier: Modifier = Modifier, vm: AppViewModel = viewModel()) {
                         pageIndex = target.pageIndex,
                         initialRecipe = target.initialRecipe,
                         onConfirm = { result ->
-                            scope.launch {
+                            try {
                                 when (vm.confirmEdit(result)) {
                                     null -> Unit
                                     EditorReturn.CAPTURE -> navController.popBackStack()
@@ -197,6 +218,9 @@ fun AppNav(modifier: Modifier = Modifier, vm: AppViewModel = viewModel()) {
                                     }
                                     EditorReturn.DOCUMENT -> navController.popBackStack()
                                 }
+                            } catch (e: Exception) {
+                                if (e is kotlinx.coroutines.CancellationException) throw e
+                                vm.notify("保存失败：${e.message}，原页和草稿保留")
                             }
                         },
                         onRetake = {
@@ -272,6 +296,13 @@ fun AppNav(modifier: Modifier = Modifier, vm: AppViewModel = viewModel()) {
 
         composable(Route.SETTINGS) { SettingsScreen(vm = vm, onBack = { navController.popBackStack() }) }
 
+        composable("storage") { com.localdoc.scanner.ui.settings.StorageScreen(onBack = { navController.popBackStack() }) }
+        composable("tool-tasks") {
+            com.localdoc.scanner.ui.tools.ToolTasksScreen(onBack = { navController.popBackStack() }, onOpen = { spec ->
+                vm.openSavedTool(spec.request)
+                navController.navigate(Route.TOOL) { launchSingleTop = true }
+            })
+        }
         composable(Route.OUTPUT_HISTORY) { OutputHistoryScreen(onBack = { navController.popBackStack() }) }
         composable("library-workbench") {
             com.localdoc.scanner.ui.home.LibraryWorkbench(vm, { navController.popBackStack() }, { navController.navigate(Route.doc(it)) })
@@ -290,7 +321,7 @@ fun AppNav(modifier: Modifier = Modifier, vm: AppViewModel = viewModel()) {
     }
 
     LaunchedEffect(vm.toolRequest) {
-        if (vm.toolRequest != null) navController.navigate(Route.TOOL)
+        if (vm.toolRequest != null) navController.navigate(Route.TOOL) { launchSingleTop = true }
     }
     LaunchedEffect(Unit) {
         vm.messages.collect { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }

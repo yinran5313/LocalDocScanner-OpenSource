@@ -16,23 +16,27 @@ import kotlin.math.sin
 object ImageIo {
 
     fun loadFromUri(context: Context, uri: Uri, maxSide: Int = 2048): Bitmap? {
-        val bytes = try {
-            context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-        } catch (e: Exception) {
-            null
-        } ?: return null
-        val bmp = decodeBytes(bytes, maxSide) ?: return null
-        return fixOrientation(context, uri, bmp)
+        require(maxSide > 0)
+        return runCatching {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+            val bitmap = context.contentResolver.openInputStream(uri)?.use {
+                BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply {
+                    inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight, maxSide)
+                })
+            } ?: return null
+            fixOrientation(context, uri, bitmap)
+        }.getOrNull()
     }
 
     fun loadFromFile(file: File, maxSide: Int = 2048): Bitmap? {
         val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(file.absolutePath, opts)
         val sample = sampleSize(opts.outWidth, opts.outHeight, maxSide)
-        return BitmapFactory.decodeFile(
-            file.absolutePath,
-            BitmapFactory.Options().apply { inSampleSize = sample }
-        )
+        val bitmap = BitmapFactory.decodeFile(file.absolutePath, BitmapFactory.Options().apply { inSampleSize = sample }) ?: return null
+        val orientation = runCatching { ExifInterface(file).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL) }
+            .getOrDefault(ExifInterface.ORIENTATION_NORMAL)
+        return orient(bitmap, orientation)
     }
 
     fun decodeBytes(bytes: ByteArray, maxSide: Int = 2048): Bitmap? {
@@ -46,6 +50,7 @@ object ImageIo {
     }
 
     private fun sampleSize(width: Int, height: Int, maxSide: Int): Int {
+        require(maxSide > 0) { "图片尺寸必须大于0" }
         var sample = 1
         val max = maxOf(width, height)
         while (max / sample > maxSide) sample *= 2
@@ -53,23 +58,27 @@ object ImageIo {
     }
 
     private fun fixOrientation(context: Context, uri: Uri, bmp: Bitmap): Bitmap {
-        val rotation = try {
+        val orientation = runCatching {
             context.contentResolver.openInputStream(uri)?.use { stream ->
-                when (ExifInterface(stream).getAttributeInt(
-                    ExifInterface.TAG_ORIENTATION,
-                    ExifInterface.ORIENTATION_NORMAL
-                )) {
-                    ExifInterface.ORIENTATION_ROTATE_90 -> 90f
-                    ExifInterface.ORIENTATION_ROTATE_180 -> 180f
-                    ExifInterface.ORIENTATION_ROTATE_270 -> 270f
-                    else -> 0f
-                }
-            } ?: 0f
-        } catch (e: Exception) {
-            0f
+                ExifInterface(stream).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+            } ?: ExifInterface.ORIENTATION_NORMAL
+        }.getOrDefault(ExifInterface.ORIENTATION_NORMAL)
+        return orient(bmp, orientation)
+    }
+
+    private fun orient(bmp: Bitmap, orientation: Int): Bitmap {
+        val matrix = Matrix().apply {
+            when (orientation) {
+                ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> setScale(-1f, 1f)
+                ExifInterface.ORIENTATION_ROTATE_180 -> setRotate(180f)
+                ExifInterface.ORIENTATION_FLIP_VERTICAL -> setScale(1f, -1f)
+                ExifInterface.ORIENTATION_TRANSPOSE -> { setRotate(90f); postScale(-1f, 1f) }
+                ExifInterface.ORIENTATION_ROTATE_90 -> setRotate(90f)
+                ExifInterface.ORIENTATION_TRANSVERSE -> { setRotate(-90f); postScale(-1f, 1f) }
+                ExifInterface.ORIENTATION_ROTATE_270 -> setRotate(270f)
+                else -> return bmp
+            }
         }
-        if (rotation == 0f) return bmp
-        val matrix = Matrix().apply { postRotate(rotation) }
         return Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, matrix, true).also { if (it !== bmp) bmp.recycle() }
     }
 
@@ -128,12 +137,20 @@ object ImageIo {
         finally { temporary.delete() }
     }
 
-    fun copyBytes(context: Context, uri: Uri, dest: File): Boolean = try {
-        dest.parentFile?.mkdirs()
-        context.contentResolver.openInputStream(uri)?.use { input ->
-            dest.outputStream().use { output -> input.copyTo(output) }
-        } != null
-    } catch (e: Exception) {
-        false
-    }
+    fun copyBytes(context: Context, uri: Uri, dest: File, maxBytes: Long = 512L * 1024 * 1024): Boolean = try {
+        require(maxBytes > 0)
+        AtomicFiles.write(dest) { staged ->
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                staged.outputStream().use { output ->
+                    val buffer = ByteArray(64 * 1024); var total = 0L
+                    while (true) {
+                        val count = input.read(buffer); if (count < 0) break
+                        total += count; require(total <= maxBytes) { "单文件超过导入上限512MB" }
+                        output.write(buffer, 0, count)
+                    }
+                }
+            } ?: error("无法读取文件")
+        }
+        true
+    } catch (e: Exception) { false }
 }

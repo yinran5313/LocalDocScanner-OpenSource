@@ -51,7 +51,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private val app = application
     private val repo = DocRepository(application)
-    private val ocrEngine = PaddleOcrEngine(application)
 
     val docs: StateFlow<List<DocItem>> = repo.observeDocs()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -59,6 +58,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private var draft: ScanDraft = DraftStore.load(app)
+    var draftProblem by mutableStateOf(draft.recoveryError)
+        private set
     private val _session = MutableStateFlow(draft.pages)
     val session: StateFlow<List<DraftPage>> = _session.asStateFlow()
     private val _draftTitle = MutableStateFlow(draft.title)
@@ -79,17 +80,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val isRetaking: Boolean get() = retakeTemplate != null
     var captureProcessing by mutableStateOf(false)
         private set
-    private var toolJob: kotlinx.coroutines.Job? = null
-    val isToolRunning: Boolean get() = toolJob?.isActive == true
-    fun runTool(block: suspend () -> Unit) {
-        if (!isToolRunning) toolJob = viewModelScope.launch { block() }
-    }
-
     fun notify(text: String) {
         viewModelScope.launch { _messages.emit(text) }
     }
 
-    fun startNewScan() {
+    fun startNewScan(force: Boolean = false) {
+        if (!force && draftProblem.isNotBlank()) { notify(draftProblem); return }
         if (captureProcessing) { notify("正在保存拍摄页，请稍候"); return }
         draft = DraftStore.start(app)
         appendDocId = null
@@ -106,7 +102,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         syncDraft()
     }
 
-    fun discardDraft() = startNewScan()
+    fun discardDraft() = startNewScan(force = true)
 
     fun startAppend(docId: String) {
         if (captureProcessing) { notify("正在保存拍摄页，请稍候"); return }
@@ -276,7 +272,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     suspend fun commitSession(title: String): String? = withContext(Dispatchers.IO) {
         if (captureProcessing) { notify("正在保存拍摄页，请稍候再完成文档"); return@withContext null }
+        if (draft.recoveryError.isNotBlank()) { notify(draft.recoveryError); return@withContext null }
         if (draft.pages.isEmpty()) return@withContext null
+        val missing = draft.pages.mapIndexedNotNull { index, page ->
+            if (!File(page.sourcePath).isFile || !File(page.renderedPath).isFile) index + 1 else null
+        }
+        if (missing.isNotEmpty()) { notify("草稿第${missing.joinToString()}页缺失，已停止保存，原稿保留"); return@withContext null }
         val existing = draft.appendDocId
         val id = existing ?: repo.createDoc(title.ifBlank { "未命名文档" })
         if (existing == null) draft = DraftStore.setAppendDoc(app, draft, id)
@@ -319,6 +320,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 if (files.isEmpty()) notify("没有读到可用的文件") else { toolRequest = ToolRequest(tool, files, names); com.localdoc.scanner.data.ToolDrafts.saveRequest(app, toolRequest) }
             }
         }
+    }
+
+    fun openSavedTool(request: ToolRequest) {
+        toolRequest = request
+        com.localdoc.scanner.data.ToolDrafts.saveRequest(app, request)
     }
 
     fun closeTool() {
@@ -377,51 +383,23 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         repo.exportPdf(docId, output, size, maxImageSide)
     suspend fun exportPdf(docId: String, output: Uri, size: PdfExporter.PageSize, maxImageSide: Int = 3200): Boolean =
         repo.exportPdf(docId, output, size, maxImageSide)
-    suspend fun exportSearchablePdf(docId: String, output: File): Boolean = repo.exportSearchablePdf(docId, output)
-    suspend fun exportSearchablePdf(docId: String, output: Uri): Boolean = repo.exportSearchablePdf(docId, output)
+    suspend fun exportSearchablePdf(docId: String, output: File, pageSize: PdfExporter.PageSize = PdfExporter.PageSize.A4, maxImageSide: Int = 3200): Boolean = exportGuard(docId) { repo.exportSearchablePdf(docId, output, pageSize, maxImageSide) }
+    suspend fun exportSearchablePdf(docId: String, output: Uri, pageSize: PdfExporter.PageSize = PdfExporter.PageSize.A4, maxImageSide: Int = 3200): Boolean = exportGuard(docId) { repo.exportSearchablePdf(docId, output, pageSize, maxImageSide) }
+    private suspend fun exportGuard(docId: String, export: suspend () -> Boolean): Boolean {
+        val error = repo.exportProblem(docId)
+        if (error != null) { notify(error); return false }
+        return export()
+    }
     suspend fun exportJpegs(docId: String, treeUri: Uri, baseName: String): Int = repo.exportJpegs(docId, treeUri, baseName)
+    suspend fun correctOcrLine(pageId: String, line: Int, text: String, expectedVersion: Long) = repo.correctOcrLine(pageId, line, text, expectedVersion)
     suspend fun renderedFiles(docId: String): List<File> = repo.renderedFiles(docId)
     suspend fun exportLongImage(docId: String, output: File): Boolean = repo.exportLongImage(docId, output)
 
-    suspend fun recognizeDocument(docId: String, precise: Boolean): DocumentOcrResult = withContext(Dispatchers.IO) {
-        val pages = repo.pages(docId)
-        var lineCount = 0
-        var totalMs = 0L
-        var succeeded = 0
-        val failures = mutableListOf<Int>()
-        pages.forEachIndexed { index, page ->
-            val bitmap = ImageIo.loadFromFile(File(page.filePath), if (precise) 3600 else 2400)
-            if (bitmap == null) {
-                failures += index + 1
-            } else {
-                val outcome = runCatching { ocrEngine.recognize(bitmap, precise) }.getOrNull()
-                bitmap.recycle()
-                if (outcome == null) {
-                    failures += index + 1
-                } else {
-                    repo.setPageOcr(page.id, outcome.text, if (precise) "PP-OCRv6-medium" else "PP-OCRv6-tiny", outcome.boxes)
-                    lineCount += outcome.lineCount
-                    totalMs += outcome.totalTimeMs
-                    succeeded++
-                }
-            }
-        }
-        val text = repo.rebuildDocumentOcr(docId)
-        DocumentOcrResult(text, pages.size, succeeded, lineCount, totalMs, failures)
-    }
-
     private fun syncDraft() {
+        draftProblem = draft.recoveryError
         _session.value = draft.pages
         _draftTitle.value = draft.title
         appendDocId = draft.appendDocId
     }
 }
 
-data class DocumentOcrResult(
-    val text: String,
-    val pageCount: Int,
-    val succeededPages: Int,
-    val lineCount: Int,
-    val totalTimeMs: Long,
-    val failedPages: List<Int>
-)

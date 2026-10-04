@@ -1,3 +1,6 @@
+# Historical one-time patch; archived, intentionally disabled.
+raise SystemExit("Historical patch only. Do not run against current sources.")
+
 from pathlib import Path
 import re
 p=Path(__file__).resolve().parents[1]/'app/src/main/java/com/localdoc/scanner/external/ExternalFileScreen.kt'

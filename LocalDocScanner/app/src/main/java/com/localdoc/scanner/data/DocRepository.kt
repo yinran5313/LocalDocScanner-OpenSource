@@ -1,5 +1,9 @@
 package com.localdoc.scanner.data
 
+import androidx.room.withTransaction
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.ensureActive
+import com.localdoc.scanner.util.AtomicFiles
 import android.content.Context
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
@@ -33,7 +37,8 @@ import org.json.JSONObject
 class DocRepository(context: Context) {
 
     private val app = context.applicationContext
-    private val dao = AppDatabase.get(app).docDao()
+    private val database = AppDatabase.get(app)
+    private val dao = database.docDao()
 
     fun observeDocs(): Flow<List<DocItem>> = dao.observeDocs().map { list -> list.map { it.toItem() } }
     fun observeTrashed(): Flow<List<DocItem>> = dao.observeTrashed().map { list -> list.map { it.toItem() } }
@@ -48,34 +53,36 @@ class DocRepository(context: Context) {
     }
 
     suspend fun appendPage(docId: String, draftPage: DraftPage) = withContext(Dispatchers.IO) {
-        val doc = dao.getDoc(docId) ?: return@withContext
+        require(dao.getDoc(docId)?.deleted == false) { "文档不存在或已删除" }
         val pageId = "${docId}_${draftPage.id}"
         val existing = dao.getPage(pageId)
-        val sourceTarget = FileStore.sourceFile(app, docId, pageId)
-        val renderedTarget = FileStore.pageFile(app, docId, pageId)
-        File(draftPage.sourcePath).copyTo(sourceTarget, overwrite = true)
-        File(draftPage.renderedPath).copyTo(renderedTarget, overwrite = true)
-        dao.insertPages(
-            listOf(
-                PageEntity(
-                    id = pageId,
-                    docId = docId,
-                    pageIndex = existing?.pageIndex ?: doc.pageCount,
-                    filePath = renderedTarget.absolutePath,
-                    width = draftPage.width,
-                    height = draftPage.height,
-                    sourcePath = sourceTarget.absolutePath,
-                    quarterTurns = draftPage.recipe.quarterTurns,
-                    cropPoints = draftPage.recipe.encodeCorners(),
-                    filter = draftPage.recipe.filter.name,
-                    brightness = draftPage.recipe.brightness,
-                    contrast = draftPage.recipe.contrast,
+        require(existing?.deleted != true) { "此草稿页面已移入回收站，请先恢复" }
+        val version = UUID.randomUUID().toString()
+        val sourceTarget = File(FileStore.docDir(app, docId), "source_${pageId}_$version.jpg")
+        val renderedTarget = File(FileStore.docDir(app, docId), "page_${pageId}_$version.jpg")
+        var committed = false
+        try {
+            AtomicFiles.copy(File(draftPage.sourcePath), sourceTarget)
+            AtomicFiles.copy(File(draftPage.renderedPath), renderedTarget)
+            withContext(NonCancellable) { database.withTransaction {
+                require(dao.getDoc(docId)?.deleted == false) { "文档已移除" }
+                check(dao.getPage(pageId)?.updatedAt == existing?.updatedAt) { "页面已变化，请重新保存" }
+                dao.insertPages(listOf(PageEntity(id = pageId, docId = docId,
+                    pageIndex = existing?.pageIndex ?: dao.getPages(docId).size,
+                    filePath = renderedTarget.absolutePath, width = draftPage.width, height = draftPage.height,
+                    sourcePath = sourceTarget.absolutePath, quarterTurns = draftPage.recipe.quarterTurns,
+                    cropPoints = draftPage.recipe.encodeCorners(), filter = draftPage.recipe.filter.name,
+                    brightness = draftPage.recipe.brightness, contrast = draftPage.recipe.contrast,
                     fineRotation = draftPage.recipe.fineRotation,
-                    updatedAt = System.currentTimeMillis()
-                )
-            )
-        )
-        refreshMeta(docId)
+                    updatedAt = maxOf(System.currentTimeMillis(), (existing?.updatedAt ?: 0L) + 1))))
+                rebuildDocumentOcr(docId)
+                refreshMeta(docId)
+            }; committed = true }
+            withContext(NonCancellable) {
+                existing?.let { File(it.sourcePath).takeIf { f -> f.isFile }?.delete(); File(it.filePath).delete() }
+                refreshMeta(docId)
+            }
+        } finally { if (!committed) { sourceTarget.delete(); renderedTarget.delete() } }
     }
 
     /** 兼容旧工具：只有处理图时也保存为原图，后续仍可重新裁边。 */
@@ -103,132 +110,121 @@ class DocRepository(context: Context) {
 
     suspend fun updatePage(pageId: String, result: EditResult) = withContext(Dispatchers.IO) {
         val page = dao.getPage(pageId) ?: return@withContext
-        val sourceTarget = FileStore.sourceFile(app, page.docId, page.id)
-        val renderedTarget = FileStore.pageFile(app, page.docId, page.id)
-        if (result.sourceFile.absolutePath != sourceTarget.absolutePath) result.sourceFile.copyTo(sourceTarget, overwrite = true)
-        if (result.renderedFile.absolutePath != renderedTarget.absolutePath) result.renderedFile.copyTo(renderedTarget, overwrite = true)
-        dao.updatePage(
-            page.copy(
-                sourcePath = sourceTarget.absolutePath,
-                filePath = renderedTarget.absolutePath,
-                width = result.width,
-                height = result.height,
-                quarterTurns = result.recipe.quarterTurns,
-                cropPoints = result.recipe.encodeCorners(),
-                filter = result.recipe.filter.name,
-                brightness = result.recipe.brightness,
-                contrast = result.recipe.contrast,
-                fineRotation = result.recipe.fineRotation,
-                updatedAt = System.currentTimeMillis()
-            )
-        )
-        refreshMeta(page.docId)
+        val version = UUID.randomUUID().toString()
+        val sourceTarget = File(FileStore.docDir(app, page.docId), "source_${page.id}_$version.jpg")
+        val renderedTarget = File(FileStore.docDir(app, page.docId), "page_${page.id}_$version.jpg")
+        var committed = false
+        try {
+            AtomicFiles.copy(result.sourceFile, sourceTarget)
+            AtomicFiles.copy(result.renderedFile, renderedTarget)
+            withContext(NonCancellable) { database.withTransaction {
+                check(dao.getPage(pageId)?.updatedAt == page.updatedAt) { "页面已变化，请重新打开编辑" }
+                dao.updatePage(page.copy(sourcePath = sourceTarget.absolutePath, filePath = renderedTarget.absolutePath,
+                    width = result.width, height = result.height, quarterTurns = result.recipe.quarterTurns,
+                    cropPoints = result.recipe.encodeCorners(), filter = result.recipe.filter.name,
+                    brightness = result.recipe.brightness, contrast = result.recipe.contrast,
+                    fineRotation = result.recipe.fineRotation, ocrText = "", ocrLayout = "", ocrMode = "", ocrUpdatedAt = 0L,
+                    updatedAt = maxOf(System.currentTimeMillis(), page.updatedAt + 1)))
+                rebuildDocumentOcr(page.docId)
+                refreshMeta(page.docId)
+            }; committed = true }
+            withContext(NonCancellable) {
+                File(page.sourcePath).takeIf { it.isFile }?.delete(); File(page.filePath).delete()
+                refreshMeta(page.docId)
+            }
+        } finally { if (!committed) { sourceTarget.delete(); renderedTarget.delete() } }
     }
 
     suspend fun trashPage(docId: String, pageId: String) = withContext(Dispatchers.IO) {
-        dao.trashPage(pageId, System.currentTimeMillis())
-        compactIndices(docId)
-        refreshMeta(docId)
+        database.withTransaction {
+            require(dao.getPage(pageId)?.docId == docId) { "页面不存在" }
+            dao.trashPage(pageId, System.currentTimeMillis())
+            compactIndices(docId); rebuildDocumentOcr(docId); refreshMeta(docId)
+        }
+        syncSearch(docId)
     }
 
     suspend fun restorePage(docId: String, pageId: String) = withContext(Dispatchers.IO) {
-        val page = dao.getPage(pageId) ?: return@withContext
-        dao.updatePage(
-            page.copy(
-                deleted = false,
-                pageIndex = dao.getPages(docId).size,
-                updatedAt = System.currentTimeMillis()
-            )
-        )
-        compactIndices(docId)
-        refreshMeta(docId)
+        database.withTransaction {
+            val page = dao.getPage(pageId) ?: return@withTransaction
+            require(page.docId == docId) { "页面不属于此文档" }
+            if (page.deleted) dao.updatePage(page.copy(deleted = false, pageIndex = dao.getPages(docId).size, updatedAt = maxOf(System.currentTimeMillis(), page.updatedAt + 1)))
+            compactIndices(docId); rebuildDocumentOcr(docId); refreshMeta(docId)
+        }
+        syncSearch(docId)
     }
 
     suspend fun duplicatePage(docId: String, pageId: String) = withContext(Dispatchers.IO) {
-        val source = dao.getPage(pageId) ?: return@withContext
-        val all = dao.getPages(docId).toMutableList()
-        val insertIndex = (all.indexOfFirst { it.id == pageId } + 1).coerceAtLeast(0)
+        val source = dao.getPage(pageId) ?: error("页面不存在")
+        require(source.docId == docId && !source.deleted) { "页面已移除" }
         val newId = uniquePageId(docId)
         val sourceTarget = FileStore.sourceFile(app, docId, newId)
         val renderedTarget = FileStore.pageFile(app, docId, newId)
-        File(source.sourcePath.ifBlank { source.filePath }).copyTo(sourceTarget, overwrite = true)
-        File(source.filePath).copyTo(renderedTarget, overwrite = true)
-        all.add(
-            insertIndex,
-            source.copy(
-                id = newId,
-                pageIndex = insertIndex,
-                sourcePath = sourceTarget.absolutePath,
-                filePath = renderedTarget.absolutePath,
-                updatedAt = System.currentTimeMillis()
-            )
-        )
-        all.forEachIndexed { index, page -> dao.updatePage(page.copy(pageIndex = index)) }
-        refreshMeta(docId)
+        var committed = false
+        try {
+            AtomicFiles.copy(File(source.sourcePath.ifBlank { source.filePath }), sourceTarget)
+            AtomicFiles.copy(File(source.filePath), renderedTarget)
+            withContext(NonCancellable) {
+                database.withTransaction {
+                    check(dao.getPage(pageId)?.updatedAt == source.updatedAt && dao.getPage(pageId)?.deleted == false) { "页面已变化，请重新复制" }
+                    val all = dao.getPages(docId).toMutableList()
+                    val index = all.indexOfFirst { it.id == pageId } + 1
+                    require(index > 0 && dao.getDoc(docId)?.deleted == false) { "文档或页面已移除" }
+                    val copy = source.copy(id = newId, pageIndex = index, sourcePath = sourceTarget.absolutePath,
+                        filePath = renderedTarget.absolutePath, updatedAt = System.currentTimeMillis())
+                    dao.insertPages(listOf(copy)); all.add(index, copy)
+                    all.forEachIndexed { position, page -> dao.updatePage(page.copy(pageIndex = position)) }
+                    rebuildDocumentOcr(docId); refreshMeta(docId)
+                }
+                committed = true
+                syncSearch(docId)
+            }
+        } finally { if (!committed) { sourceTarget.delete(); renderedTarget.delete() } }
     }
 
     suspend fun movePage(docId: String, from: Int, to: Int) = withContext(Dispatchers.IO) {
-        val pages = dao.getPages(docId).toMutableList()
-        if (from !in pages.indices || to !in pages.indices || from == to) return@withContext
-        pages.add(to, pages.removeAt(from))
-        pages.forEachIndexed { index, page -> dao.updatePage(page.copy(pageIndex = index)) }
-        refreshMeta(docId)
+        database.withTransaction {
+            val pages = dao.getPages(docId).toMutableList()
+            if (from !in pages.indices || to !in pages.indices || from == to) return@withTransaction
+            pages.add(to, pages.removeAt(from))
+            pages.forEachIndexed { index, page -> dao.updatePage(page.copy(pageIndex = index)) }
+            rebuildDocumentOcr(docId)
+            refreshMeta(docId)
+        }
+        syncSearch(docId)
     }
 
-    suspend fun applyEnhancementToAll(
-        docId: String,
-        filter: ScanFilter,
-        brightness: Float,
-        contrast: Float
-    ): BatchEnhanceResult = withContext(Dispatchers.IO) {
+    suspend fun applyEnhancementToAll(docId: String, filter: ScanFilter, brightness: Float, contrast: Float): BatchEnhanceResult = withContext(Dispatchers.IO) {
         val pages = dao.getPages(docId)
-        val failures = mutableListOf<Int>()
-        var succeeded = 0
+        val failures = mutableListOf<Int>(); var succeeded = 0
         pages.forEachIndexed { index, page ->
-            val ok = runCatching {
-                val original = ImageIo.loadFromFile(File(page.sourcePath.ifBlank { page.filePath }), 4000)
-                    ?: error("无法读取原图")
-                val rotated = ImageIo.rotate(original, page.quarterTurns * 90f)
-                val rendered = renderProcessed(
-                    rotated = rotated,
-                    corners = EditRecipe.decodeCorners(page.cropPoints),
-                    filter = filter,
-                    brightness = brightness,
-                    contrast = contrast,
-                    maxSide = 3200,
-                    fineRotation = page.fineRotation
-                )
-                val target = File(page.filePath)
-                val temporary = File(target.parentFile, ".${target.name}.${System.nanoTime()}.tmp.jpg")
-                val saved = ImageIo.saveJpeg(rendered, temporary, 94)
-                if (rendered !== rotated) rendered.recycle()
-                if (rotated !== original) rotated.recycle()
-                original.recycle()
-                check(saved) { "无法生成页面" }
-                temporary.copyTo(target, overwrite = true)
-                temporary.delete()
-                dao.updatePage(
-                    page.copy(
-                        filter = filter.name,
-                        brightness = brightness,
-                        contrast = contrast,
-                        ocrText = "",
-                        ocrLayout = "",
-                        ocrMode = "",
-                        ocrUpdatedAt = 0L,
-                        updatedAt = System.currentTimeMillis()
-                    )
-                )
-            }.isSuccess
+            val temporary = File(FileStore.draftWorkDir(app), "batch_${UUID.randomUUID()}.jpg")
+            val ok = try {
+                val original = ImageIo.loadFromFile(File(page.sourcePath.ifBlank { page.filePath }), 4000) ?: error("无法读取原图")
+                var rotated: android.graphics.Bitmap? = null; var rendered: android.graphics.Bitmap? = null
+                val recipe = EditRecipe(page.quarterTurns, EditRecipe.decodeCorners(page.cropPoints), filter, brightness, contrast, page.fineRotation)
+                try {
+                    rotated = ImageIo.rotate(original, page.quarterTurns * 90f)
+                    rendered = renderProcessed(rotated, recipe.corners, filter, brightness, contrast, 3200, page.fineRotation)
+                    check(ImageIo.saveJpeg(rendered, temporary, 94)) { "无法生成页面" }
+                    updatePage(page.id, EditResult(File(page.sourcePath.ifBlank { page.filePath }), temporary, recipe, rendered.width, rendered.height))
+                } finally {
+                    if (rendered !== rotated) rendered?.recycle()
+                    if (rotated !== original) rotated?.recycle()
+                    original.recycle()
+                }
+                true
+            } catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; false }
+            finally { temporary.delete() }
             if (ok) succeeded++ else failures += index + 1
         }
-        rebuildDocumentOcr(docId)
         refreshMeta(docId)
         BatchEnhanceResult(pages.size, succeeded, failures)
     }
 
     suspend fun rename(docId: String, title: String) = withContext(Dispatchers.IO) {
         dao.renameDoc(docId, title, System.currentTimeMillis())
+        syncSearch(docId)
     }
 
     suspend fun setOrganization(docId: String, folder: String?, tags: String) = withContext(Dispatchers.IO) {
@@ -238,23 +234,12 @@ class DocRepository(context: Context) {
             .distinct()
             .joinToString(",")
         dao.organizeDoc(docId, folder?.trim()?.takeIf { it.isNotBlank() }, normalizedTags, System.currentTimeMillis())
+        syncSearch(docId)
     }
 
     suspend fun setOcrText(docId: String, text: String) = withContext(Dispatchers.IO) {
-        dao.setDocOcr(docId, text, System.currentTimeMillis())
-    }
-
-    suspend fun setPageOcr(pageId: String, text: String, mode: String, boxes: List<com.localdoc.scanner.ocr.OcrTextBox> = emptyList()) = withContext(Dispatchers.IO) {
-        val page = dao.getPage(pageId) ?: return@withContext
-        dao.updatePage(
-            page.copy(
-                ocrText = text,
-                ocrLayout = com.localdoc.scanner.ocr.OcrLayout.encode(boxes),
-                ocrMode = mode,
-                ocrUpdatedAt = System.currentTimeMillis(),
-                updatedAt = System.currentTimeMillis()
-            )
-        )
+        dao.setDocCorrection(docId, text, System.currentTimeMillis())
+        syncSearch(docId)
     }
 
     suspend fun rebuildDocumentOcr(docId: String): String = withContext(Dispatchers.IO) {
@@ -262,15 +247,16 @@ class DocRepository(context: Context) {
             page.ocrText.trim().takeIf { it.isNotBlank() }?.let { "【第 ${index + 1} 页】\n$it" }
         }.joinToString("\n\n")
         dao.setDocOcr(docId, combined, System.currentTimeMillis())
+        if (!database.inTransaction()) syncSearch(docId)
         combined
     }
 
-    suspend fun trash(docId: String) = withContext(Dispatchers.IO) { dao.moveToTrash(docId) }
-    suspend fun restoreDoc(docId: String) = withContext(Dispatchers.IO) { dao.restoreDoc(docId, System.currentTimeMillis()) }
+    suspend fun trash(docId: String) = withContext(Dispatchers.IO) { dao.moveToTrash(docId); syncSearch(docId) }
+    suspend fun restoreDoc(docId: String) = withContext(Dispatchers.IO) { dao.restoreDoc(docId, System.currentTimeMillis()); syncSearch(docId) }
 
     suspend fun deleteForever(docId: String) = withContext(Dispatchers.IO) {
-        dao.deletePages(docId)
-        dao.deleteForever(docId)
+        database.withTransaction { dao.deletePages(docId); dao.deleteForever(docId) }
+        syncSearch(docId)
         FileStore.docDir(app, docId).deleteRecursively()
     }
 
@@ -278,30 +264,37 @@ class DocRepository(context: Context) {
         withContext(Dispatchers.IO) {
             output.parentFile?.mkdirs()
             runCatching {
-                output.outputStream().use { stream -> exportPdfToStream(docId, stream, pageSize, maxImageSide) }
+                checkedPages(docId)
+                AtomicFiles.write(output) { file -> check(file.outputStream().use { stream -> exportPdfToStream(docId, stream, pageSize, maxImageSide) }) }
+                true
             }.getOrDefault(false)
         }
 
     suspend fun exportPdf(docId: String, uri: Uri, pageSize: PdfExporter.PageSize, maxImageSide: Int = 3200): Boolean =
         withContext(Dispatchers.IO) {
             runCatching {
-                app.contentResolver.openOutputStream(uri, "w")?.use { stream ->
+                checkedPages(docId)
+                checkedPages(docId)
+            app.contentResolver.openOutputStream(uri, "w")?.use { stream ->
                     exportPdfToStream(docId, stream, pageSize, maxImageSide)
                 } ?: false
             }.getOrDefault(false)
         }
 
-    suspend fun exportSearchablePdf(docId: String, output: File): Boolean = withContext(Dispatchers.IO) {
+    suspend fun exportSearchablePdf(docId: String, output: File, pageSize: PdfExporter.PageSize = PdfExporter.PageSize.A4, maxImageSide: Int = 3200): Boolean = withContext(Dispatchers.IO) {
         output.parentFile?.mkdirs()
         runCatching {
-            output.outputStream().buffered().use { stream -> exportSearchablePdfToStream(docId, stream) }
+            checkedPages(docId)
+            AtomicFiles.write(output) { file -> check(file.outputStream().buffered().use { stream -> exportSearchablePdfToStream(docId, stream, pageSize, maxImageSide) }) }
+            true
         }.getOrDefault(false)
     }
 
-    suspend fun exportSearchablePdf(docId: String, uri: Uri): Boolean = withContext(Dispatchers.IO) {
+    suspend fun exportSearchablePdf(docId: String, uri: Uri, pageSize: PdfExporter.PageSize = PdfExporter.PageSize.A4, maxImageSide: Int = 3200): Boolean = withContext(Dispatchers.IO) {
         runCatching {
+            checkedPages(docId)
             app.contentResolver.openOutputStream(uri, "w")?.buffered()?.use { stream ->
-                exportSearchablePdfToStream(docId, stream)
+                exportSearchablePdfToStream(docId, stream, pageSize, maxImageSide)
             } ?: false
         }.getOrDefault(false)
     }
@@ -391,6 +384,8 @@ class DocRepository(context: Context) {
                                 .put("folder", doc.folder ?: JSONObject.NULL)
                                 .put("tags", doc.tags)
                                 .put("ocrText", doc.ocrText)
+                        .put("ocrCorrection", doc.ocrCorrection)
+                                .put("ocrLegacyText", doc.ocrLegacyText)
                                 .put("locked", doc.locked)
                                 .put("deleted", doc.deleted)
                                 .put("pages", pagesJson)
@@ -425,8 +420,12 @@ class DocRepository(context: Context) {
     }
 
     suspend fun restoreLibrary(uri: Uri): LibraryTransferResult = withContext(Dispatchers.IO) {
+        val restoreContext = kotlinx.coroutines.currentCoroutineContext()
         val temporary = File(app.cacheDir, "restore-${System.nanoTime()}").apply { mkdirs() }
         val createdDocIds = mutableListOf<String>()
+        val preparedDocs = mutableListOf<DocEntity>()
+        val preparedPages = mutableMapOf<String, List<PageEntity>>()
+        var committed = false
         runCatching {
             var manifest: String? = null
             val entries = mutableSetOf<String>()
@@ -442,6 +441,7 @@ class DocRepository(context: Context) {
                         fun copyBounded(target: OutputStream, limit: Long) {
                             val buffer = ByteArray(64 * 1024); var entryBytes = 0L
                             while (true) {
+                                restoreContext.ensureActive()
                                 val count = zip.read(buffer); if (count < 0) break
                                 entryBytes += count; extractedBytes += count
                                 require(entryBytes <= limit && extractedBytes <= 8L * 1024 * 1024 * 1024) { "备份内容超过恢复大小限制" }
@@ -464,16 +464,18 @@ class DocRepository(context: Context) {
             val root = JSONObject(manifest ?: error("备份缺少清单"))
             require(root.optInt("format") == 1) { "不支持的备份版本" }
             val docsJson = root.getJSONArray("docs")
+            val existingTitles = dao.getAllDocs().map { it.title }.toMutableSet()
             var restoredPages = 0
             for (docIndex in 0 until docsJson.length()) {
                 val item = docsJson.getJSONObject(docIndex)
                 val now = System.currentTimeMillis()
                 val id = "d${now.toString(36)}${UUID.randomUUID().toString().take(6)}"
                 val title = item.optString("title", "恢复的文档")
-                dao.insertDoc(
+                createdDocIds += id
+                preparedDocs += (
                     DocEntity(
                         id = id,
-                        title = if (dao.getAllDocs().any { it.title == title }) "$title（恢复）" else title,
+                        title = if (title in existingTitles) "$title（恢复）" else title,
                         createdAt = item.optLong("createdAt", now),
                         updatedAt = now,
                         pageCount = 0,
@@ -481,11 +483,13 @@ class DocRepository(context: Context) {
                         folder = item.optString("folder").takeIf { it.isNotBlank() && it != "null" },
                         tags = item.optString("tags"),
                         ocrText = item.optString("ocrText"),
+                        ocrCorrection = item.optString("ocrCorrection"),
+                        ocrLegacyText = item.optString("ocrLegacyText", item.optString("ocrText")),
                         locked = item.optBoolean("locked"),
                         deleted = item.optBoolean("deleted")
                     )
                 )
-                createdDocIds += id
+                existingTitles += preparedDocs.last().title
                 val pagesJson = item.getJSONArray("pages")
                 val restored = mutableListOf<PageEntity>()
                 for (pageIndex in 0 until pagesJson.length()) {
@@ -521,19 +525,30 @@ class DocRepository(context: Context) {
                         ocrUpdatedAt = page.optLong("ocrUpdatedAt")
                     )
                 }
-                dao.insertPages(restored)
+                preparedPages[id] = restored
                 restoredPages += restored.size
-                refreshMeta(id)
+            }
+            restoreContext.ensureActive()
+            withContext(NonCancellable) {
+                database.withTransaction {
+                    preparedDocs.forEach { doc -> dao.insertDoc(doc); dao.insertPages(preparedPages.getValue(doc.id)); refreshMeta(doc.id) }
+                }
+                committed = true
+                preparedDocs.forEach { syncSearch(it.id) }
             }
             LibraryTransferResult(docsJson.length(), restoredPages, true)
         }.getOrElse { failure ->
-            createdDocIds.forEach { docId ->
+            withContext(NonCancellable) { createdDocIds.forEach { docId ->
                 runCatching {
-                    dao.deletePages(docId)
-                    dao.deleteForever(docId)
-                    FileStore.docDir(app, docId).deleteRecursively()
+                    if (!committed) {
+                        database.withTransaction { dao.deletePages(docId); dao.deleteForever(docId) }
+                        FileStore.docDir(app, docId).deleteRecursively()
+                    }
                 }
             }
+            }
+            temporary.deleteRecursively()
+            if (failure is kotlinx.coroutines.CancellationException) throw failure
             LibraryTransferResult(0, 0, false, failure.message ?: "恢复失败")
         }
             .also { temporary.deleteRecursively() }
@@ -551,15 +566,57 @@ class DocRepository(context: Context) {
         pageSize: PdfExporter.PageSize,
         maxImageSide: Int
     ): Boolean {
-        val files = dao.getPages(docId).map { File(it.filePath) }.filter { it.exists() }
+        val files = checkedPages(docId).map { File(it.filePath) }
         return PdfExporter.exportFiles(files, output, pageSize, maxImageSide)
     }
 
-    private suspend fun exportSearchablePdfToStream(docId: String, output: OutputStream): Boolean {
-        val pages = dao.getPages(docId).mapNotNull { page ->
-            File(page.filePath).takeIf(File::exists)?.let { SearchablePdfPage(it, page.ocrText, com.localdoc.scanner.ocr.OcrLayout.decode(page.ocrLayout)) }
+    private suspend fun exportSearchablePdfToStream(docId: String, output: OutputStream, pageSize: PdfExporter.PageSize, maxImageSide: Int): Boolean {
+        val pages = checkedPages(docId).map { page ->
+            SearchablePdfPage(File(page.filePath), page.ocrText, com.localdoc.scanner.ocr.OcrLayout.decode(page.ocrLayout))
         }
-        return SearchablePdfExporter.export(app, pages, output)
+        return SearchablePdfExporter.export(app, pages, output, pageSize, maxImageSide)
+    }
+
+    suspend fun exportProblem(docId: String): String? = withContext(Dispatchers.IO) {
+        runCatching { checkedPages(docId) }.exceptionOrNull()?.message
+    }
+
+    private suspend fun checkedPages(docId: String): List<PageEntity> {
+        val pages = dao.getPages(docId)
+        require(pages.isNotEmpty()) { "文档没有页面" }
+        val missing = pages.mapIndexedNotNull { i, p -> if (!File(p.filePath).isFile) i + 1 else null }
+        require(missing.isEmpty()) { "第 ${missing.joinToString()} 页文件缺失，请修复后导出" }
+        return pages
+    }
+
+    private suspend fun syncSearch(docId: String) {
+        try {
+            FullTextIndex(app).use { index ->
+                val doc = dao.getDoc(docId)
+                if (doc == null || doc.deleted) index.removeScan(docId) else index.indexScan(doc.toItem())
+            }
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            android.util.Log.w("LocalDocScanner", "检索索引更新失败，可从全文检索重新建立索引", e)
+        }
+    }
+
+    /** Correct one line without discarding the coordinates of other lines. */
+    suspend fun correctOcrLine(pageId: String, line: Int, text: String, expectedVersion: Long) = withContext(Dispatchers.IO) {
+        var docId = ""
+        database.withTransaction {
+            val page = dao.getPage(pageId) ?: error("页面不存在")
+            check(page.updatedAt == expectedVersion && !page.deleted) { "页面或识别结果已变化，请重新打开校正" }
+            val boxes = com.localdoc.scanner.ocr.OcrLayout.decode(page.ocrLayout).toMutableList()
+            require(line in boxes.indices) { "文字位置不存在，请重新识别" }
+            boxes[line] = boxes[line].copy(text = text)
+            val now = maxOf(System.currentTimeMillis(), page.updatedAt + 1)
+            dao.updatePage(page.copy(ocrText = boxes.joinToString("\n") { it.text },
+                ocrLayout = com.localdoc.scanner.ocr.OcrLayout.encode(boxes), ocrUpdatedAt = now, updatedAt = now))
+            rebuildDocumentOcr(page.docId)
+            docId = page.docId
+        }
+        syncSearch(docId)
     }
 
     private suspend fun refreshMeta(docId: String) {
@@ -567,6 +624,7 @@ class DocRepository(context: Context) {
         val pages = dao.getPages(docId)
         val size = FileStore.docDir(app, docId).walkTopDown().filter { it.isFile }.sumOf { it.length() }
         dao.setDocMeta(docId, pages.size, size, pages.firstOrNull()?.filePath.orEmpty(), System.currentTimeMillis())
+        if (!database.inTransaction()) syncSearch(docId)
     }
 
     private fun uniquePageId(docId: String): String =
@@ -582,8 +640,9 @@ class DocRepository(context: Context) {
             ?: FileStore.legacyPageFile(app, id, 0).takeIf { it.exists() }?.absolutePath,
         folder = folder,
         tags = tags,
-        ocrText = ocrText,
-        createdAt = createdAt
+        ocrText = ocrCorrection.ifBlank { ocrText },
+        createdAt = createdAt,
+        legacyOcrText = ocrLegacyText
     )
 }
 

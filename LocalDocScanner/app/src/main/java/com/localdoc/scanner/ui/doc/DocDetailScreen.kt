@@ -107,6 +107,9 @@ fun DocDetailScreen(
     var batchFilter by remember { mutableStateOf(ScanFilter.AUTO) }
     var batchBrightness by remember { mutableFloatStateOf(0f) }
     var batchContrast by remember { mutableFloatStateOf(1f) }
+    var lineEditPage by remember { mutableStateOf<PageEntity?>(null) }
+    var lineEditIndex by remember { mutableIntStateOf(0) }
+    var lineEditText by remember { mutableStateOf("") }
     var ocrOpen by remember { mutableStateOf(false) }
     var ocrPrecise by remember { mutableStateOf(context.getSharedPreferences("ocr_job_receipts", android.content.Context.MODE_PRIVATE).getBoolean("$docId:precise", true)) }
     var ocrRunning by remember { mutableStateOf(false) }
@@ -120,6 +123,7 @@ fun DocDetailScreen(
     var pdfMaxImageSide by remember { mutableIntStateOf(3200) }
     var searchablePdf by remember { mutableStateOf(false) }
     var exportName by remember(doc?.title) { mutableStateOf(doc?.title ?: "文档") }
+    var pageBusy by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     val ocrWorks by remember(context, docId) { OcrJobs.observe(context, docId) }.collectAsState(emptyList())
     val ocrWork = ocrWorks.firstOrNull { it.id.toString() == context.getSharedPreferences("ocr_job_receipts", android.content.Context.MODE_PRIVATE).getString("$docId:work", null) }
@@ -148,13 +152,21 @@ fun DocDetailScreen(
         }
     }
 
+    fun changePage(action: suspend () -> Unit) {
+        if (pageBusy) return
+        pageBusy = true
+        scope.launch { try { action(); refresh++ }
+            catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; vm.notify("页面操作失败：${e.message}") }
+            finally { pageBusy = false }
+        }
+    }
     fun cleanName(value: String): String = value.ifBlank { "文档" }.replace(Regex("[\\\\/:*?\"<>|]"), "_")
     fun toast(value: String) = Toast.makeText(context, value, Toast.LENGTH_LONG).show()
 
     val savePdf = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
         if (uri != null) scope.launch {
             busy = true
-            val ok = if (searchablePdf) vm.exportSearchablePdf(docId, uri)
+            val ok = if (searchablePdf) vm.exportSearchablePdf(docId, uri, pageSize, pdfMaxImageSide)
             else vm.exportPdf(docId, uri, pageSize, pdfMaxImageSide)
             busy = false
             if (ok) {
@@ -272,12 +284,12 @@ fun DocDetailScreen(
                                 Text("${index + 1}", modifier = Modifier.padding(6.dp), color = MaterialTheme.colorScheme.primary)
                             }
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                                TextButton(onClick = { scope.launch { vm.movePage(docId, index, index - 1); refresh++ } }, enabled = index > 0) { Text("前移") }
-                                TextButton(onClick = { scope.launch { vm.movePage(docId, index, index + 1); refresh++ } }, enabled = index < pages.lastIndex) { Text("后移") }
+                                TextButton(onClick = { changePage { vm.movePage(docId, index, index - 1) } }, enabled = !pageBusy && index > 0) { Text("前移") }
+                                TextButton(onClick = { changePage { vm.movePage(docId, index, index + 1) } }, enabled = !pageBusy && index < pages.lastIndex) { Text("后移") }
                             }
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                                 TextButton(onClick = { onEditPage(page, index) }) { Text("编辑") }
-                                TextButton(onClick = { scope.launch { vm.duplicatePage(docId, page.id); refresh++ } }) { Text("复制") }
+                                TextButton(onClick = { changePage { vm.duplicatePage(docId, page.id) } }, enabled = !pageBusy) { Text("复制") }
                                 TextButton(onClick = {
                                     scope.launch {
                                         vm.trashPage(docId, page.id)
@@ -453,6 +465,17 @@ fun DocDetailScreen(
                             enabled = ocrText.isNotBlank()
                         ) { Text("另存TXT") }
                     }
+                    if (!doc?.legacyOcrText.isNullOrBlank()) TextButton(onClick = {
+                        clipboard.setText(AnnotatedString(doc!!.legacyOcrText)); toast("旧版全文备份已复制，原文仍保留")
+                    }) { Text("复制旧版全文备份") }
+                    Text("下面的全文是独立校订稿。修正可搜索PDF文字层，请逐页校正原识别行。", style = MaterialTheme.typography.bodySmall)
+                    pages.forEachIndexed { pageIndex, page ->
+                        val lines = com.localdoc.scanner.ocr.OcrLayout.decode(page.ocrLayout)
+                        if (lines.isNotEmpty()) Row {
+                            Text("第${pageIndex + 1}页")
+                            TextButton(onClick = { lineEditPage = page; lineEditIndex = 0; lineEditText = lines[0].text }, enabled = !ocrRunning) { Text("逐行校正文字层") }
+                        }
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         TextButton(onClick = { OcrJobs.cancel(context, docId) }, enabled = ocrRunning) { Text("暂停") }
                         TextButton(onClick = { startOcr(true) }, enabled = !ocrRunning && ocrWork != null) { Text("续跑 / 重试失败页") }
@@ -476,7 +499,7 @@ fun DocDetailScreen(
                         ocrOpen = false
                     },
                     enabled = !ocrRunning
-                ) { Text("保存校正") }
+                ) { Text("保存独立校订稿") }
             },
             dismissButton = {
                 TextButton(onClick = { ocrOpen = false }) { Text("关闭") }
@@ -484,6 +507,21 @@ fun DocDetailScreen(
         )
     }
 
+    lineEditPage?.let { page ->
+        val lines = com.localdoc.scanner.ocr.OcrLayout.decode(page.ocrLayout)
+        AlertDialog(onDismissRequest = { lineEditPage = null }, title = { Text("校正PDF文字层 · 第${lineEditIndex + 1}/${lines.size}行") },
+            text = { Column {
+                AsyncImage(model = File(page.filePath), contentDescription = "原页面", modifier = Modifier.fillMaxWidth().height(200.dp))
+                OutlinedTextField(lineEditText, { lineEditText = it }, label = { Text("此行文字，保留原坐标") })
+                Row {
+                    TextButton(onClick = { lineEditIndex--; lineEditText = lines[lineEditIndex].text }, enabled = lineEditIndex > 0) { Text("上一行") }
+                    TextButton(onClick = { lineEditIndex++; lineEditText = lines[lineEditIndex].text }, enabled = lineEditIndex + 1 < lines.size) { Text("下一行") }
+                }
+            } }, confirmButton = { Button(onClick = { scope.launch {
+                try { vm.correctOcrLine(page.id, lineEditIndex, lineEditText, page.updatedAt); refresh++; lineEditPage = null; toast("文字层已校正，下次导出生效") }
+                catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; toast(e.message ?: "校正失败") }
+            } }) { Text("保存此行") } }, dismissButton = { TextButton(onClick = { lineEditPage = null }) { Text("取消") } })
+    }
     if (confirmDeleteDoc) {
         AlertDialog(
             onDismissRequest = { confirmDeleteDoc = false },

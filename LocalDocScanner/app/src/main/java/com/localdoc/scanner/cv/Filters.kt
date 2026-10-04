@@ -169,38 +169,3 @@ private fun colorBoost(pixels: IntArray) {
         pixels[i] = Color.argb(0xFF, r, g, b)
     }
 }
-
-/** Otsu 全局阈值 */
-fun otsuThreshold(pixels: IntArray): Int {
-    val histogram = IntArray(256)
-    for (p in pixels) {
-        val g = (((p shr 16) and 0xFF) * 0.299f +
-            ((p shr 8) and 0xFF) * 0.587f +
-            (p and 0xFF) * 0.114f).toInt().coerceIn(0, 255)
-        histogram[g]++
-    }
-    val total = pixels.size
-    var sum = 0f
-    for (v in 0..255) sum += v * histogram[v]
-
-    var sumB = 0f
-    var wB = 0
-    var maxVariance = 0f
-    var threshold = 128
-
-    for (v in 0..255) {
-        wB += histogram[v]
-        if (wB == 0) continue
-        val wF = total - wB
-        if (wF == 0) break
-        sumB += v * histogram[v]
-        val mB = sumB / wB
-        val mF = (sum - sumB) / wF
-        val variance = wB.toFloat() * wF.toFloat() * (mB - mF) * (mB - mF)
-        if (variance > maxVariance) {
-            maxVariance = variance
-            threshold = v
-        }
-    }
-    return threshold
-}

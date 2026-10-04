@@ -28,7 +28,9 @@ object AppLock {
             .putBoolean("biometric", false)
             .putString(SALT, Base64.encodeToString(salt, Base64.NO_WRAP))
             .putString(HASH, Base64.encodeToString(hash, Base64.NO_WRAP))
-            .apply()
+            .commit()
+        com.localdoc.scanner.office.HostLockSession.configure(context, true)
+        com.localdoc.scanner.office.HostLockSession.unlock(context)
     }
 
     fun verify(context: Context, pin: String): Boolean {
@@ -43,7 +45,8 @@ object AppLock {
 
     fun disable(context: Context, pin: String): Boolean {
         if (!verify(context, pin)) return false
-        prefs(context).edit().clear().apply()
+        prefs(context).edit().clear().commit()
+        com.localdoc.scanner.office.HostLockSession.configure(context, false)
         return true
     }
 

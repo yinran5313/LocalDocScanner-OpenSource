@@ -13,6 +13,26 @@ import com.tom_roush.pdfbox.pdmodel.graphics.color.PDDeviceRGB
 import com.tom_roush.pdfbox.cos.COSName
 
 class SearchablePdfExporterTest {
+    @Test fun selectedLetterAndImageSizesApplyToSearchablePdf() {
+        val dir = kotlin.io.path.createTempDirectory("searchable-size-").toFile()
+        try {
+            val image = File(dir, "page.jpg")
+            checkNotNull(javaClass.getResourceAsStream("/searchable-pdf-page.jpg")).use { input -> image.outputStream().use(input::copyTo) }
+            for (size in listOf(PdfExporter.PageSize.LETTER, PdfExporter.PageSize.FIT_IMAGE)) {
+                val output = File(dir, "$size.pdf")
+                File("src/main/assets/fonts/LXGWWenKai-Regular.ttf").inputStream().use { font -> output.outputStream().use { stream ->
+                    assertTrue(SearchablePdfExporter.export(listOf(SearchablePdfPage(image, "已校正文字", listOf(OcrTextBox("已校正文字", .1f, .2f, .8f, .3f)))), stream, font, size) { document, file ->
+                        file.inputStream().use { PDImageXObject(document, it, COSName.DCT_DECODE, 320, 480, 8, PDDeviceRGB.INSTANCE) }
+                    })
+                } }
+                PDDocument.load(output).use { document ->
+                    assertEquals(if (size == PdfExporter.PageSize.LETTER) 612f else 320f, document.getPage(0).mediaBox.width, .01f)
+                    assertEquals(if (size == PdfExporter.PageSize.LETTER) 792f else 480f, document.getPage(0).mediaBox.height, .01f)
+                    assertTrue(PDFTextStripper().getText(document).contains("已校正文字"))
+                }
+            }
+        } finally { dir.deleteRecursively() }
+    }
     @Test fun positionedLayerFollowsOcrBoxAndDoesNotTruncateLongText() {
         val dir = kotlin.io.path.createTempDirectory("positioned-pdf-").toFile()
         val image = File(dir, "page.jpg")

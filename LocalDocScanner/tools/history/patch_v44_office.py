@@ -1,3 +1,6 @@
+# Historical one-time patch; archived, intentionally disabled.
+raise SystemExit("Historical patch only. Do not run against current sources.")
+
 """One-time, checked source transformation for Office writeback failure propagation."""
 from pathlib import Path
 p = Path(__file__).resolve().parents[1] / 'office-engine/src/main/java/org/libreoffice/androidlib/LOActivity.java'

@@ -46,6 +46,8 @@ import com.localdoc.scanner.model.ToolEntry
 fun HomeScreen(
     docs: List<DocItem>,
     draftCount: Int,
+    draftProblem: String,
+    onBackupDraft: () -> Unit,
     onCaptureClick: () -> Unit,
     onImportClick: () -> Unit,
     onOpenFileClick: () -> Unit,
@@ -54,6 +56,8 @@ fun HomeScreen(
     onTrashClick: () -> Unit,
     onOutputHistoryClick: () -> Unit,
     onLibraryWorkbench: () -> Unit,
+    onToolTasks: () -> Unit,
+    onStorage: () -> Unit,
     onSettingsClick: () -> Unit,
     onToolClick: (ToolEntry) -> Unit,
     onDocClick: (DocItem) -> Unit,
@@ -99,6 +103,7 @@ fun HomeScreen(
                         TextButton(onClick = { topMenuOpen = true }) { Text("更多") }
                         DropdownMenu(expanded = topMenuOpen, onDismissRequest = { topMenuOpen = false }) {
                             DropdownMenuItem(text = { Text("回收站") }, onClick = { topMenuOpen = false; onTrashClick() })
+                            DropdownMenuItem(text = { Text("内部文件 / 空间") }, onClick = { topMenuOpen = false; onStorage() })
                             DropdownMenuItem(text = { Text("设置") }, onClick = { topMenuOpen = false; onSettingsClick() })
                         }
                     }
@@ -136,7 +141,15 @@ fun HomeScreen(
                     singleLine = true,
                     shape = RoundedCornerShape(18.dp)
                 )
+                TextButton(onClick = onToolTasks) { Text("工具任务 / 续跑") }
                 TextButton(onClick = onLibraryWorkbench) { Text("全文检索 / 批量归档") }
+            }
+            if (draftProblem.isNotBlank()) item {
+                Text(draftProblem, color = MaterialTheme.colorScheme.error)
+                Row {
+                    Button(onClick = onBackupDraft) { Text("备份草稿原始文件") }
+                    TextButton(onClick = { confirmDiscard = true }) { Text("明确放弃草稿") }
+                }
             }
             if (draftCount > 0) {
                 item {

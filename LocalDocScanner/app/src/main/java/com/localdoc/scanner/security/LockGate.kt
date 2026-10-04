@@ -22,24 +22,24 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 
 @Composable
-fun LockGate(content: @Composable () -> Unit) {
+fun LockGate(onUnlocked: () -> Unit = {}, content: @Composable () -> Unit) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     var unlocked by remember { mutableStateOf(!AppLock.enabled(context)) }
-    var backgroundAt by remember { mutableLongStateOf(0L) }
+    val activity = BiometricUnlock.activity(context)
 
     DisposableEffect(lifecycle) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_STOP -> backgroundAt = System.currentTimeMillis()
+                Lifecycle.Event.ON_STOP -> activity?.let { com.localdoc.scanner.office.HostLockSession.leave(it) }
                 Lifecycle.Event.ON_START -> {
-                    if (AppLock.enabled(context) && backgroundAt > 0L && System.currentTimeMillis() - backgroundAt >= 30_000L) {
-                        unlocked = false
-                    }
+                    if (AppLock.enabled(context) && com.localdoc.scanner.office.HostLockSession.needsUnlock(context)) unlocked = false
+                    else if (unlocked) activity?.let { com.localdoc.scanner.office.HostLockSession.enter(it) }
                 }
                 else -> Unit
             }
@@ -49,13 +49,21 @@ fun LockGate(content: @Composable () -> Unit) {
     }
 
     if (unlocked || !AppLock.enabled(context)) content() else LockScreen(
-        onBiometricUnlock = { unlocked = true },
-        onUnlock = { pin -> AppLock.verify(context, pin).also { if (it) unlocked = true } })
+        onBiometricUnlock = {
+            com.localdoc.scanner.office.HostLockSession.unlock(context); unlocked = true
+            activity?.let { com.localdoc.scanner.office.HostLockSession.enter(it) }; onUnlocked()
+        },
+        onUnlock = { pin -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { AppLock.verify(context, pin) }.also {
+            if (it) { com.localdoc.scanner.office.HostLockSession.unlock(context); unlocked = true
+                activity?.let { current -> com.localdoc.scanner.office.HostLockSession.enter(current) }; onUnlocked() }
+        } })
 }
 
 @Composable
-private fun LockScreen(onBiometricUnlock: () -> Unit, onUnlock: (String) -> Boolean) {
+private fun LockScreen(onBiometricUnlock: () -> Unit, onUnlock: suspend (String) -> Boolean) {
     val context = LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var busy by remember { mutableStateOf(false) }
     var pin by remember { mutableStateOf("") }
     var error by remember { mutableStateOf(false) }
     var biometricError by remember { mutableStateOf("") }
@@ -79,8 +87,8 @@ private fun LockScreen(onBiometricUnlock: () -> Unit, onUnlock: (String) -> Bool
         )
         if (error) Text("密码不正确", color = MaterialTheme.colorScheme.error)
         Button(
-            onClick = { if (!onUnlock(pin)) error = true },
-            enabled = pin.length >= 4,
+            onClick = { busy = true; scope.launch { try { if (!onUnlock(pin)) error = true } finally { busy = false } } },
+            enabled = !busy && pin.length >= 4,
             modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
         ) { Text("解锁") }
         if (AppLock.biometricEnabled(context) && BiometricUnlock.available(context)) {

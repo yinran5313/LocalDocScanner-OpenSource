@@ -142,12 +142,6 @@ fun ExternalFileScreen(
         busy = false
     }
 
-    val latestFile by rememberUpdatedState(localFile)
-    val latestRetain by rememberUpdatedState(retainWorkCopy)
-    DisposableEffect(external) {
-        onDispose { Unit }
-    }
-
     val engineLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { engineResult ->
         scope.launch {
             busy = true
@@ -512,29 +506,6 @@ private fun OfficeWorkspaceBody(
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun TextEditorBody(
-    text: String,
-    onTextChange: (String) -> Unit,
-    status: String,
-    modifier: Modifier = Modifier
-) {
-    Column(
-        modifier = modifier.fillMaxSize().padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        Text("轻文本编辑", style = MaterialTheme.typography.titleMedium)
-        Text("支持 TXT、CSV 和 Markdown；保存时另存副本。", style = MaterialTheme.typography.bodySmall)
-        if (status.isNotBlank()) Text(status, color = MaterialTheme.colorScheme.primary)
-        OutlinedTextField(
-            value = text,
-            onValueChange = onTextChange,
-            modifier = Modifier.fillMaxWidth().weight(1f),
-            label = { Text("内容") }
-        )
     }
 }
 

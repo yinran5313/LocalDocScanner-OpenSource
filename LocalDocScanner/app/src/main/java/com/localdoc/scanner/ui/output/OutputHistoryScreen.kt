@@ -51,7 +51,8 @@ fun OutputHistoryScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     var pendingJson by rememberSaveable { mutableStateOf("") }
     var status by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
-    var records by remember { mutableStateOf(OutputHistoryStore.all(context)) }
+    var records by remember { mutableStateOf<List<com.localdoc.scanner.output.OutputRecord>>(emptyList()) }
+    androidx.compose.runtime.LaunchedEffect(Unit) { records = withContext(Dispatchers.IO) { OutputHistoryStore.all(context) } }
     var officeEngine by remember { mutableStateOf(OfficeEngineBridge.installed(context)) }
     val editor = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val record = runCatching { com.localdoc.scanner.data.ToolDrafts.gson.fromJson(pendingJson, com.localdoc.scanner.output.OutputRecord::class.java) }.getOrNull()
@@ -74,7 +75,7 @@ fun OutputHistoryScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                     } else "工作副本已更新，可以分享或另存到手机"
                 }.getOrElse { "同步失败：${it.message}；内部副本保留在导出记录。" }
             }
-            records = OutputHistoryStore.all(context)
+            records = withContext(Dispatchers.IO) { OutputHistoryStore.all(context) }
             busy = false
         }
     }
@@ -85,7 +86,7 @@ fun OutputHistoryScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                 title = { Text("导出记录") },
                 navigationIcon = { TextButton(onClick = onBack) { Text("返回") } },
                 actions = { TextButton(onClick = {
-                    records = OutputHistoryStore.all(context)
+                    scope.launch { records = withContext(Dispatchers.IO) { OutputHistoryStore.all(context) } }
                     officeEngine = OfficeEngineBridge.installed(context)
                 }) { Text("刷新") } }
             )
@@ -159,7 +160,7 @@ fun OutputHistoryScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                             } else if (record.savedUri.isNotBlank()) {
                                 Share.openUri(context, Uri.parse(record.savedUri), record.mime)
                             } else internal.takeIf { it.isFile }?.let { Share.open(context, it, record.mime) } == true
-                            if (!opened) records = OutputHistoryStore.all(context)
+                            if (!opened) scope.launch { records = withContext(Dispatchers.IO) { OutputHistoryStore.all(context) } }
                         }, enabled = !busy) { Text(when {
                             isFolder -> "打开位置"
                             officeFormat != null && officeEngine == null -> "安装完整引擎"

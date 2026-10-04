@@ -101,11 +101,6 @@ private fun OpenXmlFilePreview(file: File) {
 }
 
 @Composable
-private fun PdfFilePreview(file: File) {
-    PdfReader(file, Modifier.fillMaxWidth().height(560.dp))
-}
-
-@Composable
 internal fun ZoomableImage(model: Any, key: Any, modifier: Modifier = Modifier.fillMaxWidth().height(300.dp)) {
     var scale by remember(key) { mutableFloatStateOf(1f) }
     var offset by remember(key) { mutableStateOf(Offset.Zero) }
@@ -135,14 +130,15 @@ internal fun ZoomableImage(model: Any, key: Any, modifier: Modifier = Modifier.f
 
 @Composable
 private fun TextFilePreview(file: File) {
-    val text = remember(file, file.lastModified()) {
-        runCatching {
+    var text by remember(file) { mutableStateOf("读取中…") }
+    LaunchedEffect(file, file.lastModified()) {
+        text = withContext(Dispatchers.IO) { runCatching {
             file.inputStream().bufferedReader(Charsets.UTF_8).use { reader ->
                 val chars = CharArray(12000)
                 val count = reader.read(chars)
                 if (count <= 0) "" else String(chars, 0, count) + if (file.length() > 12000) "\n……" else ""
             }
-        }.getOrElse { "无法读取文字：${it.message}" }
+        }.getOrElse { "无法读取文字：${it.message}" } }
     }
     Box(
         Modifier.fillMaxWidth().height(260.dp).background(MaterialTheme.colorScheme.surfaceVariant).padding(12.dp)

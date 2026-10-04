@@ -100,6 +100,8 @@ import org.libreoffice.androidlib.lok.LokClipboardEntry;
 
 // LocalDocScanner changes: private work-copy access, return-to-host, native process isolation.
 public class LOActivity extends AppCompatActivity {
+    private final com.localdoc.scanner.office.HostLockSession.OfficeGate localDocLockGate = new com.localdoc.scanner.office.HostLockSession.OfficeGate();
+
     final static String TAG = "LOActivity";
 
     private static final String ASSETS_EXTRACTED_GIT_COMMIT = "ASSETS_EXTRACTED_GIT_COMMIT";
@@ -975,8 +977,12 @@ public class LOActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        localDocLockGate.resume(this);
         Log.i(TAG, "onResume..");
     }
+
+    @Override
+    protected void onStop() { localDocLockGate.leave(this); super.onStop(); }
 
     @Override
     protected void onPause() {

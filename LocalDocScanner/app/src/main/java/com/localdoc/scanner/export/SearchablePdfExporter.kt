@@ -21,13 +21,20 @@ data class SearchablePdfPage(val image: File, val text: String, val boxes: List<
 
 /** 扫描图作为可见页面，OCR文字作为不可见文字层。 */
 object SearchablePdfExporter {
-    fun export(context: Context, pages: List<SearchablePdfPage>, output: OutputStream): Boolean =
-        context.assets.open("fonts/LXGWWenKai-Regular.ttf").use { font -> export(pages, output, font) }
+    fun export(context: Context, pages: List<SearchablePdfPage>, output: OutputStream,
+        pageSize: PdfExporter.PageSize = PdfExporter.PageSize.A4, maxImageSide: Int = 3200): Boolean =
+        context.assets.open("fonts/LXGWWenKai-Regular.ttf").use { font ->
+            export(pages, output, font, imageLoader = { document, file ->
+                val bitmap = requireNotNull(com.localdoc.scanner.util.ImageIo.loadFromFile(file, maxImageSide)) { "页面图片无法读取" }
+                try { JPEGFactory.createFromImage(document, bitmap, 0.94f) } finally { bitmap.recycle() }
+            }, pageSize = pageSize)
+        }
 
     internal fun export(
         pages: List<SearchablePdfPage>,
         output: OutputStream,
         fontInput: InputStream,
+        pageSize: PdfExporter.PageSize = PdfExporter.PageSize.A4,
         imageLoader: (PDDocument, File) -> PDImageXObject = { document, file ->
             file.inputStream().buffered().use { JPEGFactory.createFromStream(document, it) }
         }
@@ -36,9 +43,13 @@ object SearchablePdfExporter {
         PDDocument().use { document ->
             val font = PDType0Font.load(document, fontInput, true)
             pages.forEach { item ->
-                val page = PDPage(PDRectangle.A4)
-                document.addPage(page)
                 val image = imageLoader(document, item.image)
+                val page = PDPage(when (pageSize) {
+                    PdfExporter.PageSize.A4 -> PDRectangle.A4
+                    PdfExporter.PageSize.LETTER -> PDRectangle.LETTER
+                    PdfExporter.PageSize.FIT_IMAGE -> PDRectangle(image.width.toFloat(), image.height.toFloat())
+                })
+                document.addPage(page)
                 val box = page.mediaBox
                 val imageRatio = image.width.toFloat() / image.height.coerceAtLeast(1)
                 val pageRatio = box.width / box.height

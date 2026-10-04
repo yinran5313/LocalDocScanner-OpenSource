@@ -68,5 +68,4 @@ object OfficeFormats {
         return "$fileName.${format.extension}"
     }
 
-    fun supportedExtensions(): Set<String> = byExtension.keys
 }

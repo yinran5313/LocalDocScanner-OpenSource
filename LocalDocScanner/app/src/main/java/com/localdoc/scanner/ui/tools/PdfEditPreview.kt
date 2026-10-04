@@ -80,6 +80,9 @@ internal fun PdfEditPreview(
     onSelectPage: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val latestRect by androidx.compose.runtime.rememberUpdatedState(NormalizedRect(x, y, width, height))
+    val latestChange by androidx.compose.runtime.rememberUpdatedState(onRectChange)
+    val latestStart by androidx.compose.runtime.rememberUpdatedState(onInteractionStart)
     val density = LocalDensity.current
     val canvasHeight = 430.dp
     val canvasHeightPx = with(density) { canvasHeight.toPx() }
@@ -112,40 +115,44 @@ internal fun PdfEditPreview(
 
                 Canvas(
                     Modifier.fillMaxWidth().height(canvasHeight)
-                        .pointerInput(bitmap, operation, x, y, width, height) {
+                        .pointerInput(bitmap, operation, areaWidthPx, canvasHeightPx) {
                             detectTapGestures { point ->
                                 if (operation in 1..5 || operation == 7) {
                                     val nx = ((point.x - left) / pageWidth).coerceIn(0f, 1f)
                                     val ny = ((point.y - top) / pageHeight).coerceIn(0f, 1f)
                                     if (point.x in left..(left + pageWidth) && point.y in top..(top + pageHeight)) {
-                                        onInteractionStart()
-                                        val rect = PdfPlacementMath.centeredAt(nx, ny, width, height)
-                                        onRectChange(rect.x, rect.y, rect.width, rect.height)
+                                        latestStart()
+                                        val rect = PdfPlacementMath.centeredAt(nx, ny, latestRect.width, latestRect.height)
+                                        latestChange(rect.x, rect.y, rect.width, rect.height)
                                     }
                                 }
                             }
                         }
-                        .pointerInput(bitmap, operation, x, y, width, height) {
+                        .pointerInput(bitmap, operation, areaWidthPx, canvasHeightPx) {
                             var resizing = false
+                            var dragRect = latestRect
                             detectDragGestures(
                                 onDragStart = { point ->
-                                    if (operation in 1..5 || operation == 7) onInteractionStart()
-                                    val right = left + (x + width) * pageWidth
-                                    val bottom = top + (y + height) * pageHeight
+                                    dragRect = latestRect
+                                    if (operation in 1..5 || operation == 7) latestStart()
+                                    val right = left + (dragRect.x + dragRect.width) * pageWidth
+                                    val bottom = top + (dragRect.y + dragRect.height) * pageHeight
                                     resizing = operation in setOf(2, 4, 7) && abs(point.x - right) <= handleRadius * 1.8f && abs(point.y - bottom) <= handleRadius * 1.8f
                                 },
                                 onDrag = { change, drag ->
                                     if (operation in 1..5 || operation == 7) {
                                         if (resizing) {
                                             val rect = PdfPlacementMath.resize(
-                                                NormalizedRect(x, y, width, height), drag.x / pageWidth, drag.y / pageHeight
+                                                dragRect, drag.x / pageWidth, drag.y / pageHeight
                                             )
-                                            onRectChange(rect.x, rect.y, rect.width, rect.height)
+                                            dragRect = rect
+                                            latestChange(rect.x, rect.y, rect.width, rect.height)
                                         } else {
                                             val rect = PdfPlacementMath.move(
-                                                NormalizedRect(x, y, width, height), drag.x / pageWidth, drag.y / pageHeight
+                                                dragRect, drag.x / pageWidth, drag.y / pageHeight
                                             )
-                                            onRectChange(rect.x, rect.y, rect.width, rect.height)
+                                            dragRect = rect
+                                            latestChange(rect.x, rect.y, rect.width, rect.height)
                                         }
                                         change.consume()
                                     }
@@ -257,7 +264,11 @@ internal fun PdfEditPreview(
 private fun PdfPageThumbnail(file: File, index: Int, selected: Boolean, onClick: () -> Unit) {
     var bitmap by remember(file, index) { mutableStateOf<Bitmap?>(null) }
     LaunchedEffect(file, index) {
-        bitmap = withContext(Dispatchers.IO) { PdfTools.renderPage(file, index, 260) }
+        var pending: Bitmap? = null
+        try {
+            val rendered = withContext(Dispatchers.IO) { PdfTools.renderPage(file, index, 260).also { pending = it } }
+            bitmap = rendered; pending = null
+        } finally { pending?.recycle() }
     }
     DisposableEffect(file, index) { onDispose { bitmap?.recycle() } }
     Column(

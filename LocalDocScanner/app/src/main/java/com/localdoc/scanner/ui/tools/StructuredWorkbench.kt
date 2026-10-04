@@ -12,6 +12,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.localdoc.scanner.jobs.*
+import com.localdoc.scanner.data.ToolDrafts
 import com.localdoc.scanner.data.FileStore
 import com.localdoc.scanner.data.rememberToolState
 import com.localdoc.scanner.ocr.PaddleOcrEngine
@@ -27,9 +29,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-private data class ReviewPage(val source: String, val page: Int, val raw: String,
-    val fields: Map<String, String>, val rows: List<List<String>>, val error: String = "", val reviewed: Boolean = false)
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun StructuredWorkbench(request: ToolRequest, vm: AppViewModel, onBack: () -> Unit, modifier: Modifier) {
@@ -43,15 +42,40 @@ internal fun StructuredWorkbench(request: ToolRequest, vm: AppViewModel, onBack:
     var status by rememberToolState(request, "batchStatus") { "" }
     var exported by rememberToolState<File?>(request, "batchExport") { null }
     var precise by rememberToolState(request, "batchMedium") { true }
-    var busy by rememberToolState(request, "batchBusy") { false }
+    var submitting by remember { mutableStateOf(false) }
+    var recognizeId by remember(request) { mutableStateOf(ToolTasks.latest(context, request)) }
+    var exportId by remember(request) { mutableStateOf(ToolTasks.latest(context, request, "export")) }
+    val tasks by remember { ToolTasks.watch(context) }.collectAsState(emptyList())
+    val recognition = tasks.firstOrNull { it.id == recognizeId }
+    val exportTask = tasks.firstOrNull { it.id == exportId }
+    val busy = submitting || listOfNotNull(recognition, exportTask).any { it.state in setOf(ToolTaskState.QUEUED, ToolTaskState.RUNNING) }
+    var applied by rememberToolState(request, "batchAppliedTask") { "" }
     val scope = rememberCoroutineScope()
-    LaunchedEffect(request) { if (!vm.isToolRunning) busy = false }
+    LaunchedEffect(recognition?.updatedAt, exportTask?.updatedAt) {
+        val done = setOf(ToolTaskState.SUCCEEDED, ToolTaskState.PARTIAL)
+        if (recognition?.state in done) {
+            val token = "${recognition!!.id}:${recognition.updatedAt}"
+            if (applied != token) {
+                val outcome = withContext(Dispatchers.IO) { ToolTasks.outcome(context, recognition.id) }
+                if (outcome != null) {
+                    val previous = pages.associateBy { it.source to it.page }
+                    pages = outcome.reviewPages.map { fresh -> previous[fresh.source to fresh.page]?.takeIf { it.reviewed || it.edited } ?: fresh }
+                    status = "识别结束：${pages.size}页，请逐页确认字段及表格。"
+                    applied = token
+                }
+            }
+        }
+        if (exportTask?.state == ToolTaskState.SUCCEEDED) {
+            exported = withContext(Dispatchers.IO) { ToolTasks.outcome(context, exportTask!!.id)?.files?.firstOrNull() }
+            status = "已生成XLSX，复核状态与原文已保留，请保存到手机。"
+        }
+    }
     fun extract(raw: String): Map<String, String> = when (kind) {
         0 -> StructureExtractor.extract(StructureExtractor.Kind.INVOICE, raw).fields.associate { it.label to it.value }
         1 -> ReceiptExtractor.fields(raw)
         else -> ReceiptExtractor.custom(raw, template)
     }
-    fun replace(page: ReviewPage) { pages = pages.mapIndexed { i, old -> if (i == selected) page.copy(reviewed = false) else old }; exported = null }
+    fun replace(page: ReviewPage) { pages = pages.mapIndexed { i, old -> if (i == selected) page.copy(reviewed = false, edited = true) else old }; exported = null }
     val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")) { uri ->
         val file = exported
         if (uri != null && file != null) scope.launch {
@@ -65,59 +89,23 @@ internal fun StructuredWorkbench(request: ToolRequest, vm: AppViewModel, onBack:
         }
     }
     fun recognize() {
-        if (vm.isToolRunning) return
-        busy = true
-        exported = null
-        pages = emptyList()
-        vm.runTool {
-            val engine = PaddleOcrEngine(context)
-            try {
-                for (source in request.files) {
-                    val count = if (source.extension.equals("pdf", true)) PdfTools.pageCount(source) else 1
-                    if (count <= 0) { pages = pages + ReviewPage(source.absolutePath, 0, "", emptyMap(), emptyList(), "无法读取PDF，可能需要先解锁"); continue }
-                    for (index in 0 until count) {
-                        status = "识别 ${source.name} 第${index + 1}/${count}页"
-                        val reviewed = withContext(Dispatchers.IO) { runCatching {
-                            val bitmap = if (source.extension.equals("pdf", true)) PdfTools.renderPage(source, index, 3000) else ImageIo.loadFromFile(source, 3600)
-                            requireNotNull(bitmap) { "无法读取页面图片" }
-                            try {
-                                val outcome = engine.recognize(bitmap, precise)
-                                val rows = TableRecovery.fromBoxes(outcome.boxes).ifEmpty { TableRecovery.fromText(outcome.text) }
-                                ReviewPage(source.absolutePath, index, outcome.text, if (tableOnly) emptyMap() else extract(outcome.text), rows,
-                                    if (outcome.text.isBlank()) "未识别到文字，请重试或录入" else "")
-                            } finally { bitmap.recycle() }
-                        }.getOrElse { if (it is kotlinx.coroutines.CancellationException) throw it; ReviewPage(source.absolutePath, index, "", emptyMap(), emptyList(), it.message ?: "识别失败") } }
-                        pages = pages + reviewed
-                    }
-                }
-                status = "识别结束：${pages.size}页，${pages.count { it.error.isNotBlank() }}页需处理。请逐页确认字段和表格，导出保留原文。"
-            } finally { engine.close(); busy = false }
+        if (busy) return
+        val parameters = ToolDrafts.snapshot(context, request)
+        submitting = true
+        scope.launch {
+            try { recognizeId = ToolTasks.submit(context, request, parameters); pages = emptyList(); exported = null }
+            catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; status = "提交失败：${e.message}" }
+            finally { submitting = false }
         }
     }
     fun export() {
-        if (vm.isToolRunning || pages.isEmpty()) return
-        busy = true
-        vm.runTool {
-            val result = withContext(Dispatchers.IO) { runCatching {
-                val sheets = mutableListOf<Pair<String, List<List<String>>>>()
-                if (!tableOnly) {
-                    val keys = pages.flatMap { it.fields.keys }.distinct()
-                    sheets += "汇总" to (listOf(listOf("来源", "页", "复核", "错误") + keys) + pages.map {
-                        listOf(File(it.source).name, (it.page + 1).toString(), if (it.reviewed) "已确认" else "待复核", it.error) + keys.map { key -> it.fields[key].orEmpty() }
-                    })
-                }
-                pages.forEachIndexed { i, page -> if (page.rows.isNotEmpty()) sheets += "明细${i + 1}" to page.rows }
-                sheets += "原始识别" to (listOf(listOf("来源", "页", "原文分段", "错误")) + pages.flatMap { page ->
-                    page.raw.chunked(32000).ifEmpty { listOf("") }.map { listOf(File(page.source).name, (page.page + 1).toString(), it, page.error) }
-                })
-                val output = File(FileStore.exportDir(context), "${if (tableOnly) "表格" else "票据汇总"}_${System.currentTimeMillis()}.xlsx")
-                SpreadsheetExport.write(output, sheets)
-                OutputHistoryStore.recordGenerated(context, output, OutputHistoryStore.mimeFor(output))
-                output
-            } }
-            result.onSuccess { exported = it; status = "已生成XLSX；${pages.count { !it.reviewed }}页尚未确认，状态及原文已保留。请选择保存位置。" }
-                .onFailure { status = "导出失败：${it.message}" }
-            busy = false
+        if (busy || pages.isEmpty()) return
+        val parameters = mapOf("reviewPages" to ToolDrafts.gson.toJson(pages))
+        submitting = true
+        scope.launch {
+            try { exportId = ToolTasks.submit(context, request, parameters, action = "export") }
+            catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; status = "导出提交失败：${e.message}" }
+            finally { submitting = false }
         }
     }
     Scaffold(modifier, topBar = { TopAppBar(title = { Text(request.tool.label) }, navigationIcon = { TextButton(onClick = onBack) { Text("返回") } }) }) { padding ->
@@ -128,7 +116,13 @@ internal fun StructuredWorkbench(request: ToolRequest, vm: AppViewModel, onBack:
             }
             if (kind == 2 && !tableOnly) OutlinedTextField(template, { template = it }, label = { Text("一行一个字段名=正则，第一捕获组为值") }, modifier = Modifier.fillMaxWidth())
             Row { Switch(precise, { precise = it }); Text("高精度 medium") }
-            Button(onClick = ::recognize, enabled = !busy && !vm.isToolRunning) { Text(if (pages.isEmpty()) "识别全部文件" else "重新识别全部") }
+            Button(onClick = ::recognize, enabled = !busy) { Text(if (pages.isEmpty()) "识别全部文件" else "重新识别全部") }
+            listOfNotNull(recognition, exportTask).forEach { task ->
+                ToolTaskPanel(task, onPause = { scope.launch { ToolTasks.pause(context, task.id) } }, onResume = { scope.launch {
+                    try { ToolTasks.resume(context, task.id) }
+                    catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; status = e.message.orEmpty() }
+                } })
+            }
             if (status.isNotBlank()) Text(status)
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             if (pages.isNotEmpty()) {
@@ -164,7 +158,7 @@ internal fun StructuredWorkbench(request: ToolRequest, vm: AppViewModel, onBack:
                     TextButton(onClick = { replace(current.copy(rows = current.rows.ifEmpty { listOf(emptyList()) }.map { it + "" })) }) { Text("加列") }
                 }
                 Button(onClick = { pages = pages.mapIndexed { i, p -> if (i == selected) p.copy(reviewed = true) else p } }) { Text(if (current.reviewed) "此页已确认" else "确认此页已复核") }
-                Button(onClick = ::export, enabled = !busy && !vm.isToolRunning) { Text("生成XLSX汇总与明细") }
+                Button(onClick = ::export, enabled = !busy) { Text("生成XLSX汇总与明细") }
             } else FilePreview(request.files, "输入文件")
             exported?.takeIf(File::isFile)?.let { file ->
                 FilePreview(listOf(file), "导出预览")
