@@ -315,7 +315,7 @@ fun ExternalFileScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text(displayName, maxLines = 1)
+                        Text(displayName, maxLines = 1, style = MaterialTheme.typography.titleMedium, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                         Text("外部文件 · 原件不会被覆盖", style = MaterialTheme.typography.labelSmall)
                     }
                 },
@@ -363,10 +363,15 @@ fun ExternalFileScreen(
                             enabled = !busy,
                             modifier = Modifier.weight(1f)
                         ) { Text("编辑副本") }
-                        Button(
-                            onClick = { printPdf(context, localFile!!, displayName) },
-                            modifier = Modifier.weight(1f)
-                        ) { Text("打印") }
+                        TextButton(onClick = { saveCopy.launch(displayName) }) { Text("保存") }
+                        Box {
+                            var pdfMenu by remember { mutableStateOf(false) }
+                            androidx.compose.material3.IconButton(onClick = { pdfMenu = true }) { com.localdoc.scanner.ui.components.AppIcon(com.localdoc.scanner.R.drawable.ic_ui_more, "文件操作") }
+                            androidx.compose.material3.DropdownMenu(pdfMenu, { pdfMenu = false }) {
+                                com.localdoc.scanner.ui.components.SaveDefaultButton(listOf(localFile!!)) { status = it; pdfMenu=false }
+                                androidx.compose.material3.DropdownMenuItem(text = { Text("打印") }, onClick = { pdfMenu=false; printPdf(context,localFile!!,displayName) })
+                            }
+                        }
                     }
                     TextButton(
                         onClick = ::shareCurrent,

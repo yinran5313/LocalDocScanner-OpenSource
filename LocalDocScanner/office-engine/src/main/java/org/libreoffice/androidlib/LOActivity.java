@@ -1269,7 +1269,7 @@ public class LOActivity extends AppCompatActivity {
                 Uri.encode(urlToLoad) + "&closebutton=1";
 
         // set the language
-        String language = getResources().getConfiguration().locale.toLanguageTag();
+        String language = OfficeUiLanguage.normalize(getResources().getConfiguration().locale);
 
         Log.i(TAG, "Loading with language:  " + language);
 

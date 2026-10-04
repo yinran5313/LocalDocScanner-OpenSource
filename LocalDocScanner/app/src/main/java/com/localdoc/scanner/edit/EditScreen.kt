@@ -83,7 +83,7 @@ private data class StableState(
     val filter: ScanFilter,
     val brightness: Float,
     val contrast: Float,
-    val fineRotation: Float
+    val fineRotation: Float, val cropRatio: Float
 )
 
 @Composable
@@ -107,6 +107,7 @@ fun EditScreen(
     var brightness by remember { mutableFloatStateOf(initialRecipe?.brightness ?: 0f) }
     var contrast by remember { mutableFloatStateOf(initialRecipe?.contrast ?: 1f) }
     var fineRotation by remember { mutableFloatStateOf(initialRecipe?.fineRotation ?: 0f) }
+    var cropRatio by remember { mutableFloatStateOf(initialRecipe?.cropRatio ?: 0f) }
     var zoom by remember { mutableFloatStateOf(1f) }
     var pan by remember { mutableStateOf(Offset.Zero) }
     var showOriginal by remember { mutableStateOf(false) }
@@ -116,7 +117,7 @@ fun EditScreen(
     var history by remember { mutableStateOf<List<StableState>>(emptyList()) }
     var future by remember { mutableStateOf<List<StableState>>(emptyList()) }
 
-    fun snapshot() = StableState(quarterTurns, corners, filter, brightness, contrast, fineRotation)
+    fun snapshot() = StableState(quarterTurns, corners, filter, brightness, contrast, fineRotation, cropRatio)
     fun pushUndo() {
         val now = snapshot()
         if (history.lastOrNull() != now) history = (history + now).takeLast(30)
@@ -131,7 +132,7 @@ fun EditScreen(
         filter = last.filter
         brightness = last.brightness
         contrast = last.contrast
-        fineRotation = last.fineRotation
+        fineRotation = last.fineRotation; cropRatio = last.cropRatio
     }
     fun redo() {
         val next = future.lastOrNull() ?: return
@@ -142,7 +143,7 @@ fun EditScreen(
         filter = next.filter
         brightness = next.brightness
         contrast = next.contrast
-        fineRotation = next.fineRotation
+        fineRotation = next.fineRotation; cropRatio = next.cropRatio
     }
 
     LaunchedEffect(sourcePath) {
@@ -178,7 +179,7 @@ fun EditScreen(
     }
 
     var processedPreview by remember { mutableStateOf<Bitmap?>(null) }
-    LaunchedEffect(rotatedPreview, corners, filter, brightness, contrast, fineRotation, step) {
+    LaunchedEffect(rotatedPreview, corners, filter, brightness, contrast, fineRotation, cropRatio, step) {
         if (step != EditStep.ENHANCE) return@LaunchedEffect
         delay(90)
         val input = rotatedPreview ?: return@LaunchedEffect
@@ -186,7 +187,7 @@ fun EditScreen(
         var pending: Bitmap? = null
         try {
             val output = withContext(Dispatchers.Default) {
-                renderProcessed(input, corners, filter, brightness, contrast, PREVIEW_SIDE, fineRotation).also { pending = ownership.adopt(it) }
+                renderProcessed(input, corners, filter, brightness, contrast, PREVIEW_SIDE, fineRotation, cropRatio).also { pending = ownership.adopt(it) }
             }
             val old = processedPreview; processedPreview = output; pending = null
             if (old !== rotatedPreview && old !== output) ownership.retire(old)
@@ -198,6 +199,7 @@ fun EditScreen(
         pushUndo()
         quarterTurns = (quarterTurns + 1) % 4
         corners = rotateCropClockwise(corners)
+        if(cropRatio > 0f) cropRatio = 1f / cropRatio
         zoom = 1f
         pan = Offset.Zero
     }
@@ -209,7 +211,7 @@ fun EditScreen(
             val detected = withContext(Dispatchers.Default) { autoCornersNormalized(original) }
             var rotated = detected
             repeat(quarterTurns) { rotated = rotateCropClockwise(rotated) }
-            corners = rotated
+            corners = rotatedPreview?.let { CropAspect.fit(rotated, cropRatio, it.width.toFloat()/it.height) } ?: rotated
             zoom = 1f
             pan = Offset.Zero
         }
@@ -218,7 +220,7 @@ fun EditScreen(
     fun save() {
         val original = source ?: return
         if (busy || !ownership.acquire(original)) return
-        val recipe = EditRecipe(quarterTurns, corners.toList(), filter, brightness, contrast, fineRotation)
+        val recipe = EditRecipe(quarterTurns, corners.toList(), filter, brightness, contrast, fineRotation, cropRatio)
         busy = true
         scope.launch {
             try {
@@ -226,7 +228,7 @@ fun EditScreen(
                     val rotated = ImageIo.rotate(original, recipe.quarterTurns * 90f)
                     var rendered: Bitmap? = null
                     try {
-                        rendered = renderProcessed(rotated, recipe.corners, recipe.filter, recipe.brightness, recipe.contrast, MAX_OUTPUT_SIDE, recipe.fineRotation)
+                        rendered = renderProcessed(rotated, recipe.corners, recipe.filter, recipe.brightness, recipe.contrast, MAX_OUTPUT_SIDE, recipe.fineRotation, recipe.cropRatio)
                         val out = File(FileStore.draftWorkDir(context), "render_${java.util.UUID.randomUUID()}.jpg")
                         check(ImageIo.saveJpeg(rendered, out, 94)) { "无法保存页面，请检查手机空间" }
                         EditResult(File(sourcePath), out, recipe, rendered.width, rendered.height)
@@ -270,7 +272,7 @@ fun EditScreen(
                             pan = pan,
                             onZoomPan = { newZoom, newPan -> zoom = newZoom; pan = newPan },
                             onGestureStart = { pushUndo() },
-                            onCornersChanged = { corners = it },
+                            onCornersChanged = { corners = CropAspect.fit(it, cropRatio, preview.width.toFloat()/preview.height) },
                             onResetViewport = { zoom = 1f; pan = Offset.Zero },
                             modifier = Modifier.fillMaxSize()
                         )
@@ -305,13 +307,19 @@ fun EditScreen(
         }
 
         if (step == EditStep.CROP) {
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp)) {
+                CropAspect.presets.forEach { (label, ratio) -> FilterChip(cropRatio == ratio, {
+                    pushUndo(); cropRatio = ratio
+                    rotatedPreview?.let { image -> corners = CropAspect.fit(corners, ratio, image.width.toFloat()/image.height) }
+                }, label = { Text(label) }) }
+            }
             Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(8.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 TextButton(onClick = { rotate() }) { Text("旋转") }
                 TextButton(onClick = { redetect() }) { Text("自动取边") }
-                TextButton(onClick = { pushUndo(); corners = defaultCropCorners() }) { Text("整页") }
+                TextButton(onClick = { pushUndo(); corners = rotatedPreview?.let { CropAspect.fit(defaultCropCorners(0f), cropRatio, it.width.toFloat()/it.height) } ?: defaultCropCorners() }) { Text("整页") }
                 TextButton(onClick = { zoom = 1f; pan = Offset.Zero }) { Text("适合屏幕") }
                 TextButton(onClick = { undo() }, enabled = history.isNotEmpty()) { Text("撤销") }
                 TextButton(onClick = { redo() }, enabled = future.isNotEmpty()) { Text("重做") }

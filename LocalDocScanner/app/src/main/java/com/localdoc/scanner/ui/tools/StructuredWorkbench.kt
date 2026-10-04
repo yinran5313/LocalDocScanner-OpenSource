@@ -35,6 +35,8 @@ import java.io.File
 internal fun StructuredWorkbench(request: ToolRequest, vm: AppViewModel, onBack: () -> Unit, modifier: Modifier) {
     val context = LocalContext.current
     val tableOnly = request.tool.id == "table_xlsx"
+    var combinePages by rememberToolState(request, "combinePages") { false }
+    var skipHeaders by rememberToolState(request, "skipHeaders") { true }
     var kind by rememberToolState(request, "batchKind") { 0 }
     var template by rememberToolState(request, "template") { "编号=(?:号码|编号)[：:\\s]*(\\S+)" }
     var pages by rememberToolState<List<ReviewPage>>(request, "reviewPages") { emptyList() }
@@ -42,6 +44,7 @@ internal fun StructuredWorkbench(request: ToolRequest, vm: AppViewModel, onBack:
     var rowPage by rememberToolState(request, "rowPage") { 0 }
     var status by rememberToolState(request, "batchStatus") { "" }
     var exported by rememberToolState<File?>(request, "batchExport") { null }
+    var language by rememberToolState(request, "ocrLanguage") { "AUTO" }
     var precise by rememberToolState(request, "batchMedium") { true }
     var submitting by remember { mutableStateOf(false) }
     var recognizeId by remember(request) { mutableStateOf(ToolTasks.latest(context, request)) }
@@ -76,7 +79,7 @@ internal fun StructuredWorkbench(request: ToolRequest, vm: AppViewModel, onBack:
         1 -> ReceiptExtractor.fields(raw)
         else -> ReceiptExtractor.custom(raw, template)
     }
-    fun replace(page: ReviewPage) { pages = pages.mapIndexed { i, old -> if (i == selected) page.copy(reviewed = false, edited = true) else old }; exported = null }
+    fun replace(page: ReviewPage) { pages = pages.mapIndexed { i, old -> if (i == selected) page.copy(reviewed = false, edited = true, merges = if (page.rows.size != old.rows.size || page.rows.maxOfOrNull { it.size } != old.rows.maxOfOrNull { it.size }) emptyList() else page.merges) else old }; exported = null }
     val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")) { uri ->
         val file = exported
         if (uri != null && file != null) scope.launch {
@@ -101,7 +104,7 @@ internal fun StructuredWorkbench(request: ToolRequest, vm: AppViewModel, onBack:
     }
     fun export() {
         if (busy || pages.isEmpty()) return
-        val parameters = mapOf("reviewPages" to ToolDrafts.gson.toJson(pages))
+        val parameters = mapOf("reviewPages" to ToolDrafts.gson.toJson(pages), "combinePages" to ToolDrafts.gson.toJson(combinePages), "skipHeaders" to ToolDrafts.gson.toJson(skipHeaders))
         submitting = true
         scope.launch {
             try { exportId = ToolTasks.submit(context, request, parameters, action = "export") }
@@ -116,6 +119,7 @@ internal fun StructuredWorkbench(request: ToolRequest, vm: AppViewModel, onBack:
                 listOf("发票", "小票/收据", "自定义").forEachIndexed { i, name -> FilterChip(kind == i, { kind = i }, label = { Text(name) }) }
             }
             if (kind == 2 && !tableOnly) OutlinedTextField(template, { template = it }, label = { Text("一行一个字段名=正则，第一捕获组为值") }, modifier = Modifier.fillMaxWidth())
+            OcrLanguagePicker(language) { language = it }
             Row { Switch(precise, { precise = it }); Text("高精度 medium") }
             Button(onClick = ::recognize, enabled = !busy) { Text(if (pages.isEmpty()) "识别全部文件" else "重新识别全部") }
             listOfNotNull(recognition, exportTask).forEach { task ->
@@ -158,11 +162,15 @@ internal fun StructuredWorkbench(request: ToolRequest, vm: AppViewModel, onBack:
                     TextButton(onClick = { replace(current.copy(rows = current.rows + listOf(List(current.rows.maxOfOrNull { it.size }?.coerceAtLeast(1) ?: 1) { "" }))) }) { Text("加行") }
                     TextButton(onClick = { replace(current.copy(rows = current.rows.ifEmpty { listOf(emptyList()) }.map { it + "" })) }) { Text("加列") }
                 }
+                TableReviewOptions(current) { replace(it) }
+                Row { Switch(combinePages, { combinePages = it; exported = null }); Text("将同列数的跨页表格合并为一张表") }
+                if(combinePages) Row { Switch(skipHeaders, { skipHeaders = it; exported = null }); Text("移除完全相同的重复表头") }
                 Button(onClick = { pages = pages.mapIndexed { i, p -> if (i == selected) p.copy(reviewed = true) else p } }) { Text(if (current.reviewed) "此页已确认" else "确认此页已复核") }
                 Button(onClick = ::export, enabled = !busy) { Text("生成XLSX汇总与明细") }
             } else FilePreview(request.files, "输入文件")
             exported?.takeIf(File::isFile)?.let { file ->
                 FilePreview(listOf(file), "导出预览")
+                com.localdoc.scanner.ui.components.SaveDefaultButton(listOf(file)) { status = it }
                 Row {
                     Button(onClick = { save.launch(file.name) }) { Text("保存到手机") }
                     TextButton(onClick = { Share.file(context, file, OutputHistoryStore.mimeFor(file)) }) { Text("分享") }

@@ -19,7 +19,7 @@ fun renderProcessed(
     brightness: Float,
     contrast: Float,
     maxSide: Int,
-    fineRotation: Float = 0f
+    fineRotation: Float = 0f, cropRatio: Float = 0f
 ): Bitmap {
     val safeCorners = corners.takeIf { it.size == 4 && isValidCrop(it) } ?: defaultCropCorners()
     val quad = Quad(
@@ -28,7 +28,9 @@ fun renderProcessed(
         Point(safeCorners[2].x * rotated.width, safeCorners[2].y * rotated.height),
         Point(safeCorners[3].x * rotated.width, safeCorners[3].y * rotated.height)
     )
-    val (rawWidth, rawHeight) = outputSizeFor(quad)
+    val (detectedWidth, detectedHeight) = outputSizeFor(quad)
+    val rawWidth = if (cropRatio > 0f && cropRatio.isFinite()) minOf(detectedWidth, (detectedHeight * cropRatio).toInt()) else detectedWidth
+    val rawHeight = if (cropRatio > 0f && cropRatio.isFinite()) (rawWidth / cropRatio).toInt() else detectedHeight
     val cap = (maxSide.toFloat() / max(rawWidth, rawHeight)).coerceAtMost(1f)
     val width = max(64, (rawWidth * cap).toInt())
     val height = max(64, (rawHeight * cap).toInt())

@@ -44,6 +44,8 @@ class DocRepository(context: Context) {
     fun observeTrashed(): Flow<List<DocItem>> = dao.observeTrashed().map { list -> list.map { it.toItem() } }
     suspend fun search(q: String): List<DocItem> = dao.search(q).map { it.toItem() }
 
+    suspend fun setFavorite(id: String, value: Boolean) = withContext(Dispatchers.IO) { dao.setFavorite(id, value) }
+
     suspend fun createDoc(title: String): String = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
         val id = "d${now.toString(36)}${(100..999).random()}"
@@ -73,7 +75,7 @@ class DocRepository(context: Context) {
                     sourcePath = sourceTarget.absolutePath, quarterTurns = draftPage.recipe.quarterTurns,
                     cropPoints = draftPage.recipe.encodeCorners(), filter = draftPage.recipe.filter.name,
                     brightness = draftPage.recipe.brightness, contrast = draftPage.recipe.contrast,
-                    fineRotation = draftPage.recipe.fineRotation,
+                    fineRotation = draftPage.recipe.fineRotation, cropRatio = draftPage.recipe.cropRatio,
                     updatedAt = maxOf(System.currentTimeMillis(), (existing?.updatedAt ?: 0L) + 1))))
                 rebuildDocumentOcr(docId)
                 refreshMeta(docId)
@@ -123,7 +125,7 @@ class DocRepository(context: Context) {
                     width = result.width, height = result.height, quarterTurns = result.recipe.quarterTurns,
                     cropPoints = result.recipe.encodeCorners(), filter = result.recipe.filter.name,
                     brightness = result.recipe.brightness, contrast = result.recipe.contrast,
-                    fineRotation = result.recipe.fineRotation, ocrText = "", ocrLayout = "", ocrMode = "", ocrUpdatedAt = 0L,
+                    fineRotation = result.recipe.fineRotation, cropRatio = result.recipe.cropRatio, ocrText = "", ocrLayout = "", ocrMode = "", ocrUpdatedAt = 0L,
                     updatedAt = maxOf(System.currentTimeMillis(), page.updatedAt + 1)))
                 rebuildDocumentOcr(page.docId)
                 refreshMeta(page.docId)
@@ -202,10 +204,10 @@ class DocRepository(context: Context) {
             val ok = try {
                 val original = ImageIo.loadFromFile(File(page.sourcePath.ifBlank { page.filePath }), 4000) ?: error("无法读取原图")
                 var rotated: android.graphics.Bitmap? = null; var rendered: android.graphics.Bitmap? = null
-                val recipe = EditRecipe(page.quarterTurns, EditRecipe.decodeCorners(page.cropPoints), filter, brightness, contrast, page.fineRotation)
+                val recipe = EditRecipe(page.quarterTurns, EditRecipe.decodeCorners(page.cropPoints), filter, brightness, contrast, page.fineRotation, page.cropRatio)
                 try {
                     rotated = ImageIo.rotate(original, page.quarterTurns * 90f)
-                    rendered = renderProcessed(rotated, recipe.corners, filter, brightness, contrast, 3200, page.fineRotation)
+                    rendered = renderProcessed(rotated, recipe.corners, filter, brightness, contrast, 3200, page.fineRotation, page.cropRatio)
                     check(ImageIo.saveJpeg(rendered, temporary, 94)) { "无法生成页面" }
                     updatePage(page.id, EditResult(File(page.sourcePath.ifBlank { page.filePath }), temporary, recipe, rendered.width, rendered.height))
                 } finally {
@@ -368,6 +370,7 @@ class DocRepository(context: Context) {
                                     .put("brightness", page.brightness.toDouble())
                                     .put("contrast", page.contrast.toDouble())
                                     .put("fineRotation", page.fineRotation.toDouble())
+                                    .put("cropRatio", page.cropRatio.toDouble())
                                     .put("deleted", page.deleted)
                                     .put("ocrText", page.ocrText)
                                     .put("ocrLayout", page.ocrLayout)
@@ -386,6 +389,7 @@ class DocRepository(context: Context) {
                                 .put("ocrText", doc.ocrText)
                         .put("ocrCorrection", doc.ocrCorrection)
                                 .put("ocrLegacyText", doc.ocrLegacyText)
+                                .put("favorite", doc.favorite)
                                 .put("locked", doc.locked)
                                 .put("deleted", doc.deleted)
                                 .put("pages", pagesJson)
@@ -485,6 +489,7 @@ class DocRepository(context: Context) {
                         ocrText = item.optString("ocrText"),
                         ocrCorrection = item.optString("ocrCorrection"),
                         ocrLegacyText = item.optString("ocrLegacyText", item.optString("ocrText")),
+                        favorite = item.optBoolean("favorite"),
                         locked = item.optBoolean("locked"),
                         deleted = item.optBoolean("deleted")
                     )
@@ -517,6 +522,7 @@ class DocRepository(context: Context) {
                         brightness = page.optDouble("brightness", 0.0).toFloat(),
                         contrast = page.optDouble("contrast", 1.0).toFloat(),
                         fineRotation = page.optDouble("fineRotation", 0.0).toFloat(),
+                        cropRatio = page.optDouble("cropRatio", 0.0).toFloat(),
                         deleted = page.optBoolean("deleted"),
                         updatedAt = now,
                         ocrText = page.optString("ocrText"),
@@ -642,7 +648,7 @@ class DocRepository(context: Context) {
         tags = tags,
         ocrText = ocrCorrection.ifBlank { ocrText },
         createdAt = createdAt,
-        legacyOcrText = ocrLegacyText
+        legacyOcrText = ocrLegacyText, favorite = favorite
     )
 }
 

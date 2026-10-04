@@ -64,6 +64,7 @@ object OutputHistoryStore {
         if (existing >= 0) current.removeAt(existing)
         current.add(0, record)
         write(context, current)
+        runCatching { com.localdoc.scanner.data.IndexFileWorker.schedule(context, file) }
         record
     }
 

@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Google Material Symbols document_scanner, Apache-2.0; source is retained in docs/ICON_SOURCES.json. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/ic_tool_document_scanner" android:inset="26%" />

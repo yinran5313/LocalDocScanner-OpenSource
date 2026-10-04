@@ -67,6 +67,8 @@ import com.localdoc.scanner.data.FileStore
 import com.localdoc.scanner.data.db.PageEntity
 import com.localdoc.scanner.cv.ScanFilter
 import com.localdoc.scanner.export.PdfExporter
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.localdoc.scanner.ocr.OcrNaming
 import com.localdoc.scanner.output.OutputHistoryStore
 import com.localdoc.scanner.ui.AppViewModel
@@ -112,6 +114,7 @@ fun DocDetailScreen(
     var lineEditText by remember { mutableStateOf("") }
     var ocrOpen by remember { mutableStateOf(false) }
     var ocrPrecise by remember { mutableStateOf(context.getSharedPreferences("ocr_job_receipts", android.content.Context.MODE_PRIVATE).getBoolean("$docId:precise", true)) }
+    var ocrLanguage by remember { mutableStateOf(context.getSharedPreferences("ocr_job_receipts", android.content.Context.MODE_PRIVATE).getString("$docId:language", "AUTO") ?: "AUTO") }
     var ocrRunning by remember { mutableStateOf(false) }
     var ocrText by remember(doc?.ocrText) { mutableStateOf(doc?.ocrText.orEmpty()) }
     var ocrStats by remember { mutableStateOf("") }
@@ -119,8 +122,8 @@ fun DocDetailScreen(
     var confirmDeleteDoc by remember { mutableStateOf(false) }
     var exportOpen by remember { mutableStateOf(false) }
     var exportFormat by remember { mutableStateOf(ExportFormat.PDF) }
-    var pageSize by remember { mutableStateOf(PdfExporter.PageSize.A4) }
-    var pdfMaxImageSide by remember { mutableIntStateOf(3200) }
+    var pageSize by remember { mutableStateOf(com.localdoc.scanner.data.AppPreferences(context).pageSize) }
+    var pdfMaxImageSide by remember { mutableIntStateOf(com.localdoc.scanner.data.AppPreferences(context).imageSide) }
     var searchablePdf by remember { mutableStateOf(false) }
     var exportName by remember(doc?.title) { mutableStateOf(doc?.title ?: "文档") }
     var pageBusy by remember { mutableStateOf(false) }
@@ -147,7 +150,7 @@ fun DocDetailScreen(
     fun startOcr(resume: Boolean) {
         ocrRunning = true
         scope.launch {
-            try { OcrJobs.start(context, docId, ocrPrecise, resume); ocrStats = "已提交，系统将继续处理" }
+            try { OcrJobs.start(context, docId, ocrPrecise, resume, com.localdoc.scanner.ocr.OcrLanguage.fromCode(ocrLanguage)); ocrStats = "已提交，系统将继续处理" }
             catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; ocrRunning = false; ocrStats = e.message ?: "提交失败" }
         }
     }
@@ -205,13 +208,37 @@ fun DocDetailScreen(
         }
     }
 
+    fun saveDefaultExport() {
+        if (busy) return
+        scope.launch {
+            busy = true
+            try {
+                val files = if (exportFormat == ExportFormat.PDF) {
+                    val file = File(FileStore.exportDir(context), "${cleanName(exportName)}_${System.currentTimeMillis()}.pdf")
+                    val ok = if (searchablePdf) vm.exportSearchablePdf(docId, file, pageSize, pdfMaxImageSide)
+                        else vm.exportPdf(docId, file, pageSize, pdfMaxImageSide)
+                    check(ok) { "PDF生成失败" }
+                    OutputHistoryStore.recordGenerated(context, file, "application/pdf")
+                    listOf(file)
+                } else vm.renderedFiles(docId)
+                check(files.isNotEmpty()) { "没有可保存页面" }
+                val labels = withContext(Dispatchers.IO) { files.map { com.localdoc.scanner.output.DefaultDestination.save(context, it) } }
+                toast("已保存：" + labels.joinToString("；"))
+                exportOpen = false
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                toast("保存失败：${e.message}")
+            } finally { busy = false }
+        }
+    }
+
     fun shareExport() {
         if (busy) return
         scope.launch {
             busy = true
             if (exportFormat == ExportFormat.PDF) {
                 val file = File(FileStore.exportDir(context), "${cleanName(exportName)}.pdf")
-                val ok = if (searchablePdf) vm.exportSearchablePdf(docId, file)
+                val ok = if (searchablePdf) vm.exportSearchablePdf(docId, file, pageSize, pdfMaxImageSide)
                 else vm.exportPdf(docId, file, pageSize, pdfMaxImageSide)
                 if (ok) {
                     OutputHistoryStore.recordGenerated(context, file, "application/pdf")
@@ -439,6 +466,7 @@ fun DocDetailScreen(
                             enabled = !ocrRunning
                         )
                     }
+                    com.localdoc.scanner.ui.tools.OcrLanguagePicker(ocrLanguage) { ocrLanguage = it }
                     Text("识别在手机本地完成；高精度会更慢、占用更多内存。", style = MaterialTheme.typography.bodySmall)
                     if (ocrRunning) Text("可关闭此页；系统重启后会从已保存的页面继续。强制停止应用后需重新打开。", color = MaterialTheme.colorScheme.primary)
                     if (ocrStats.isNotBlank()) Text(ocrStats, style = MaterialTheme.typography.bodySmall)
@@ -589,7 +617,8 @@ fun DocDetailScreen(
                 }, enabled = !busy) { Text("保存到手机") }
             },
             dismissButton = {
-                Row {
+                Column {
+                    if (com.localdoc.scanner.data.AppPreferences(context).text("destination").isNotBlank()) TextButton(onClick = ::saveDefaultExport, enabled = !busy) { Text("保存到默认文件夹") }
                     TextButton(onClick = { shareExport() }, enabled = !busy) { Text("分享") }
                     TextButton(onClick = { exportOpen = false }, enabled = !busy) { Text("取消") }
                 }

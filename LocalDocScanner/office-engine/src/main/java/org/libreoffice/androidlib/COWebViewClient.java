@@ -22,6 +22,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.nio.charset.StandardCharsets;
+import android.util.Log;
 
 /**
  * Used to capture HTTP requests from mobile so we can use web requests without hosting a server
@@ -68,6 +70,21 @@ public class COWebViewClient extends WebViewClient {
     @Nullable
     @Override
     public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+        if ("file".equals(request.getUrl().getScheme()) &&
+                "/android_asset/dist/cool.html".equals(request.getUrl().getPath())) {
+            try (InputStream input = view.getContext().getAssets().open("dist/cool.html")) {
+                java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+                byte[] buffer = new byte[8192];
+                int count;
+                while ((count = input.read(buffer)) != -1) bytes.write(buffer, 0, count);
+                String html = new String(bytes.toByteArray(), StandardCharsets.UTF_8);
+                byte[] localized = OfficeUiLanguage.attachTranslations(html).getBytes(StandardCharsets.UTF_8);
+                return new WebResourceResponse("text/html", "UTF-8", new ByteArrayInputStream(localized));
+            } catch (Exception error) {
+                Log.e("LocalDocOffice", "Could not attach local dialog translations", error);
+                // Keep document opening available if a future upstream entry changes.
+            }
+        }
         if (!Objects.equals(request.getUrl().getScheme(), "cool")) {
             return super.shouldInterceptRequest(view, request);
         }

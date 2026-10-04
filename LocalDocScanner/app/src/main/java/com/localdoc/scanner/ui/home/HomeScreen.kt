@@ -1,6 +1,7 @@
 package com.localdoc.scanner.ui.home
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -44,6 +45,8 @@ import com.localdoc.scanner.R
 import com.localdoc.scanner.ui.components.*
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import com.localdoc.scanner.model.DocItem
 import com.localdoc.scanner.model.ToolEntry
 
@@ -70,10 +73,17 @@ fun HomeScreen(
     onRenameDoc: (DocItem, String) -> Unit,
     onOrganizeDoc: (DocItem, String?, String) -> Unit,
     onTrashDoc: (DocItem) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onFavoriteDoc: (DocItem) -> Unit = {}
 ) {
     val configuration = LocalConfiguration.current
     val compactActions = configuration.screenWidthDp < 360 || configuration.fontScale > 1.15f
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val preferences = remember { com.localdoc.scanner.data.AppPreferences(context) }
+    val sort by com.localdoc.scanner.data.rememberPreference("sort", "updated")
+    val layout by com.localdoc.scanner.data.rememberPreference("layout", "list")
+    var favoritesOnly by rememberSaveable { mutableStateOf(false) }
+    var libraryOptions by remember { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     var confirmDiscard by remember { mutableStateOf(false) }
     var menuDoc by remember { mutableStateOf<DocItem?>(null) }
@@ -87,26 +97,32 @@ fun HomeScreen(
     var importMenuOpen by remember { mutableStateOf(false) }
     var showAllDocs by rememberSaveable { mutableStateOf(false) }
 
-    val visibleDocs = remember(docs, query) {
-        if (query.isBlank()) docs else docs.filter {
+    val visibleDocs = remember(docs, query, sort, favoritesOnly) {
+        val matched = if (query.isBlank()) docs else docs.filter {
             it.title.contains(query, ignoreCase = true) ||
                 it.folder.orEmpty().contains(query, ignoreCase = true) ||
                 it.tags.contains(query, ignoreCase = true) ||
                 it.ocrText.contains(query, ignoreCase = true)
         }
+        val filtered = if (favoritesOnly) matched.filter { it.favorite } else matched
+        when (sort) { "name" -> filtered.sortedBy { it.title.lowercase() }; "created" -> filtered.sortedByDescending { it.createdAt }; "size" -> filtered.sortedByDescending { it.sizeBytes }; else -> filtered.sortedByDescending { it.updatedAt } }
     }
 
     Scaffold(
         modifier = modifier,
         topBar = {
             TopAppBar(
-                title = { Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text("本地扫描", style = MaterialTheme.typography.headlineMedium)
+                title = { Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.primary) {
+                        Image(painterResource(R.drawable.brand_mark), null, Modifier.size(40.dp).padding(4.dp))
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(stringResource(R.string.app_name), style = MaterialTheme.typography.headlineMedium)
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                         AppIcon(R.drawable.ic_tool_lock, modifier = Modifier.size(13.dp))
                         Text("文件留在本机", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                } },
+                } } },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
                 actions = {
                     IconButton(onClick = onOutputHistoryClick) { AppIcon(R.drawable.ic_ui_history, "导出记录") }
@@ -171,7 +187,31 @@ fun HomeScreen(
                 InfoCard(if (query.isBlank()) "你的文件，从这里开始" else "没有找到匹配文档",
                     if (query.isBlank()) "扫描纸张，或打开已有的图片、PDF和Office文件。" else "试试名称、文件夹、标签或识别文字中的关键词。", R.drawable.ic_ui_folder)
             }
-            items(if (showAllDocs || query.isNotBlank()) visibleDocs else visibleDocs.take(3), key = { it.id }) { doc ->
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    FilterChip(favoritesOnly, { favoritesOnly = !favoritesOnly; showAllDocs = true }, label = { Text("收藏") })
+                    Spacer(Modifier.weight(1f))
+                    Box {
+                        TextButton(onClick = { libraryOptions = true }) { Text("排序与布局") }
+                        DropdownMenu(libraryOptions, { libraryOptions = false }) {
+                            listOf("updated" to "最近修改", "created" to "创建时间", "name" to "名称", "size" to "文件大小").forEach { (key, title) ->
+                                DropdownMenuItem(text = { Text((if (sort == key) "✓ " else "") + title) }, onClick = { preferences.set("sort", key); libraryOptions = false })
+                            }
+                            HorizontalDivider()
+                            listOf("list" to "列表", "grid" to "网格").forEach { (key, title) ->
+                                DropdownMenuItem(text = { Text((if (layout == key) "✓ " else "") + title) }, onClick = { preferences.set("layout", key); libraryOptions = false })
+                            }
+                        }
+                    }
+                }
+            }
+            val displayed = if (showAllDocs || query.isNotBlank() || favoritesOnly) visibleDocs else visibleDocs.take(3)
+            if (layout == "grid") items(displayed.chunked(2), key = { row -> row.first().id }) { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    row.forEach { doc -> DocumentGridCard(doc, { onDocClick(doc) }, { menuDoc = doc }, Modifier.weight(1f)) }
+                    if (row.size == 1) Spacer(Modifier.weight(1f))
+                }
+            } else items(displayed, key = { it.id }) { doc ->
                 RecentDocumentRow(doc, onClick = { onDocClick(doc) }, onMenu = { menuDoc = doc })
             }
             item { SectionHeading("文档工具") { Text("按用途分组", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
@@ -215,6 +255,7 @@ fun HomeScreen(
                         tagsValue = doc.tags
                     }
                 )
+                ListItem(headlineContent = { Text(if (doc.favorite) "取消收藏" else "收藏文档") }, modifier = Modifier.clickable { onFavoriteDoc(doc); menuDoc = null })
                 HorizontalDivider()
                 ListItem(
                     headlineContent = { Text("移到回收站", color = MaterialTheme.colorScheme.error) },

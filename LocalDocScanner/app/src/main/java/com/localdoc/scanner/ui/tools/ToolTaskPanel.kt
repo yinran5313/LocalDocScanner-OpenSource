@@ -8,7 +8,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import com.localdoc.scanner.ui.components.*
 import com.localdoc.scanner.jobs.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -26,9 +25,17 @@ internal fun ToolTaskPanel(task: ToolTaskStatus, onPause: () -> Unit, onResume: 
         ToolTaskState.PARTIAL -> "部分完成"
         ToolTaskState.SUCCEEDED -> "已完成"
     }
-    TaskProgressCard(label, task.label, task.completed, task.total, running,
-        task.state != ToolTaskState.SUCCEEDED, task.error, onPause, onResume)
-
+    OutlinedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("$label · ${task.completed}/${task.total}步骤")
+            Text(task.label, style = MaterialTheme.typography.bodySmall)
+            if (running) LinearProgressIndicator(Modifier.fillMaxWidth())
+            if (task.error.isNotBlank()) Text(task.error, color = MaterialTheme.colorScheme.error)
+            Text("续跑使用原提交参数，校验并复用成功项；单次操作重试当前步骤。", style = MaterialTheme.typography.bodySmall)
+            if (running) TextButton(onClick = onPause) { Text("暂停并保留进度") }
+            else if (task.state != ToolTaskState.SUCCEEDED) TextButton(onClick = onResume) { Text("续跑 / 重试失败项") }
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -42,11 +49,11 @@ internal fun ToolTasksScreen(onBack: () -> Unit, onOpen: (ToolTaskSpec) -> Unit)
     LaunchedEffect(tasks.map { it.id }) {
         labels = withContext(Dispatchers.IO) { tasks.associate { it.id to runCatching { ToolTasks.spec(context, it.id).request.tool.label }.getOrDefault("工具任务") } }
     }
-    Scaffold(topBar = { ScannerTopBar("工具任务", onBack, "进度与已完成结果") }) { padding ->
-        LazyColumn(Modifier.fillMaxSize().padding(padding).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Scaffold(topBar = { TopAppBar(title = { Text("工具任务与续跑") }, navigationIcon = { TextButton(onClick = onBack) { Text("返回") } }) }) { padding ->
+        LazyColumn(Modifier.fillMaxSize().padding(padding).padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item { Text("返回首页不会取消任务。点击任务可查看结果、保存、分享，或续跑未完成项。") }
             if (error.isNotBlank()) item { Text(error, color = MaterialTheme.colorScheme.error) }
-            if (tasks.isEmpty()) item { InfoCard("还没有工具任务", "开始一次识别或PDF处理，这里会记录进度和结果。") }
+            if (tasks.isEmpty()) item { Text("暂无工具任务") }
             items(tasks, key = { it.id }) { task ->
                 Text(labels[task.id].orEmpty(), style = MaterialTheme.typography.titleMedium)
                 ToolTaskPanel(task,

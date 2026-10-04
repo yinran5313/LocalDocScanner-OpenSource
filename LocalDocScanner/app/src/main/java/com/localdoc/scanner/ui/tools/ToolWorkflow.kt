@@ -169,8 +169,17 @@ internal fun ToolFlow(
         }
     }
 
-    fun saveToPhone(files: List<File>) {
+    fun saveToPhone(files: List<File>, useDefault: Boolean = true) {
         if (files.isEmpty() || busy) return
+        if(useDefault && com.localdoc.scanner.data.AppPreferences(context).text("destination").isNotBlank()) {
+            busy = true
+            scope.launch { try {
+                val labels = withContext(Dispatchers.IO) { files.map { com.localdoc.scanner.output.DefaultDestination.save(context, it) } }
+                saveStatus = "已保存到默认文件夹：\n" + labels.joinToString("\n")
+            } catch(e:Exception) { if(e is kotlinx.coroutines.CancellationException) throw e; saveStatus = "保存失败：${e.message}；可另选位置" }
+            finally { busy=false } }
+            return
+        }
         pendingSaveFiles = files
         if (files.size == 1) saveSingle.launch(files.first().name) else saveMany.launch(null)
     }
@@ -211,6 +220,7 @@ internal fun ToolFlow(
                     }
                     else -> {
                         val o = outcome
+                        if(com.localdoc.scanner.data.AppPreferences(context).text("destination").isNotBlank()) TextButton(onClick={ saveToPhone(o?.files.orEmpty(), false) },enabled=!busy) { Text("另选位置") }
                         Button(onClick = { saveToPhone(o?.files.orEmpty()) }, enabled = !busy && !o?.files.isNullOrEmpty(), modifier = Modifier.weight(1f).heightIn(min = 52.dp), shape = MaterialTheme.shapes.medium) {
                             Text(if (busy) "保存中…" else "保存到手机")
                         }

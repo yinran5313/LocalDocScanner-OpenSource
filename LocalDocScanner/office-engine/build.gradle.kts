@@ -8,7 +8,7 @@ android {
     compileSdk = 35
     defaultConfig {
         minSdk = 26
-        resValue("string", "app_name", "本地扫描")
+        resValue("string", "app_name", "拾页")
         buildConfigField("String", "GIT_COMMIT", "\"20a46c332c38-localdoc-r1\"")
         buildConfigField("boolean", "GOOGLE_PLAY_ENABLED", "false")
         ndk { abiFilters += "arm64-v8a" }

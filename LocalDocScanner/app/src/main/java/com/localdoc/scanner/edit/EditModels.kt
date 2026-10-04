@@ -16,7 +16,8 @@ data class EditRecipe(
     val filter: ScanFilter = ScanFilter.AUTO,
     val brightness: Float = 0f,
     val contrast: Float = 1f,
-    val fineRotation: Float = 0f
+    val fineRotation: Float = 0f,
+    val cropRatio: Float = 0f
 ) {
     fun encodeCorners(): String = corners.joinToString(";") { "${it.x},${it.y}" }
 

@@ -31,12 +31,32 @@ fun RecentDocumentRow(doc: DocItem, onClick: () -> Unit, onMenu: () -> Unit, mod
                 }
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text(doc.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text((if (doc.favorite) "★ " else "") + doc.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text("${doc.pageCount} 页 · ${SimpleDateFormat("MM月dd日", Locale.CHINA).format(Date(doc.updatedAt))}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 val organization = listOfNotNull(doc.folder, doc.tags.takeIf { it.isNotBlank() }).joinToString(" · ")
                 if (organization.isNotBlank()) Text(organization, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             IconButton(onClick = onMenu) { AppIcon(R.drawable.ic_ui_more, "${doc.title}的操作菜单") }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun DocumentGridCard(doc: DocItem, onClick: () -> Unit, onMenu: () -> Unit, modifier: Modifier = Modifier) {
+    Surface(modifier.combinedClickable(onClick = onClick, onLongClick = onMenu), shape = MaterialTheme.shapes.large) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Surface(Modifier.fillMaxWidth().height(132.dp), color = MaterialTheme.colorScheme.surfaceContainer, shape = MaterialTheme.shapes.small) {
+                Box(contentAlignment = Alignment.Center) {
+                    if (doc.coverPath != null) AsyncImage(File(doc.coverPath), null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize().padding(6.dp))
+                    else AppIcon(R.drawable.ic_tool_picture_as_pdf)
+                }
+            }
+            Text((if (doc.favorite) "★ " else "") + doc.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("${doc.pageCount} 页", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                IconButton(onMenu, Modifier.size(36.dp)) { AppIcon(R.drawable.ic_ui_more, "文档操作") }
+            }
         }
     }
 }

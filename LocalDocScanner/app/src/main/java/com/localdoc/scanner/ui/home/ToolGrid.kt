@@ -3,9 +3,6 @@ package com.localdoc.scanner.ui.home
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.material3.Surface
-import com.localdoc.scanner.ui.components.AppIcon
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,7 +35,6 @@ import com.localdoc.scanner.model.TOOL_ENTRIES
 import com.localdoc.scanner.model.ToolEntry
 
 private const val COLUMNS = 3
-private val toolsById = TOOL_ENTRIES.associateBy { it.id }
 
 private data class ToolGroup(val id: String, val title: String, val toolIds: List<String>)
 
@@ -56,7 +52,7 @@ private val TOOL_GROUPS = listOf(
 @Composable
 fun ToolGrid(onToolClick: (ToolEntry) -> Unit, modifier: Modifier = Modifier) {
     var expandedGroup by rememberSaveable { mutableStateOf<String?>(null) }
-    val byId = toolsById
+    val byId = TOOL_ENTRIES.associateBy { it.id }
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         TOOL_GROUPS.forEach { group ->
@@ -65,20 +61,15 @@ fun ToolGrid(onToolClick: (ToolEntry) -> Unit, modifier: Modifier = Modifier) {
             Card(
                 onClick = { expandedGroup = if (expanded) null else group.id },
                 modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.large,
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Surface(shape = MaterialTheme.shapes.medium, color = if (group.id == "pdf") MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.primaryContainer) {
-                        Box(Modifier.size(42.dp), contentAlignment = Alignment.Center) { AppIcon(toolIcon(tools.first().id)) }
-                    }
-                    Spacer(Modifier.size(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(group.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                        Text(group.toolIds.take(2).mapNotNull(byId::get).joinToString(" · ") { it.label } + "  /  ${tools.size}项", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("${tools.size} 项工具", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Icon(
                         painter = painterResource(if (expanded) R.drawable.ic_expand_more else R.drawable.ic_chevron_right),
@@ -116,9 +107,7 @@ private fun ToolCard(tool: ToolEntry, modifier: Modifier = Modifier, onClick: ()
     Card(
         onClick = onClick,
         modifier = modifier,
-        shape = MaterialTheme.shapes.medium,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 13.dp),
@@ -143,7 +132,7 @@ private fun ToolCard(tool: ToolEntry, modifier: Modifier = Modifier, onClick: ()
 }
 
 @DrawableRes
-internal fun toolIcon(id: String): Int = when (id) {
+private fun toolIcon(id: String): Int = when (id) {
     "images_to_pdf" -> R.drawable.ic_tool_picture_as_pdf
     "pdf_merge" -> R.drawable.ic_tool_merge
     "pdf_split" -> R.drawable.ic_tool_content_cut

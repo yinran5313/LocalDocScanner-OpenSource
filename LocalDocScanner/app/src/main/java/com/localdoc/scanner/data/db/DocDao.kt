@@ -25,6 +25,9 @@ interface DocDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertDoc(doc: DocEntity)
 
+    @Query("UPDATE docs SET favorite = :value WHERE id = :id")
+    suspend fun setFavorite(id: String, value: Boolean)
+
     @Query("UPDATE docs SET title = :title, updatedAt = :now WHERE id = :id")
     suspend fun renameDoc(id: String, title: String, now: Long)
     @Query("UPDATE docs SET folder = :folder, tags = :tags, updatedAt = :now WHERE id = :id")

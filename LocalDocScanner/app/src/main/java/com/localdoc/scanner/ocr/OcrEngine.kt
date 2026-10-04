@@ -26,6 +26,7 @@ interface OcrEngine {
     val available: Boolean
     val label: String
     suspend fun recognize(bitmap: Bitmap, precise: Boolean): OcrOutcome
+    suspend fun recognize(bitmap: Bitmap, precise: Boolean, language: OcrLanguage): OcrOutcome = recognize(bitmap, language.medium(precise))
     suspend fun close() = Unit
 }
 

@@ -45,6 +45,61 @@ object StructureExtractor {
         Kind.VEHICLE_LICENSE -> vehicleLicense(raw)
     }
 
+    /** Re-evaluate the displayed values, including dependent values, before every export. */
+    fun revalidate(original: Result, edited: Map<String, String>): Result {
+        val values = original.fields.associate { it.key to (edited[it.key] ?: it.value).trim() }.toMutableMap()
+        val checks = mutableMapOf<String, Boolean?>()
+        val notes = mutableListOf<String>()
+        fun check(key: String, predicate: (String) -> Boolean) {
+            checks[key] = values[key]?.takeIf(String::isNotBlank)?.let(predicate)
+        }
+        when (original.kind) {
+            Kind.ID_CARD, Kind.DRIVER_LICENSE -> {
+                check("idNumber", ::isIdCardValid)
+                val id = values["idNumber"].orEmpty().uppercase()
+                if (checks["idNumber"] == true) {
+                    val birth = "${id.substring(6, 10)}-${id.substring(10, 12)}-${id.substring(12, 14)}"
+                    val gender = if (id[16].digitToInt() % 2 == 0) "女" else "男"
+                    if (values["birth"].isNullOrBlank()) values["birth"] = birth
+                    else if (values["birth"] != birth) notes += "出生日期与号码不一致，请核对"
+                    val key = if (original.kind == Kind.ID_CARD) "gender" else "sex"
+                    if (values[key].isNullOrBlank()) values[key] = gender
+                    else if (values[key] != gender) notes += "性别与号码不一致，请核对"
+                }
+            }
+            Kind.BANK_CARD -> {
+                check("cardNumber", ::isLuhnValid)
+                val card = values["cardNumber"].orEmpty().filter(Char::isDigit)
+                values["issuer"] = if (card.isBlank()) "" else bankName(card)
+                values["length"] = if (card.isBlank()) "" else card.length.toString()
+            }
+            Kind.BUSINESS_LICENSE -> check("uscc", ::isUsccValid)
+            Kind.INVOICE -> {
+                check("code") { it.matches(Regex("[0-9]{10,12}")) }
+                check("number") { it.matches(Regex("[0-9]{8,20}")) }
+                val amount = values["amount"]?.toBigDecimalOrNull()
+                val rate = values["rate"]?.toBigDecimalOrNull()
+                val tax = values["tax"]?.toBigDecimalOrNull()
+                val ok = if (amount != null && rate != null && tax != null) {
+                    (amount * rate / java.math.BigDecimal(100) - tax).abs() <= java.math.BigDecimal("0.01")
+                } else null
+                checks["crossCheck"] = ok
+                values["crossCheck"] = when (ok) { true -> "金额×税率 ≈ 税额，通过"; false -> "金额×税率 与 税额 对不上"; null -> "信息不足，未校验" }
+            }
+            Kind.VEHICLE_LICENSE -> {
+                check("plate") { it.matches(Regex("[$PLATE_PROVINCES][A-Z][A-Z0-9]{4,6}")) }
+                check("vin") { it.uppercase().matches(Regex("[A-HJ-NPR-Z0-9]{17}")) }
+            }
+            Kind.PASSPORT -> original.fields.filter { it.valid != null }.forEach { field ->
+                checks[field.key] = if (values[field.key] == field.value) field.valid else null
+                if (values[field.key] != field.value) notes += "${field.label}已修改，需重新核对机读区校验位"
+            }
+        }
+        val fields = original.fields.map { it.copy(value = values[it.key].orEmpty(), valid = checks[it.key]) }
+        fields.filter { it.valid == false }.forEach { notes += "${it.label}校验不通过，请核对" }
+        return original.copy(fields = fields, notes = notes)
+    }
+
     // ------------------------------------------------------------------
     // 身份证：18 位，MOD 11-2 校验位
     // ------------------------------------------------------------------
@@ -412,7 +467,8 @@ object StructureExtractor {
             val valid = when (f.valid) {
                 true -> "通过"; false -> "不通过"; null -> "-"
             }
-            sb.append("${f.label},${f.value.replace(",", "，")},$valid\n")
+            fun quote(value: String) = "\"" + value.replace("\"", "\"\"") + "\""
+            sb.append("${quote(f.label)},${quote(f.value)},$valid\n")
         }
         return sb.toString()
     }

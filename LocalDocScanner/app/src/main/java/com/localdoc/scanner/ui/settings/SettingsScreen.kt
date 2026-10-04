@@ -108,10 +108,7 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit, modifier: Modifier = Mo
                 "保存到手机",
                 "在文档里选择“导出”，再由系统文件选择器决定保存位置。应用会显示真实文件名，不把内部目录冒充手机文件夹。"
             )
-            InfoCard(
-                "导出默认值",
-                "PDF默认使用A4页面和高清质量。每次导出时都可以改为Letter、适合图片或标准质量；JPG会按当前页序逐张保存。"
-            )
+            DefaultSettings()
             InfoCard(
                 "卸载提醒",
                 "卸载应用或清除应用数据会删除文档库。重要文件请另存到手机或分享备份。"
@@ -151,7 +148,7 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit, modifier: Modifier = Mo
                     Button(
                         onClick = {
                             val name = SimpleDateFormat("yyyyMMdd_HHmm", Locale.getDefault()).format(Date())
-                            backup.launch("本地扫描文档库_$name.ldbackup.zip")
+                            backup.launch("${context.getString(com.localdoc.scanner.R.string.app_name)}文档库_$name.ldbackup.zip")
                         },
                         enabled = !busy,
                         modifier = Modifier.fillMaxWidth()
@@ -214,7 +211,7 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit, modifier: Modifier = Mo
                             } finally { secret.fill('\u0000'); busy = false }
                         } else {
                             encryptedBackupPassword?.fill('\u0000'); encryptedBackupPassword = secret
-                            secureBackup.launch("本地扫描_${SimpleDateFormat("yyyyMMdd_HHmm", Locale.getDefault()).format(Date())}.ldbackup.enc")
+                            secureBackup.launch("${context.getString(com.localdoc.scanner.R.string.app_name)}_${SimpleDateFormat("yyyyMMdd_HHmm", Locale.getDefault()).format(Date())}.ldbackup.enc")
                         }
                     }
                 }) { Text(if (restoring) "验证并恢复" else "选择保存位置") }
