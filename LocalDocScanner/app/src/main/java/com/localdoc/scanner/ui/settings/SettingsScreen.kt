@@ -47,7 +47,30 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit, modifier: Modifier = Mo
     var lockEnabled by remember { mutableStateOf(AppLock.enabled(context)) }
     var configureLock by remember { mutableStateOf(false) }
     var disableLock by remember { mutableStateOf(false) }
+    var configureBiometric by remember { mutableStateOf(false) }
+    var biometricEnabled by remember { mutableStateOf(AppLock.biometricEnabled(context)) }
     var officeEngine by remember { mutableStateOf(OfficeEngineBridge.installed(context)) }
+    var encryptedBackupPassword by remember { mutableStateOf<CharArray?>(null) }
+    var secureBackupDialog by remember { mutableStateOf(false) }
+    var secureRestoreUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { encryptedBackupPassword?.fill('\u0000'); encryptedBackupPassword = null } }
+    val secureBackup = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+        val password = encryptedBackupPassword
+        encryptedBackupPassword = null
+        if (uri == null) password?.fill('\u0000')
+        else if (password == null) status = "密码会话已结束，请重新开始加密备份"
+        else scope.launch {
+            busy = true
+            try {
+                val result = vm.backupEncryptedLibrary(uri, password)
+                status = if (result.success) "加密备份完成：${result.documentCount} 份、${result.pageCount} 页；${com.localdoc.scanner.output.OutputHistoryStore.describeDestination(context, uri)}" else "加密备份失败：${result.error}"
+                if (result.success) com.localdoc.scanner.output.OutputHistoryStore.recordDirectSaved(context,
+                    com.localdoc.scanner.output.OutputHistoryStore.displayName(context, uri), "application/octet-stream", uri,
+                    com.localdoc.scanner.output.OutputHistoryStore.describeDestination(context, uri))
+            } finally { password.fill('\u0000'); busy = false }
+        }
+    }
+    val secureRestore = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) secureRestoreUri = uri }
     val backup = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         if (uri != null) scope.launch {
             busy = true
@@ -138,6 +161,9 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit, modifier: Modifier = Mo
                         enabled = !busy,
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("从备份恢复") }
+                    Button(onClick = { secureBackupDialog = true }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("密码加密备份") }
+                    Button(onClick = { secureRestore.launch(arrayOf("application/octet-stream", "*/*")) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("恢复加密备份") }
+                    Text("加密备份保护导出的整个备份内容，内部文档库仍为普通存储。恢复验证时会短暂解密到应用缓存，完成后删除。备份密码独立于应用密码锁，丢失后无法恢复。", style = MaterialTheme.typography.bodySmall)
                     if (status.isNotBlank()) Text(status, color = MaterialTheme.colorScheme.primary)
                 }
             }
@@ -149,12 +175,78 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit, modifier: Modifier = Mo
                         Text(if (lockEnabled) "更改密码" else "设置密码")
                     }
                     if (lockEnabled) {
+                        TextButton(onClick = { configureBiometric = true }, modifier = Modifier.fillMaxWidth()) {
+                            Text(if (biometricEnabled) "关闭指纹解锁" else "开启指纹解锁")
+                        }
                         TextButton(onClick = { disableLock = true }, modifier = Modifier.fillMaxWidth()) { Text("关闭密码锁") }
                     }
                 }
             }
-            Text("版本 4.3.0 RC1", style = MaterialTheme.typography.labelMedium)
+            Text("版本 ${com.localdoc.scanner.BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.labelMedium)
         }
+    }
+
+    if (secureBackupDialog || secureRestoreUri != null) {
+        val restoring = secureRestoreUri != null
+        var password by remember { mutableStateOf("") }
+        var confirm by remember { mutableStateOf("") }
+        var message by remember { mutableStateOf("") }
+        AlertDialog(onDismissRequest = { secureBackupDialog = false; secureRestoreUri = null },
+            title = { Text(if (restoring) "恢复密码加密备份" else "设置独立备份密码") }, text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(password, { password = it }, label = { Text(if (restoring) "备份密码" else "至少8个字符的备份密码") }, visualTransformation = PasswordVisualTransformation(), singleLine = true)
+                    if (!restoring) OutlinedTextField(confirm, { confirm = it }, label = { Text("再次输入") }, visualTransformation = PasswordVisualTransformation(), singleLine = true)
+                    if (message.isNotBlank()) Text(message, color = MaterialTheme.colorScheme.error)
+                }
+            }, confirmButton = {
+                TextButton(onClick = {
+                    if (password.length > 1024 || (!restoring && (password.length < 8 || password != confirm))) {
+                        message = "密码至少8个字符，两次输入须一致，最多1024个字符"
+                    } else {
+                        val secret = password.toCharArray(); password = ""; confirm = ""
+                        val uri = secureRestoreUri
+                        secureBackupDialog = false; secureRestoreUri = null
+                        if (restoring && uri != null) scope.launch {
+                            busy = true
+                            try {
+                                val result = vm.restoreEncryptedLibrary(uri, secret)
+                                status = if (result.success) "恢复完成：${result.documentCount} 份、${result.pageCount} 页" else "恢复失败：${result.error}"
+                            } finally { secret.fill('\u0000'); busy = false }
+                        } else {
+                            encryptedBackupPassword?.fill('\u0000'); encryptedBackupPassword = secret
+                            secureBackup.launch("本地扫描_${SimpleDateFormat("yyyyMMdd_HHmm", Locale.getDefault()).format(Date())}.ldbackup.enc")
+                        }
+                    }
+                }) { Text(if (restoring) "验证并恢复" else "选择保存位置") }
+            }, dismissButton = { TextButton(onClick = { secureBackupDialog = false; secureRestoreUri = null }) { Text("取消") } })
+    }
+
+    if (configureBiometric) {
+        var pin by remember { mutableStateOf("") }
+        var message by remember { mutableStateOf("") }
+        var prompt by remember { mutableStateOf<androidx.biometric.BiometricPrompt?>(null) }
+        androidx.compose.runtime.DisposableEffect(Unit) { onDispose { prompt?.cancelAuthentication() } }
+        AlertDialog(onDismissRequest = { configureBiometric = false }, title = { Text("指纹解锁设置") }, text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                PasswordField("当前应用密码", pin) { pin = it }
+                Text("仅保护应用入口；加密文件使用独立密码。其他已登记的强生物识别也可解锁。")
+                if (message.isNotBlank()) Text(message, color = MaterialTheme.colorScheme.error)
+            }
+        }, confirmButton = {
+            TextButton(onClick = {
+                when {
+                    !AppLock.verify(context, pin) -> message = "应用密码不正确"
+                    biometricEnabled -> { AppLock.setBiometric(context, pin, false); biometricEnabled = false; configureBiometric = false }
+                    !com.localdoc.scanner.security.BiometricUnlock.available(context) -> message = "请先在手机系统中登记强生物识别"
+                    else -> com.localdoc.scanner.security.BiometricUnlock.activity(context)?.let { activity ->
+                        prompt = com.localdoc.scanner.security.BiometricUnlock.prompt(activity, {
+                            biometricEnabled = AppLock.setBiometric(context, pin, true)
+                            pin = ""; configureBiometric = false
+                        }) { message = it }
+                    }
+                }
+            }) { Text(if (biometricEnabled) "关闭" else "验证并开启") }
+        }, dismissButton = { TextButton(onClick = { configureBiometric = false }) { Text("取消") } })
     }
 
     if (configureLock) {
@@ -182,6 +274,7 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit, modifier: Modifier = Mo
                         else -> {
                             AppLock.setPin(context, next)
                             lockEnabled = true
+                            biometricEnabled = false
                             configureLock = false
                             ""
                         }
@@ -208,6 +301,7 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit, modifier: Modifier = Mo
                 Button(onClick = {
                     if (AppLock.disable(context, current)) {
                         lockEnabled = false
+                        biometricEnabled = false
                         disableLock = false
                     } else message = "密码不正确"
                 }) { Text("确认关闭") }

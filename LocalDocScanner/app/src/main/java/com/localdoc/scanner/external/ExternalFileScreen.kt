@@ -51,6 +51,7 @@ import com.localdoc.scanner.output.OutputHistoryStore
 import com.localdoc.scanner.pdf.PdfTools
 import com.localdoc.scanner.pdf.printPdf
 import com.localdoc.scanner.util.Share
+import com.localdoc.scanner.data.rememberToolState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -77,31 +78,37 @@ fun ExternalFileScreen(
     val isOffice = officeFormat != null
     val isPdf = external.mime == "application/pdf" || extension == "pdf"
     val isImage = external.mime.startsWith("image/") || extension in setOf("jpg", "jpeg", "png", "webp", "bmp")
-    val isText = !isOffice && (external.mime in setOf("text/plain", "text/csv", "text/markdown") || extension in setOf("txt", "csv", "md", "markdown"))
+    val isText = !isOffice && (external.mime in setOf("text/plain", "text/csv", "text/tab-separated-values", "text/markdown") || extension in setOf("txt", "csv", "tsv", "md", "markdown"))
 
-    var localFile by remember(external) { mutableStateOf<File?>(null) }
-    var office by remember(external) { mutableStateOf<OpenXmlDocument?>(null) }
-    var textContent by remember(external) { mutableStateOf<String?>(null) }
+    val externalDraft = remember(external) {
+        val token = MessageDigest.getInstance("SHA-256").digest(external.uri.toString().toByteArray()).joinToString("") { "%02x".format(it) }
+        com.localdoc.scanner.ui.ToolRequest(com.localdoc.scanner.model.ToolEntry("external", "外部文件", com.localdoc.scanner.model.FileKind.ANY), listOf(File(context.filesDir, token)), listOf(displayName))
+    }
+    var localFile by rememberToolState<File?>(externalDraft, "localFile") { null }
+    var office by rememberToolState<OpenXmlDocument?>(externalDraft, "office") { null }
+    var textContent by rememberToolState<String?>(externalDraft, "textContent") { null }
     var error by remember(external) { mutableStateOf("") }
-    var status by remember(external) { mutableStateOf("") }
+    var status by rememberToolState(externalDraft, "status") { "" }
     var busy by remember(external) { mutableStateOf(true) }
-    var retainWorkCopy by remember(external) { mutableStateOf(false) }
+    var retainWorkCopy by rememberToolState(externalDraft, "retainWorkCopy") { false }
     var engineInfo by remember(external) { mutableStateOf(OfficeEngineBridge.installed(context)) }
-    var hashBeforeEngine by remember(external) { mutableStateOf("") }
-    var textDirty by remember(external) { mutableStateOf(false) }
+    var hashBeforeEngine by rememberToolState(externalDraft, "hashBeforeEngine") { "" }
+    var textDirty by rememberToolState(externalDraft, "textDirty") { false }
     var confirmClose by remember(external) { mutableStateOf(false) }
-    var openOfficeOnLoad by remember(external) { mutableStateOf(isOffice) }
-    val edits = remember(external) { mutableStateMapOf<String, String>() }
+    var openOfficeOnLoad by rememberToolState(externalDraft, "openOfficeOnLoad") { isOffice }
+    var edits by rememberToolState<Map<String, String>>(externalDraft, "edits") { emptyMap() }
+    fun closeScreen() { com.localdoc.scanner.data.ToolDrafts.forget(context, externalDraft); onClose() }
 
     BackHandler {
-        if (edits.isNotEmpty() || textDirty) confirmClose = true else onClose()
+        if (edits.isNotEmpty() || textDirty) confirmClose = true else closeScreen()
     }
 
     LaunchedEffect(external) {
+        if (localFile?.isFile == true) { busy = false; return@LaunchedEffect }
         val loaded = withContext(Dispatchers.IO) {
             runCatching {
                 val safeName = displayName.replace(Regex("[\\/:*?\"<>|]"), "_")
-                val root = if (isOffice) File(context.filesDir, "office-work") else File(context.cacheDir, "external-open")
+                val root = if (isOffice) File(context.filesDir, "office-work") else File(context.filesDir, "external-open")
                 val dir = File(root, "${System.currentTimeMillis()}-${System.nanoTime()}")
                 dir.mkdirs()
                 val target = File(dir, "${System.currentTimeMillis()}-$safeName")
@@ -113,6 +120,7 @@ fun ExternalFileScreen(
         }
         loaded.onSuccess { file ->
             localFile = file
+            OutputHistoryStore.recordGenerated(context, file, resolvedMime)
             when {
                 officeFormat?.quickEditSupported == true -> {
                     val parsed = withContext(Dispatchers.IO) { runCatching { OpenXmlEditor.read(file) } }
@@ -137,13 +145,20 @@ fun ExternalFileScreen(
     val latestFile by rememberUpdatedState(localFile)
     val latestRetain by rememberUpdatedState(retainWorkCopy)
     DisposableEffect(external) {
-        onDispose { if (!latestRetain) latestFile?.delete() }
+        onDispose { Unit }
     }
 
     val engineLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { engineResult ->
         scope.launch {
             busy = true
             delay(500)
+            val failed = engineResult.data?.getBooleanExtra("localdoc_save_failed", false) == true
+            val recovery = engineResult.data?.getStringExtra("localdoc_recovery_path")?.let(::File)?.takeIf { it.isFile && it.length() > 0 }
+            if (failed && recovery != null) {
+                localFile = recovery
+                retainWorkCopy = true
+                OutputHistoryStore.recordGenerated(context, recovery, resolvedMime)
+            }
             val file = localFile
             if (file != null && file.isFile) {
                 val refreshed = withContext(Dispatchers.IO) {
@@ -152,10 +167,13 @@ fun ExternalFileScreen(
                     hash to parsed
                 }
                 office = refreshed.second ?: office
-                edits.clear()
+                edits = emptyMap()
                 retainWorkCopy = true
                 OutputHistoryStore.recordGenerated(context, file, resolvedMime)
-                status = if (hashBeforeEngine.isNotBlank() && refreshed.first != hashBeforeEngine) {
+                status = if (failed) {
+                    if (recovery != null) "原工作副本回写失败，已打开修改的恢复副本。请另存到手机；也可在导出记录重开。"
+                    else "保存回写失败，未确认修改已保存。请检查导出记录中的恢复文件。"
+                } else if (hashBeforeEngine.isNotBlank() && refreshed.first != hashBeforeEngine) {
                     "完整引擎的修改已回到工作副本；请预览后保存到手机。"
                 } else if (engineResult.resultCode == android.app.Activity.RESULT_OK) {
                     "已从完整引擎返回。工作副本已保留，可再次打开或保存到手机。"
@@ -170,20 +188,26 @@ fun ExternalFileScreen(
 
     suspend fun materializeQuickEdits(): File? {
         val source = localFile ?: return null
-        if (officeFormat?.quickEditSupported != true || edits.isEmpty()) return source
+        val writeOffice = officeFormat?.quickEditSupported == true && edits.isNotEmpty()
+        val writeText = isText && textDirty && textContent != null
+        if (!writeOffice && !writeText) return source
         val snapshot = edits.toMap()
+        val textSnapshot = textContent
         val result = withContext(Dispatchers.IO) {
             runCatching {
                 val output = officeResultFile(context.filesDir, displayName, "快速修改")
-                OpenXmlEditor.save(source, output, snapshot)
-                output to OpenXmlEditor.read(output)
+                if (writeOffice) OpenXmlEditor.save(source, output, snapshot)
+                else output.writeText(textSnapshot.orEmpty(), Charsets.UTF_8)
+                OutputHistoryStore.recordGenerated(context, output, resolvedMime)
+                output to if (writeOffice) OpenXmlEditor.read(output) else null
             }
         }
         return result.fold(
             onSuccess = { (output, parsed) ->
                 localFile = output
-                office = parsed
-                edits.clear()
+                office = parsed ?: office
+                edits = emptyMap()
+                textDirty = false
                 retainWorkCopy = true
                 output
             },
@@ -194,7 +218,21 @@ fun ExternalFileScreen(
         )
     }
 
-    fun openFullEngine() {
+    fun shareCurrent() {
+        if (busy) return
+        scope.launch {
+            busy = true
+            val snapshot = materializeQuickEdits()
+            if (snapshot != null) {
+                retainWorkCopy = true
+                OutputHistoryStore.recordGenerated(context, snapshot, resolvedMime)
+                Share.file(context, snapshot, resolvedMime)
+            }
+            busy = false
+        }
+    }
+
+    fun openFullEngine(exportPdf: Boolean = false) {
         val engine = engineInfo
         if (engine == null) {
             if (!OfficeEngineBridge.openInstallPage(context)) status = "无法打开官方安装页"
@@ -211,6 +249,7 @@ fun ExternalFileScreen(
             OutputHistoryStore.recordGenerated(context, file, resolvedMime)
             hashBeforeEngine = withContext(Dispatchers.IO) { sha256(file) }
             val intent = OfficeEngineBridge.editIntent(context, file, resolvedMime, engine)
+            if (exportPdf && engine.embedded) intent.putExtra("localdoc_export_pdf", true)
             if (OfficeEngineBridge.canResolve(context, intent)) {
                 status = "正在进入${engine.label}完整编辑器……"
                 busy = false
@@ -267,7 +306,7 @@ fun ExternalFileScreen(
             result.onSuccess { (output, parsed, label) ->
                 localFile = output
                 office = parsed ?: office
-                edits.clear()
+                edits = emptyMap()
                 textDirty = false
                 retainWorkCopy = true
                 status = "已保存：$label"
@@ -288,7 +327,7 @@ fun ExternalFileScreen(
                 },
                 navigationIcon = {
                     TextButton(onClick = {
-                        if (edits.isNotEmpty() || textDirty) confirmClose = true else onClose()
+                        if (edits.isNotEmpty() || textDirty) confirmClose = true else closeScreen()
                     }) { Text("关闭") }
                 }
             )
@@ -298,12 +337,13 @@ fun ExternalFileScreen(
                 isOffice -> OfficeBottomBar(
                     engine = engineInfo,
                     enabled = !busy && localFile != null,
-                    onFullEdit = ::openFullEngine,
+                    onFullEdit = { openFullEngine() },
+                    onExportPdf = { openFullEngine(exportPdf = true) },
                     onSave = {
                         val base = displayName.substringBeforeLast('.', displayName)
                         saveCopy.launch("${base}_完整编辑.$extension")
                     },
-                    onShare = { localFile?.let { Share.file(context, it, resolvedMime) } },
+                    onShare = ::shareCurrent,
                     onDetect = { engineInfo = OfficeEngineBridge.installed(context) }
                 )
                 else -> Row(
@@ -324,7 +364,7 @@ fun ExternalFileScreen(
                         Button(
                             onClick = {
                                 val file = localFile ?: return@Button
-                                scope.launch { onEditPdf(file, displayName) }
+                                scope.launch { com.localdoc.scanner.data.ToolDrafts.forget(context, externalDraft); onEditPdf(file, displayName) }
                             },
                             enabled = !busy,
                             modifier = Modifier.weight(1f)
@@ -335,8 +375,8 @@ fun ExternalFileScreen(
                         ) { Text("打印") }
                     }
                     TextButton(
-                        onClick = { localFile?.let { Share.file(context, it, resolvedMime) } },
-                        enabled = localFile != null,
+                        onClick = ::shareCurrent,
+                        enabled = !busy && localFile != null,
                         modifier = Modifier.weight(1f)
                     ) { Text("分享副本") }
                 }
@@ -351,13 +391,15 @@ fun ExternalFileScreen(
                 engine = engineInfo,
                 document = office,
                 edits = edits,
+                onEdit = { id, value -> edits = if (office?.units?.firstOrNull { it.id == id }?.text == value) edits - id else edits + (id to value) },
                 status = status,
                 file = localFile!!,
                 modifier = Modifier.padding(padding)
             )
-            textContent != null -> TextEditorBody(
+            textContent != null -> TextWorkbench(
                 text = textContent!!,
                 onTextChange = { textContent = it; textDirty = true },
+                extension = extension,
                 status = status,
                 modifier = Modifier.padding(padding)
             )
@@ -379,7 +421,7 @@ fun ExternalFileScreen(
             onDismissRequest = { confirmClose = false },
             title = { Text("放弃未保存修改？") },
             text = { Text("快速编辑区的修改还没有保存到手机。完整引擎产生并进入导出记录的工作副本不会丢失。") },
-            confirmButton = { TextButton(onClick = { confirmClose = false; onClose() }) { Text("放弃并关闭") } },
+            confirmButton = { TextButton(onClick = { confirmClose = false; closeScreen() }) { Text("放弃并关闭") } },
             dismissButton = { TextButton(onClick = { confirmClose = false }) { Text("继续编辑") } }
         )
     }
@@ -390,11 +432,13 @@ private fun OfficeBottomBar(
     engine: OfficeEngineInfo?,
     enabled: Boolean,
     onFullEdit: () -> Unit,
+    onExportPdf: () -> Unit,
     onSave: () -> Unit,
     onShare: () -> Unit,
     onDetect: () -> Unit
 ) {
     Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (engine?.embedded == true) TextButton(onClick = onExportPdf, enabled = enabled) { Text("转PDF并选择保存位置") }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = onFullEdit, enabled = enabled, modifier = Modifier.weight(1f)) {
                 Text(if (engine == null) "安装完整引擎" else "完整Office编辑")
@@ -413,7 +457,8 @@ private fun OfficeWorkspaceBody(
     format: OfficeFormat,
     engine: OfficeEngineInfo?,
     document: OpenXmlDocument?,
-    edits: MutableMap<String, String>,
+    edits: Map<String, String>,
+    onEdit: (String, String) -> Unit,
     status: String,
     file: File,
     modifier: Modifier = Modifier
@@ -451,7 +496,7 @@ private fun OfficeWorkspaceBody(
                 OutlinedTextField(
                     value = edits[unit.id] ?: unit.text,
                     onValueChange = { value ->
-                        if (value == unit.text) edits.remove(unit.id) else edits[unit.id] = value
+                        onEdit(unit.id, value)
                     },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("${unit.section} · ${unit.label}") },
@@ -495,31 +540,7 @@ private fun TextEditorBody(
 
 @Composable
 private fun PdfViewerBody(file: File, modifier: Modifier = Modifier) {
-    val count = remember(file) { PdfTools.pageCount(file) }
-    var index by remember(file) { mutableIntStateOf(0) }
-    var bitmap by remember(file) { mutableStateOf<android.graphics.Bitmap?>(null) }
-    LaunchedEffect(file, index) {
-        val next = withContext(Dispatchers.IO) { PdfTools.renderPage(file, index) }
-        val old = bitmap
-        bitmap = next
-        old?.takeIf { it !== next }?.recycle()
-    }
-    DisposableEffect(file) { onDispose { bitmap?.recycle() } }
-    Column(modifier.fillMaxSize()) {
-        Row(
-            Modifier.fillMaxWidth().padding(8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Button(onClick = { index-- }, enabled = index > 0) { Text("上一页") }
-            Text("${index + 1} / $count")
-            Button(onClick = { index++ }, enabled = index + 1 < count) { Text("下一页") }
-        }
-        Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-            if (bitmap == null) Text("正在渲染……")
-            else AsyncImage(model = bitmap, contentDescription = "PDF第${index + 1}页", contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
-        }
-    }
+    com.localdoc.scanner.ui.tools.PdfReader(file, modifier.fillMaxSize().padding(8.dp))
 }
 
 private fun officeResultFile(filesDir: File, displayName: String, suffix: String): File {

@@ -142,6 +142,33 @@ object OpenCvDocument {
     }
 
     private fun Point.scaled(xScale: Float, yScale: Float) = Point(x * xScale, y * yScale)
+
+    /** Uses OpenCV HoughLinesP; ambiguous photographs return null rather than force a rotation. */
+    fun estimateSkew(source: Bitmap): Double? {
+        if (!available()) return null
+        val small = scaleBitmap(source, 1200)
+        try {
+            return Mats().use { mats ->
+                val input = mats.mat(); val gray = mats.mat(); val edges = mats.mat(); val lines = mats.mat()
+                Utils.bitmapToMat(small, input)
+                Imgproc.cvtColor(input, gray, Imgproc.COLOR_RGBA2GRAY)
+                Imgproc.Canny(gray, edges, 60.0, 180.0)
+                Imgproc.HoughLinesP(edges, lines, 1.0, Math.PI / 360, 35,
+                    maxOf(small.width * .06, 25.0), 12.0)
+                val angles = buildList {
+                    for (i in 0 until lines.rows()) {
+                        val line = lines.get(i, 0) ?: continue
+                        if (line.size < 4) continue
+                        var dx = line[2] - line[0]; var dy = line[3] - line[1]
+                        if (dx < 0) { dx = -dx; dy = -dy }
+                        val angle = Math.toDegrees(atan2(dy, dx))
+                        add(angle to kotlin.math.hypot(dx, dy))
+                    }
+                }
+                SkewAngles.consensus(angles)
+            }
+        } finally { if (small !== source) small.recycle() }
+    }
     private class Mats : AutoCloseable {
         private val items = mutableListOf<Mat>()
         fun mat() = keep(Mat())

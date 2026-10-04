@@ -53,6 +53,7 @@ fun HomeScreen(
     onDiscardDraft: () -> Unit,
     onTrashClick: () -> Unit,
     onOutputHistoryClick: () -> Unit,
+    onLibraryWorkbench: () -> Unit,
     onSettingsClick: () -> Unit,
     onToolClick: (ToolEntry) -> Unit,
     onDocClick: (DocItem) -> Unit,
@@ -135,6 +136,7 @@ fun HomeScreen(
                     singleLine = true,
                     shape = RoundedCornerShape(18.dp)
                 )
+                TextButton(onClick = onLibraryWorkbench) { Text("全文检索 / 批量归档") }
             }
             if (draftCount > 0) {
                 item {

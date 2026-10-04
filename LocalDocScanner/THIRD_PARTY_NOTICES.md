@@ -43,3 +43,33 @@ that option; merely mentioning GPL in a multi-license notice does not select GPL
 Independent spell dictionaries/extensions are excluded from the curated runtime
 because their exact individual license inventory has not been established.
 The main MIT license does not replace any MPL/other component obligations.
+
+
+## V4.4 additional libraries
+
+- Gson 2.10.1, Copyright Google Inc.; Apache License 2.0. Source: https://github.com/google/gson/tree/gson-parent-2.10.1
+- Fastexcel 0.18.4, Copyright 2016 Dhatim; Apache License 2.0. Source: https://github.com/dhatim/fastexcel/tree/0.18.4
+- Opczip 1.2.0, Krzysztof Rzymkowski; Apache License 2.0 (verified Maven POM). Source: https://github.com/rzymek/opczip
+- Full license: https://www.apache.org/licenses/LICENSE-2.0
+
+## V4.4.1 additions
+
+- Apache Commons CSV 1.10.0 (`org.apache.commons:commons-csv`), Apache-2.0.
+  CSVParser/CSVPrinter directly handle quoting and multiline cells; license and
+  upstream NOTICE are bundled as `commons-csv_Apache-2.0.txt` / `commons-csv_NOTICE.txt`.
+- Markwon core 4.6.2, Dimitry Ivanov, Apache-2.0; `Markwon_Apache-2.0.txt`.
+  Native TextView Markdown rendering; no remote image loader is installed.
+- CommonMark Java 0.13.0, Copyright 2015-2016 Atlassian Pty Ltd, BSD-2-Clause;
+  `commonmark_BSD.txt`. Transitive Markdown parser dependency.
+- Bouncy Castle bcpkix/bcprov/bcutil-jdk15to18 1.86, Legion of the Bouncy Castle Inc.,
+  MIT-style Bouncy Castle License, `BouncyCastle_LICENSE.html`. Current official
+  non-multi-release Java artifacts used for Android PKCS12/CMS digital signatures.
+- PDF content-stream and signing adapters refer to Apache PDFBox
+  `examples/src/main/java/org/apache/pdfbox/examples/util/RemoveAllText.java` and
+  `examples/signature/CreateSignature.java` / `CreateSignatureBase.java` (Apache-2.0).
+  Original PdfBox notices already bundled. Local modifications are documented in
+  the new Kotlin file headers; no GPL/AGPL code was incorporated.
+- AndroidX WorkManager 2.10.5 and Biometric 1.1.0, Copyright The Android Open Source
+  Project, Apache-2.0. Direct library use for persisted scheduling and the system
+  biometric prompt; `AndroidX_Apache-2.0.txt` is bundled. BC also supplies AES-GCM
+  backup authentication; the custom envelope is documented in EncryptedBackup.kt.

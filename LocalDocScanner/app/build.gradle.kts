@@ -13,8 +13,8 @@ android {
         applicationId = "com.localdoc.scanner"
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
-        versionName = "4.3.2-rc1"
+        versionCode = 10
+        versionName = "4.4.1-rc1"
 
         // 当前交付目标为近年的小米手机。OCR/OpenCV 原生库仅保留 ARM64，
         // 避免把 x86 模拟器和旧 32 位手机的三套二进制重复塞进安装包。
@@ -46,6 +46,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     testOptions {
@@ -76,6 +77,8 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.activity:activity-compose:1.9.3")
+    implementation("androidx.biometric:biometric:1.1.0")
+    implementation("androidx.work:work-runtime-ktx:2.10.5")
 
     // 协程 / ListenableFuture 互操作（CameraX 绑定要用）
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
@@ -86,6 +89,11 @@ dependencies {
 
     // 条码 / 二维码（纯 Java，无 so）
     implementation("com.google.zxing:core:3.5.3")
+    implementation("com.google.code.gson:gson:2.10.1")
+    implementation("org.dhatim:fastexcel:0.18.4")
+    implementation("org.apache.commons:commons-csv:1.10.0")
+    implementation("io.noties.markwon:core:4.6.2")
+    implementation("org.bouncycastle:bcpkix-jdk15to18:1.86")
 
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
@@ -109,6 +117,7 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.work:work-testing:2.10.5")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

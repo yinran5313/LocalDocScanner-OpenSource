@@ -25,7 +25,9 @@ import kotlin.math.sin
 
 enum class PdfMarkup { HIGHLIGHT, UNDERLINE, STRIKEOUT }
 
-data class PdfFormField(val name: String, val value: String, val type: String)
+data class PdfFormField(val name: String, val value: String, val type: String,
+    val readOnly: Boolean = false, val options: List<String> = emptyList(),
+    val optionLabels: List<String> = emptyList(), val multiSelect: Boolean = false)
 data class PdfInkPoint(val x: Float, val y: Float)
 
 object PdfOfficeTools {
@@ -38,8 +40,10 @@ object PdfOfficeTools {
         footer: String,
         addPageNumbers: Boolean,
         opacity: Float,
-        watermarkBitmap: Bitmap? = null
+        watermarkBitmap: Bitmap? = null,
+        options: PdfDecorationOptions = PdfDecorationOptions()
     ): Boolean = edit(context, input, output) { document, font ->
+        options.validate()
         val total = document.numberOfPages
         val watermarkImage = watermarkBitmap?.let { LosslessFactory.createFromImage(document, it) }
         document.pages.forEachIndexed { index, page ->
@@ -59,7 +63,7 @@ object PdfOfficeTools {
                     if (safe.isNotBlank()) {
                         stream.beginText()
                         stream.setFont(font, 34f)
-                        val angle = Math.toRadians(32.0)
+                        val angle = Math.toRadians(options.watermarkAngle.toDouble())
                         stream.setTextMatrix(
                             Matrix(
                                 cos(angle).toFloat(), sin(angle).toFloat(),
@@ -85,7 +89,12 @@ object PdfOfficeTools {
                 drawLineText(stream, font, safeText(font, header, 100), 10f, 36f, box.height - 28f)
                 drawLineText(stream, font, safeText(font, footer, 100), 9f, 36f, 20f)
                 if (addPageNumbers) {
-                    drawLineText(stream, font, "${index + 1} / $total", 9f, box.width - 58f, 20f)
+                    val label = safeText(font, options.numberLabel(index, total), 100)
+                    val labelWidth = font.getStringWidth(label) / 1000f * 9f
+                    val column = options.numberPosition % 3
+                    val left = when (column) { 0 -> 36f; 1 -> (box.width - labelWidth) / 2f; else -> box.width - 36f - labelWidth }
+                    val bottom = if (options.numberPosition < 3) box.height - 28f else 20f
+                    drawLineText(stream, font, label, 9f, left.coerceAtLeast(0f), bottom)
                 }
                 stream.restoreGraphicsState()
             }
@@ -161,13 +170,14 @@ object PdfOfficeTools {
     }.getOrDefault(false)
 
     fun addNote(input: File, output: File, pageIndex: Int, text: String, xRatio: Float, yRatio: Float): Boolean = runCatching {
+        require(text.length <= 1000) { "便签内容不能超过1000字" }
         output.parentFile?.mkdirs()
         PDDocument.load(input).use { document ->
             val page = document.getPage(pageIndex.coerceIn(0, document.numberOfPages - 1))
             val geometry = PdfPageGeometry(page)
             val note = PDAnnotationText().apply {
                 rectangle = geometry.rectangle(geometry.quad(xRatio, yRatio, 28f / geometry.width, 28f / geometry.height))
-                contents = text.take(1000)
+                contents = text
                 setName(PDAnnotationText.NAME_NOTE)
                 setOpen(false)
                 setPrinted(true)
@@ -253,7 +263,17 @@ object PdfOfficeTools {
         PDDocument.load(input).use { document ->
             val form = document.documentCatalog.acroForm ?: return@use emptyList()
             form.fieldTree.map { field ->
-                PdfFormField(field.fullyQualifiedName.orEmpty(), field.valueAsString.orEmpty(), field.javaClass.simpleName)
+                val options = when (field) {
+                    is com.tom_roush.pdfbox.pdmodel.interactive.form.PDChoice -> field.optionsExportValues
+                    is com.tom_roush.pdfbox.pdmodel.interactive.form.PDCheckBox -> listOf(field.onValue)
+                    is com.tom_roush.pdfbox.pdmodel.interactive.form.PDRadioButton -> field.onValues.toList()
+                    else -> emptyList()
+                }
+                PdfFormField(field.fullyQualifiedName.orEmpty(),
+                    if (field is com.tom_roush.pdfbox.pdmodel.interactive.form.PDChoice && field.isMultiSelect) field.value.joinToString("\u001f") else field.valueAsString.orEmpty(),
+                    field.javaClass.simpleName, field.isReadOnly, options,
+                    if (field is com.tom_roush.pdfbox.pdmodel.interactive.form.PDChoice) field.optionsDisplayValues else options,
+                    field is com.tom_roush.pdfbox.pdmodel.interactive.form.PDChoice && field.isMultiSelect)
             }.filter { it.name.isNotBlank() }.toList()
         }
     }.getOrDefault(emptyList())
@@ -285,7 +305,11 @@ object PdfOfficeTools {
                     field.defaultAppearance = "/${fontName.name} 0 Tf 0 g"
                     form.setNeedAppearances(false)
                 }
-                runCatching { field.setValue(value) }.onFailure {
+                runCatching {
+                    if (field is com.tom_roush.pdfbox.pdmodel.interactive.form.PDChoice && field.isMultiSelect)
+                        field.setValue(value.split('\u001f').filter(String::isNotBlank))
+                    else field.setValue(value)
+                }.onFailure {
                     if (fontInput != null) throw it
                     // 部分表单只嵌入了旧值所需的字体子集，中文无法现场生成外观。
                     // 仍保存真实字段值，并要求阅读器用系统字体生成显示外观。
@@ -322,9 +346,13 @@ object PdfOfficeTools {
         false
     }
 
-    private fun safeText(font: PDType0Font, value: String, limit: Int): String = value
-        .filter { char -> runCatching { font.hasGlyph(char.code) }.getOrDefault(false) }
-        .take(limit)
+    private fun safeText(font: PDType0Font, value: String, limit: Int): String {
+        require(value.length <= limit) { "文字超过${limit}字，请分段填写；没有保存截断内容" }
+        require(value.all { char -> runCatching { font.hasGlyph(char.code) }.getOrDefault(false) }) {
+            "文字包含当前字体不支持的字符或换行，请调整后保存；没有丢弃字符"
+        }
+        return value
+    }
 
     private fun drawLineText(
         stream: PDPageContentStream,

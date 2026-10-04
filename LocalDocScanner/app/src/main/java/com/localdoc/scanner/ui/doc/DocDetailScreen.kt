@@ -71,6 +71,7 @@ import com.localdoc.scanner.ocr.OcrNaming
 import com.localdoc.scanner.output.OutputHistoryStore
 import com.localdoc.scanner.ui.AppViewModel
 import com.localdoc.scanner.util.Share
+import com.localdoc.scanner.jobs.OcrJobs
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -107,7 +108,7 @@ fun DocDetailScreen(
     var batchBrightness by remember { mutableFloatStateOf(0f) }
     var batchContrast by remember { mutableFloatStateOf(1f) }
     var ocrOpen by remember { mutableStateOf(false) }
-    var ocrPrecise by remember { mutableStateOf(false) }
+    var ocrPrecise by remember { mutableStateOf(context.getSharedPreferences("ocr_job_receipts", android.content.Context.MODE_PRIVATE).getBoolean("$docId:precise", true)) }
     var ocrRunning by remember { mutableStateOf(false) }
     var ocrText by remember(doc?.ocrText) { mutableStateOf(doc?.ocrText.orEmpty()) }
     var ocrStats by remember { mutableStateOf("") }
@@ -120,6 +121,32 @@ fun DocDetailScreen(
     var searchablePdf by remember { mutableStateOf(false) }
     var exportName by remember(doc?.title) { mutableStateOf(doc?.title ?: "文档") }
     var busy by remember { mutableStateOf(false) }
+    val ocrWorks by remember(context, docId) { OcrJobs.observe(context, docId) }.collectAsState(emptyList())
+    val ocrWork = ocrWorks.firstOrNull { it.id.toString() == context.getSharedPreferences("ocr_job_receipts", android.content.Context.MODE_PRIVATE).getString("$docId:work", null) }
+    LaunchedEffect(ocrWork) {
+        if (ocrWork != null) {
+            ocrRunning = !ocrWork.state.isFinished
+            val data = if (ocrWork.state.isFinished) ocrWork.outputData else ocrWork.progress
+            ocrStats = when (ocrWork.state) {
+                androidx.work.WorkInfo.State.CANCELLED -> "已暂停；已完成页面保留，可续跑"
+                androidx.work.WorkInfo.State.ENQUEUED -> "等待系统调度；已完成 ${data.getInt("done", 0)} 页"
+                else -> "${if (ocrRunning) "识别中" else "本次结束"}：${data.getInt("done", 0)}/${data.getInt("total", pages.size)} 页" +
+                    data.getString("error").orEmpty().takeIf(String::isNotBlank)?.let { "；$it" }.orEmpty()
+            }
+            if (ocrWork.state.isFinished) {
+                ocrText = vm.docs.value.firstOrNull { it.id == docId }?.ocrText.orEmpty()
+                ocrNameSuggestion = OcrNaming.suggest(ocrText, doc?.title ?: "扫描文档")
+                refresh++
+            }
+        }
+    }
+    fun startOcr(resume: Boolean) {
+        ocrRunning = true
+        scope.launch {
+            try { OcrJobs.start(context, docId, ocrPrecise, resume); ocrStats = "已提交，系统将继续处理" }
+            catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; ocrRunning = false; ocrStats = e.message ?: "提交失败" }
+        }
+    }
 
     fun cleanName(value: String): String = value.ifBlank { "文档" }.replace(Regex("[\\\\/:*?\"<>|]"), "_")
     fun toast(value: String) = Toast.makeText(context, value, Toast.LENGTH_LONG).show()
@@ -195,7 +222,7 @@ fun DocDetailScreen(
                 title = {
                     Column {
                         Text(doc?.title ?: "文档", style = MaterialTheme.typography.titleMedium)
-                        Text("${pages.size} 页 · 已保存到文档库", style = MaterialTheme.typography.labelSmall)
+                        Text(if (ocrRunning) "OCR处理中 · 可退出此页" else "${pages.size} 页 · 已保存到文档库", style = MaterialTheme.typography.labelSmall)
                     }
                 },
                 navigationIcon = { TextButton(onClick = onBack) { Text("返回") } },
@@ -382,7 +409,7 @@ fun DocDetailScreen(
 
     if (ocrOpen) {
         AlertDialog(
-            onDismissRequest = { if (!ocrRunning) ocrOpen = false },
+            onDismissRequest = { ocrOpen = false },
             title = { Text("本地识别文字") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -396,12 +423,12 @@ fun DocDetailScreen(
                         FilterChip(
                             selected = ocrPrecise,
                             onClick = { ocrPrecise = true },
-                            label = { Text("高精度") },
+                            label = { Text("高精度 · medium") },
                             enabled = !ocrRunning
                         )
                     }
                     Text("识别在手机本地完成；高精度会更慢、占用更多内存。", style = MaterialTheme.typography.bodySmall)
-                    if (ocrRunning) Text("正在逐页识别，请保持此页面打开……", color = MaterialTheme.colorScheme.primary)
+                    if (ocrRunning) Text("可关闭此页；系统重启后会从已保存的页面继续。强制停止应用后需重新打开。", color = MaterialTheme.colorScheme.primary)
                     if (ocrStats.isNotBlank()) Text(ocrStats, style = MaterialTheme.typography.bodySmall)
                     OutlinedTextField(
                         value = ocrText,
@@ -414,18 +441,7 @@ fun DocDetailScreen(
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         TextButton(
-                            onClick = {
-                                ocrRunning = true
-                                scope.launch {
-                                    val result = vm.recognizeDocument(docId, ocrPrecise)
-                                    ocrText = result.text
-                                    ocrNameSuggestion = OcrNaming.suggest(result.text, doc?.title ?: "扫描文档")
-                                    ocrStats = "完成 ${result.succeededPages}/${result.pageCount} 页，${result.lineCount} 行，${"%.1f".format(result.totalTimeMs / 1000.0)} 秒" +
-                                        if (result.failedPages.isEmpty()) "" else "；失败页：${result.failedPages.joinToString()}"
-                                    ocrRunning = false
-                                    refresh++
-                                }
-                            },
+                            onClick = { startOcr(false) },
                             enabled = !ocrRunning && pages.isNotEmpty()
                         ) { Text(if (ocrText.isBlank()) "开始识别" else "重新识别") }
                         TextButton(
@@ -436,6 +452,10 @@ fun DocDetailScreen(
                             onClick = { saveOcrText.launch("${cleanName(doc?.title ?: "文档")}_文字.txt") },
                             enabled = ocrText.isNotBlank()
                         ) { Text("另存TXT") }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        TextButton(onClick = { OcrJobs.cancel(context, docId) }, enabled = ocrRunning) { Text("暂停") }
+                        TextButton(onClick = { startOcr(true) }, enabled = !ocrRunning && ocrWork != null) { Text("续跑 / 重试失败页") }
                     }
                     if (ocrNameSuggestion.isNotBlank() && ocrNameSuggestion != doc?.title) {
                         TextButton(
@@ -459,7 +479,7 @@ fun DocDetailScreen(
                 ) { Text("保存校正") }
             },
             dismissButton = {
-                TextButton(onClick = { ocrOpen = false }, enabled = !ocrRunning) { Text("关闭") }
+                TextButton(onClick = { ocrOpen = false }) { Text("关闭") }
             }
         )
     }

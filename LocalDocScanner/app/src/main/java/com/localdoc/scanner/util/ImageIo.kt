@@ -70,7 +70,7 @@ object ImageIo {
         }
         if (rotation == 0f) return bmp
         val matrix = Matrix().apply { postRotate(rotation) }
-        return Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, matrix, true)
+        return Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, matrix, true).also { if (it !== bmp) bmp.recycle() }
     }
 
     fun rotate(bmp: Bitmap, degrees: Float): Bitmap {
@@ -110,16 +110,22 @@ object ImageIo {
         return result
     }
 
-    fun saveJpeg(bmp: Bitmap, file: File, quality: Int = 92): Boolean = try {
+    fun saveJpeg(bmp: Bitmap, file: File, quality: Int = 92): Boolean {
         file.parentFile?.mkdirs()
-        FileOutputStream(file).use {
-            bmp.compress(Bitmap.CompressFormat.JPEG, quality.coerceIn(1, 100), it)
-            it.flush()
-        }
-        true
-    } catch (e: Exception) {
-        e.printStackTrace()
-        false
+        val temporary = File(file.parentFile, "${file.name}.${java.util.UUID.randomUUID()}.part")
+        return try {
+            FileOutputStream(temporary).use {
+                check(bmp.compress(Bitmap.CompressFormat.JPEG, quality.coerceIn(1, 100), it)) { "JPEG编码失败" }
+                it.flush(); it.fd.sync()
+            }
+            try {
+                java.nio.file.Files.move(temporary.toPath(), file.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
+                java.nio.file.Files.move(temporary.toPath(), file.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            }
+            true
+        } catch (e: Exception) { e.printStackTrace(); false }
+        finally { temporary.delete() }
     }
 
     fun copyBytes(context: Context, uri: Uri, dest: File): Boolean = try {

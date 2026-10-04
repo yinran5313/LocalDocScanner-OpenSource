@@ -1,6 +1,14 @@
 package com.localdoc.scanner.ui.output
 
 import android.net.Uri
+import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import android.provider.DocumentsContract
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -39,8 +47,37 @@ import java.util.Locale
 @Composable
 fun OutputHistoryScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var pendingJson by rememberSaveable { mutableStateOf("") }
+    var status by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
     var records by remember { mutableStateOf(OutputHistoryStore.all(context)) }
     var officeEngine by remember { mutableStateOf(OfficeEngineBridge.installed(context)) }
+    val editor = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val record = runCatching { com.localdoc.scanner.data.ToolDrafts.gson.fromJson(pendingJson, com.localdoc.scanner.output.OutputRecord::class.java) }.getOrNull()
+        if (record != null) scope.launch {
+            busy = true
+            val failed = result.data?.getBooleanExtra("localdoc_save_failed", false) == true
+            val recovery = result.data?.getStringExtra("localdoc_recovery_path")?.let(::File)?.takeIf { it.isFile }
+            val file = recovery ?: File(record.internalPath)
+            status = withContext(Dispatchers.IO) {
+                runCatching {
+                    require(file.isFile) { "工作副本无法读取" }
+                    OutputHistoryStore.recordGenerated(context, file, record.mime)
+                    if (failed) return@runCatching "保存失败，修改的恢复副本已登记，请另存。"
+                    if (record.savedUri.isNotBlank()) {
+                        val uri = Uri.parse(record.savedUri)
+                        context.contentResolver.openOutputStream(uri, "wt")?.use { out -> file.inputStream().use { it.copyTo(out) } }
+                            ?: error("已更新工作副本，但无法写回保存位置，请另存")
+                        OutputHistoryStore.markSaved(context, file, uri, record.savedLabel)
+                        "修改已同步到保存位置"
+                    } else "工作副本已更新，可以分享或另存到手机"
+                }.getOrElse { "同步失败：${it.message}；内部副本保留在导出记录。" }
+            }
+            records = OutputHistoryStore.all(context)
+            busy = false
+        }
+    }
     Scaffold(
         modifier = modifier,
         topBar = {
@@ -64,6 +101,7 @@ fun OutputHistoryScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
             contentPadding = PaddingValues(14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            if (status.isNotBlank()) item { Text(status) }
             items(records, key = { it.id }) { record ->
                 val internal = File(record.internalPath)
                 val isFolder = record.mime == DocumentsContract.Document.MIME_TYPE_DIR
@@ -77,6 +115,32 @@ fun OutputHistoryScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                             color = if (record.savedUri.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Button(onClick = {
+                            if (officeFormat != null && officeEngine != null) {
+                                scope.launch {
+                                    busy = true
+                                    val ready = withContext(Dispatchers.IO) { runCatching {
+                                        val work = if (internal.isFile) internal else File(context.filesDir, "office-work/${record.id}/${record.name}")
+                                        work.parentFile?.mkdirs()
+                                        if (record.savedUri.isNotBlank()) {
+                                            val part = File(work.parentFile, work.name + ".refresh")
+                                            try {
+                                                context.contentResolver.openInputStream(Uri.parse(record.savedUri))?.use { input -> part.outputStream().use { input.copyTo(it) } }
+                                                    ?: error("无法读取保存位置；请选择内部副本或重新授权")
+                                                require(part.length() > 0 && part.renameTo(work)) { "无法更新工作副本" }
+                                            } finally { part.delete() }
+                                            OutputHistoryStore.markSaved(context, work, Uri.parse(record.savedUri), record.savedLabel)
+                                        }
+                                        require(work.isFile) { "文件已不存在" }
+                                        work
+                                    } }
+                                    ready.onSuccess { file ->
+                                        pendingJson = com.localdoc.scanner.data.ToolDrafts.gson.toJson(record.copy(internalPath = file.absolutePath))
+                                        editor.launch(OfficeEngineBridge.editIntent(context, file, officeFormat.mime, officeEngine!!))
+                                    }.onFailure { status = "打开失败：${it.message}" }
+                                    busy = false
+                                }
+                                return@Button
+                            }
                             val opened = if (officeFormat != null) {
                                 val engine = officeEngine
                                 when {
@@ -87,11 +151,16 @@ fun OutputHistoryScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                                     internal.isFile -> OfficeEngineBridge.openEditor(context, internal, officeFormat.mime, engine)
                                     else -> false
                                 }
+                            } else if (!isFolder && (internal.isFile || record.savedUri.isNotBlank())) {
+                                val uri = if (record.savedUri.isNotBlank()) Uri.parse(record.savedUri)
+                                    else androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", internal)
+                                com.localdoc.scanner.external.ExternalOpenBus.offer(Intent(Intent.ACTION_VIEW).apply { setDataAndType(uri, record.mime) }, context.contentResolver)
+                                true
                             } else if (record.savedUri.isNotBlank()) {
                                 Share.openUri(context, Uri.parse(record.savedUri), record.mime)
                             } else internal.takeIf { it.isFile }?.let { Share.open(context, it, record.mime) } == true
                             if (!opened) records = OutputHistoryStore.all(context)
-                        }) { Text(when {
+                        }, enabled = !busy) { Text(when {
                             isFolder -> "打开位置"
                             officeFormat != null && officeEngine == null -> "安装完整引擎"
                             officeFormat != null -> "完整编辑"
@@ -99,9 +168,9 @@ fun OutputHistoryScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                         }) }
                         if (!isFolder) {
                             TextButton(onClick = {
-                                if (internal.isFile) Share.file(context, internal, record.mime)
-                                else if (record.savedUri.isNotBlank()) Share.uri(context, Uri.parse(record.savedUri), record.mime)
-                            }) { Text("分享") }
+                                if (record.savedUri.isNotBlank()) Share.uri(context, Uri.parse(record.savedUri), record.mime)
+                                else if (internal.isFile) Share.file(context, internal, record.mime)
+                            }, enabled = !busy) { Text("分享") }
                         }
                     }
                 }

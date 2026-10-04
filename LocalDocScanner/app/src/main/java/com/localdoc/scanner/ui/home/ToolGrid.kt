@@ -43,9 +43,10 @@ private val TOOL_GROUPS = listOf(
     ToolGroup(
         "pdf",
         "PDF 处理",
-        listOf("pdf_office", "pdf_merge", "pdf_split", "pdf_compress", "pdf_to_images", "pdf_text", "pdf_encrypt")
+        listOf("pdf_office", "pdf_sign", "pdf_merge", "pdf_split", "pdf_compress", "pdf_to_images", "pdf_text", "pdf_encrypt", "pdf_compare")
     ),
-    ToolGroup("recognize", "识别与提取", listOf("ocr", "card", "barcode"))
+    ToolGroup("recognize", "识别与提取", listOf("ocr", "card", "barcode")),
+    ToolGroup("structure", "票据与表格", listOf("batch_extract", "table_xlsx"))
 )
 
 @Composable
@@ -140,6 +141,7 @@ private fun toolIcon(id: String): Int = when (id) {
     "pdf_text" -> R.drawable.ic_tool_text_snippet
     "pdf_encrypt" -> R.drawable.ic_tool_lock
     "pdf_office" -> R.drawable.ic_tool_tune
+    "pdf_sign" -> R.drawable.ic_tool_tune
     "ocr" -> R.drawable.ic_tool_document_scanner
     "card" -> R.drawable.ic_tool_badge
     "barcode" -> R.drawable.ic_tool_qr_code_scanner

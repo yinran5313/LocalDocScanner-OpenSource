@@ -72,6 +72,7 @@ import com.localdoc.scanner.cv.BookDewarp
 import com.localdoc.scanner.cv.Stitch
 import com.localdoc.scanner.cv.applyFilter
 import com.localdoc.scanner.data.FileStore
+import com.localdoc.scanner.data.rememberToolState
 import com.localdoc.scanner.export.PdfExporter
 import com.localdoc.scanner.ocr.PaddleOcrEngine
 import com.localdoc.scanner.output.OutputHistoryStore
@@ -95,7 +96,8 @@ import java.util.Locale
 private data class FlowOutcome(
     val summary: List<Pair<String, String>>,
     val files: List<File>,
-    val docFiles: List<File> = emptyList()
+    val docFiles: List<File> = emptyList(),
+    val copyText: String? = null
 )
 
 private data class PdfPlacement(val x: Float, val y: Float, val width: Float, val height: Float)
@@ -118,7 +120,10 @@ private data class PendingPdfEdit(
     val strokes: List<List<PdfInkPoint>>,
     val signatureUri: Uri?,
     val watermarkUri: Uri?,
-    val formValues: Map<String, String>
+    val formValues: Map<String, String>,
+    val annotationChange: com.localdoc.scanner.pdf.PdfAnnotationChange? = null,
+    val decoration: com.localdoc.scanner.pdf.PdfDecorationOptions? = null,
+    val textChange: com.localdoc.scanner.pdf.PdfTextChange? = null
 )
 
 private fun fmtSize(bytes: Long): String {
@@ -127,7 +132,7 @@ private fun fmtSize(bytes: Long): String {
     return if (kb < 1024) "%.0f KB".format(kb) else "%.1f MB".format(kb / 1024.0)
 }
 
-private fun stamp(): String = SimpleDateFormat("MMdd_HHmm", Locale.getDefault()).format(Date())
+private fun stamp(): String = SimpleDateFormat("MMdd_HHmmss_SSS", Locale.getDefault()).format(Date())
 
 // ======================================================================
 // 入口分发
@@ -147,7 +152,45 @@ fun ToolScreen(
         }
         return
     }
-    key(request.tool.id) {
+    val inputKey = request.files.map { it.absolutePath }
+    var checked by remember(inputKey) { mutableStateOf(false) }
+    var locked by remember(inputKey) { mutableStateOf<File?>(null) }
+    var inputError by remember(inputKey) { mutableStateOf("") }
+    LaunchedEffect(inputKey) {
+        withContext(Dispatchers.IO) {
+            for (file in request.files.filter { it.extension.equals("pdf", true) }) {
+                try {
+                    val encrypted = com.localdoc.scanner.pdf.PdfReadSession.open(file).use { it.encrypted }
+                    if (encrypted) { locked = file; break }
+                } catch (_: com.tom_roush.pdfbox.pdmodel.encryption.InvalidPasswordException) {
+                    locked = file; break
+                } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    inputError = "${request.names.getOrNull(request.files.indexOf(file)) ?: file.name}：${e.message}"
+                    break
+                }
+            }
+        }
+        checked = true
+    }
+    if (!checked || locked != null || inputError.isNotBlank()) {
+        Column(modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(onClick = onBack) { Text("返回") }
+            when {
+                !checked -> Text("正在检查文件…")
+                locked != null -> {
+                    Text("先解锁待处理PDF", style = MaterialTheme.typography.titleLarge)
+                    Text(request.names.getOrNull(request.files.indexOf(locked)) ?: locked!!.name)
+                    PdfReader(locked!!, Modifier.fillMaxWidth().weight(1f), onWorkingCopyReady = {
+                        vm.replaceToolInput(locked!!, it)
+                    })
+                }
+                else -> Text("文件读取失败：$inputError", color = MaterialTheme.colorScheme.error)
+            }
+        }
+        return
+    }
+    key(request.tool.id, inputKey) {
         when (request.tool.id) {
             "images_to_pdf" -> ImagesToPdfFlow(request, vm, onBack, onOpenDoc, modifier)
             "pdf_merge" -> PdfMergeFlow(request, vm, onBack, onOpenDoc, modifier)
@@ -157,7 +200,10 @@ fun ToolScreen(
             "pdf_text" -> PdfTextFlow(request, vm, onBack, onOpenDoc, modifier)
             "pdf_encrypt" -> PdfEncryptFlow(request, vm, onBack, onOpenDoc, modifier)
             "pdf_office" -> PdfOfficeFlow(request, vm, onBack, onOpenDoc, modifier)
+            "pdf_sign" -> PdfSignFlow(request, vm, onBack, onOpenDoc, modifier)
+            "pdf_compare" -> PdfCompareFlow(request, vm, onBack, onOpenDoc, modifier)
             "ocr" -> OcrFlow(request, vm, onBack, onOpenDoc, modifier)
+            "batch_extract", "table_xlsx" -> StructuredWorkbench(request, vm, onBack, modifier)
             "card" -> CardFlow(request, vm, onBack, onOpenDoc, modifier)
             "barcode" -> BarcodeFlow(request, vm, onBack, onOpenDoc, modifier)
             "long_image" -> LongImageFlow(request, vm, onBack, onOpenDoc, modifier)
@@ -187,12 +233,19 @@ private fun ToolFlow(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var stage by remember { mutableIntStateOf(0) }
-    var outcome by remember { mutableStateOf<FlowOutcome?>(null) }
+    var stage by rememberToolState(request, "stage") { 0 }
+    var outcome by rememberToolState<FlowOutcome?>(request, "outcome") { null }
     var busy by remember { mutableStateOf(false) }
-    var pendingSaveFiles by remember { mutableStateOf<List<File>>(emptyList()) }
-    var saveStatus by remember { mutableStateOf("") }
-    var showInputAfterProcessing by remember { mutableStateOf(false) }
+    var pendingSaveFiles by rememberToolState<List<File>>(request, "pendingSaveFiles") { emptyList() }
+    var saveStatus by rememberToolState(request, "saveStatus") { "" }
+    var showInputAfterProcessing by rememberToolState(request, "showInputAfterProcessing") { false }
+
+    LaunchedEffect(request) {
+        if (stage == 1 && !vm.isToolRunning) {
+            stage = 0
+            saveStatus = "上次处理已中断，配置和编辑清单已恢复，请确认后重新处理。"
+        }
+    }
 
     val saveSingle = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
         val file = pendingSaveFiles.singleOrNull()
@@ -254,13 +307,13 @@ private fun ToolFlow(
     }
 
     fun start() {
-        if (busy) return
+        if (busy || vm.isToolRunning) return
         busy = true
         stage = 1
-        scope.launch {
+        vm.runTool {
             val result = withContext(Dispatchers.IO) {
                 runCatching { process(context) }
-                    .getOrElse { FlowOutcome(listOf("出错" to (it.message ?: "处理失败")), emptyList()) }
+                    .getOrElse { if (it is kotlinx.coroutines.CancellationException) throw it; FlowOutcome(listOf("出错" to (it.message ?: "处理失败")), emptyList()) }
             }
             result.files.forEach { OutputHistoryStore.recordGenerated(context, it, guessMime(it)) }
             outcome = result
@@ -312,6 +365,7 @@ private fun ToolFlow(
                                     toast("没有可分享的文件")
                                 }
                             },
+                            enabled = !busy && !o?.files.isNullOrEmpty(),
                             modifier = Modifier.weight(1f)
                         ) { Text("分享") }
                         TextButton(
@@ -342,6 +396,7 @@ private fun ToolFlow(
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 if (showInputPreview) FilePreview(request.files, "输入预览")
+                if (saveStatus.isNotBlank()) Text(saveStatus)
                 config()
             }
 
@@ -358,7 +413,7 @@ private fun ToolFlow(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 val o = outcome
-                Text("处理完成", style = MaterialTheme.typography.titleMedium)
+                Text(if (o == null || o.summary.any { it.first == "出错" }) "处理失败" else if (o.files.isEmpty()) "未生成文件" else "处理完成", style = MaterialTheme.typography.titleMedium)
                 if (o != null) {
                     if (o.files.isNotEmpty()) {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -415,6 +470,20 @@ private fun guessMime(file: File): String = when (file.extension.lowercase(Local
 }
 
 @Composable
+private fun PdfCompareFlow(request: ToolRequest, vm: AppViewModel, onBack: () -> Unit, onOpenDoc: (String) -> Unit, modifier: Modifier) {
+    ToolFlow(request, vm, onBack, onOpenDoc, modifier, config = {
+        Text("选择两份PDF；按页码对齐，左侧原稿、右侧对照稿，差异标红。渲染差异也可能来自字体或排版变化。")
+    }) { context ->
+        require(request.files.size == 2) { "请选择恰好两份PDF" }
+        val output = File(FileStore.exportDir(context), "PDF差异_${System.currentTimeMillis()}.pdf")
+        val (changed, notes) = com.localdoc.scanner.pdf.PdfComparison.compare(context, request.files[0], request.files[1], output)
+        val report = File(FileStore.exportDir(context), "PDF对比_${System.currentTimeMillis()}.txt")
+        report.writeText(notes.joinToString("\n"))
+        FlowOutcome(listOf("差异页" to "$changed"), listOfNotNull(report, output.takeIf { it.isFile }))
+    }
+}
+
+@Composable
 private fun ChipRow(
     options: List<String>,
     selected: Int,
@@ -441,8 +510,8 @@ private fun ImagesToPdfFlow(
     request: ToolRequest, vm: AppViewModel, onBack: () -> Unit, onOpenDoc: (String) -> Unit,
     modifier: Modifier
 ) {
-    var pageSize by remember { mutableIntStateOf(0) }
-    var quality by remember { mutableIntStateOf(1) }
+    var pageSize by rememberToolState(request, "pageSize") { 0 }
+    var quality by rememberToolState(request, "quality") { 1 }
 
     @Composable
     fun panel() {
@@ -459,14 +528,13 @@ private fun ImagesToPdfFlow(
         runLabel = "生成 PDF", modifier = modifier, config = { panel() }
     ) { ctx ->
         val maxSide = intArrayOf(2400, 1600, 1100)[quality]
-        val bitmaps = request.files.mapNotNull { ImageIo.loadFromFile(it, maxSide) }
         val out = File(FileStore.exportDir(ctx), "images_${stamp()}.pdf")
         val size = if (pageSize == 0) PdfExporter.PageSize.A4 else PdfExporter.PageSize.FIT_IMAGE
-        val ok = bitmaps.isNotEmpty() && PdfExporter.export(bitmaps, out, size)
+        val ok = out.outputStream().use { PdfExporter.exportFiles(request.files, it, size, maxSide) }
         val bytes = if (ok) out.length() else 0L
-        bitmaps.forEach { it.recycle() }
+        if (!ok) out.delete()
         FlowOutcome(
-            listOf("页数" to "${bitmaps.size}", "体积" to fmtSize(bytes)),
+            listOf("页数" to "${request.files.size}", "体积" to fmtSize(bytes)),
             if (ok) listOf(out) else emptyList()
         )
     }
@@ -481,7 +549,7 @@ private fun PdfMergeFlow(
     request: ToolRequest, vm: AppViewModel, onBack: () -> Unit, onOpenDoc: (String) -> Unit,
     modifier: Modifier
 ) {
-    var order by remember { mutableStateOf(request.files.toList()) }
+    var order by rememberToolState(request, "order") { request.files.toList() }
 
     @Composable
     fun panel() {
@@ -542,9 +610,9 @@ private fun PdfSplitFlow(
     modifier: Modifier
 ) {
     val src = request.files.first()
-    var mode by remember { mutableIntStateOf(0) }
-    var perFile by remember { mutableStateOf("1") }
-    var ranges by remember { mutableStateOf("1-1") }
+    var mode by rememberToolState(request, "mode") { 0 }
+    var perFile by rememberToolState(request, "perFile") { "1" }
+    var ranges by rememberToolState(request, "ranges") { "1-1" }
 
     @Composable
     fun panel() {
@@ -606,7 +674,7 @@ private fun PdfCompressFlow(
     modifier: Modifier
 ) {
     val src = request.files.first()
-    var tier by remember { mutableIntStateOf(1) }
+    var tier by rememberToolState(request, "tier") { 1 }
 
     @Composable
     fun panel() {
@@ -652,7 +720,7 @@ private fun PdfToImagesFlow(
     modifier: Modifier
 ) {
     val src = request.files.first()
-    var dpi by remember { mutableIntStateOf(1) }
+    var dpi by rememberToolState(request, "dpi") { 1 }
 
     @Composable
     fun panel() {
@@ -749,37 +817,129 @@ private fun PdfEncryptFlow(
 // ======================================================================
 
 @Composable
+private fun PdfSignFlow(request: ToolRequest, vm: AppViewModel, onBack: () -> Unit, onOpenDoc: (String) -> Unit, modifier: Modifier) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var storeUri by rememberToolState<Uri?>(request, "signingStoreUri") { null }
+    var password by remember(request) { mutableStateOf("") }
+    var certificates by remember { mutableStateOf<List<com.localdoc.scanner.pdf.SigningCertificate>>(emptyList()) }
+    var selectedAlias by rememberToolState(request, "signingAlias") { "" }
+    var reason by rememberToolState(request, "signingReason") { "" }
+    var name by rememberToolState(request, "signingName") { "" }
+    var certificateStatus by remember { mutableStateOf("") }
+    var inspecting by remember { mutableStateOf(false) }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let { runCatching { context.contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION) } }
+        storeUri = uri; certificates = emptyList(); selectedAlias = ""; password = ""
+    }
+    ToolFlow(request, vm, onBack, onOpenDoc, modifier, runLabel = "生成数字签名PDF", config = {
+        Text("使用包含私钥的PKCS12证书（.p12/.pfx）生成可验证的数字签名。请先完成所有内容编辑；再次修改会影响签名有效性。", style = MaterialTheme.typography.bodySmall)
+        Button(onClick = { picker.launch(arrayOf("*/*")) }) { Text(if (storeUri == null) "选择证书文件" else "重新选择证书") }
+        OutlinedTextField(password, { password = it }, label = { Text("证书密码，不会保存") }, singleLine = true,
+            visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
+        Button(onClick = {
+            val uri = storeUri ?: return@Button
+            val secret = password.toCharArray()
+            inspecting = true
+            scope.launch {
+                try {
+                    certificates = withContext(Dispatchers.IO) {
+                        context.contentResolver.openInputStream(uri)?.use { com.localdoc.scanner.pdf.PdfDigitalSignature.inspect(it, secret) } ?: error("无法读取证书文件")
+                    }
+                    selectedAlias = certificates.firstOrNull()?.alias.orEmpty()
+                    certificateStatus = "找到${certificates.size}个私钥证书"
+                } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    certificateStatus = "证书读取失败：${e.message}"
+                } finally { secret.fill('\u0000'); inspecting = false }
+            }
+        }, enabled = storeUri != null && !inspecting) { Text(if (inspecting) "读取中…" else "查看并选择证书") }
+        if (certificateStatus.isNotBlank()) Text(certificateStatus)
+        certificates.forEach { cert ->
+            FilterChip(selectedAlias == cert.alias, { selectedAlias = cert.alias }, label = { Text("${cert.alias} · ${cert.subject}") })
+            if (selectedAlias == cert.alias) Text("签发者：${cert.issuer}\n有效期至：${cert.notAfter}\nSHA256：${cert.sha256}", style = MaterialTheme.typography.bodySmall)
+        }
+        OutlinedTextField(name, { name = it }, label = { Text("签名显示名称（可留空）") }, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(reason, { reason = it }, label = { Text("签名说明（可留空）") }, modifier = Modifier.fillMaxWidth())
+        Text("签名可校验文件完整性；身份可信度取决于证书签发者与阅读器的信任设置。当前不连接时间戳服务。", style = MaterialTheme.typography.bodySmall)
+    }) { ctx ->
+        val uri = storeUri ?: error("请先选择含私钥的证书文件")
+        val secret = password.toCharArray()
+        val output = File(FileStore.exportDir(ctx), "${request.files.first().nameWithoutExtension}_数字签名_${stamp()}.pdf")
+        try {
+            val info = ctx.contentResolver.openInputStream(uri)?.use {
+                com.localdoc.scanner.pdf.PdfDigitalSignature.sign(request.files.first(), output, it, secret, selectedAlias, reason, name)
+            } ?: error("无法读取证书文件")
+            FlowOutcome(listOf("结果" to "已生成数字签名副本", "证书" to info.subject, "证书指纹SHA256" to info.sha256), listOf(output))
+        } finally { secret.fill('\u0000'); password = "" }
+    }
+}
+
+@Composable
 private fun PdfOfficeFlow(
     request: ToolRequest, vm: AppViewModel, onBack: () -> Unit, onOpenDoc: (String) -> Unit,
     modifier: Modifier
 ) {
     val context = LocalContext.current
     val source = request.files.first()
-    val operations = listOf("页码水印", "填写文字", "文字标记", "便签", "手写签名", "图片签名", "表单填写", "永久打码")
-    var operation by remember { mutableIntStateOf(0) }
+    val operations = listOf("页码水印", "填写文字", "文字标记", "便签", "手写签名", "图片签名", "表单填写", "永久打码", "管理批注", "修改原文字")
+    var sensitiveRegions by rememberToolState<List<com.localdoc.scanner.pdf.SensitiveRegion>>(request, "sensitiveRegions") { emptyList() }
+    var sensitiveKeywords by rememberToolState(request, "sensitiveKeywords") { "" }
+    var sensitiveStatus by rememberToolState(request, "sensitiveStatus") { "" }
+    var detectingSensitive by rememberToolState(request, "detectingSensitive") { false }
+    LaunchedEffect(request) { if (!vm.isToolRunning) detectingSensitive = false }
+    var operation by rememberToolState(request, "operation") { 0 }
     val pageCount = remember(source) { PdfTools.pageCount(source).coerceAtLeast(1) }
-    var pageIndex by remember { mutableIntStateOf(0) }
-    var text by remember { mutableStateOf("") }
-    var header by remember { mutableStateOf("") }
-    var footer by remember { mutableStateOf("") }
-    var watermark by remember { mutableStateOf("") }
-    var addPageNumbers by remember { mutableStateOf(true) }
-    var opacity by remember { mutableFloatStateOf(0.22f) }
-    var x by remember { mutableFloatStateOf(0.12f) }
-    var y by remember { mutableFloatStateOf(0.20f) }
-    var width by remember { mutableFloatStateOf(0.42f) }
-    var height by remember { mutableFloatStateOf(0.08f) }
-    var undoPlacements by remember { mutableStateOf<List<PdfPlacement>>(emptyList()) }
-    var redoPlacements by remember { mutableStateOf<List<PdfPlacement>>(emptyList()) }
-    var markup by remember { mutableIntStateOf(0) }
-    var strokes by remember { mutableStateOf<List<List<PdfInkPoint>>>(emptyList()) }
-    var signatureUri by remember { mutableStateOf<Uri?>(null) }
-    var watermarkUri by remember { mutableStateOf<Uri?>(null) }
-    var pendingEdits by remember { mutableStateOf<List<PendingPdfEdit>>(emptyList()) }
+    var pageIndex by rememberToolState(request, "pageIndex") { 0 }
+    var text by rememberToolState(request, "text") { "" }
+    var header by rememberToolState(request, "header") { "" }
+    var footer by rememberToolState(request, "footer") { "" }
+    var watermark by rememberToolState(request, "watermark") { "" }
+    var addPageNumbers by rememberToolState(request, "addPageNumbers") { true }
+    var numberStart by rememberToolState(request, "numberStart") { "1" }
+    var numberPrefix by rememberToolState(request, "numberPrefix") { "" }
+    var numberSuffix by rememberToolState(request, "numberSuffix") { " / {total}" }
+    var numberPosition by rememberToolState(request, "numberPosition") { 5 }
+    var watermarkAngle by rememberToolState(request, "watermarkAngle") { 32f }
+    var opacity by rememberToolState(request, "opacity") { 0.22f }
+    var x by rememberToolState(request, "x") { 0.12f }
+    var y by rememberToolState(request, "y") { 0.20f }
+    var width by rememberToolState(request, "width") { 0.42f }
+    var height by rememberToolState(request, "height") { 0.08f }
+    var undoPlacements by rememberToolState<List<PdfPlacement>>(request, "undoPlacements") { emptyList() }
+    var redoPlacements by rememberToolState<List<PdfPlacement>>(request, "redoPlacements") { emptyList() }
+    var markup by rememberToolState(request, "markup") { 0 }
+    var strokes by rememberToolState<List<List<PdfInkPoint>>>(request, "strokes") { emptyList() }
+    var signatureUri by rememberToolState<Uri?>(request, "signatureUri") { null }
+    var watermarkUri by rememberToolState<Uri?>(request, "watermarkUri") { null }
+    var pendingEdits by rememberToolState<List<PendingPdfEdit>>(request, "pendingEdits") { emptyList() }
+    var annotations by remember(source) { mutableStateOf<List<com.localdoc.scanner.pdf.PdfAnnotationEntry>>(emptyList()) }
+    var annotationError by remember { mutableStateOf("") }
+    var annotationKey by rememberToolState(request, "annotationKey") { "" }
+    var annotationText by rememberToolState(request, "annotationText") { "" }
+    var annotationDelete by rememberToolState(request, "annotationDelete") { false }
+    var textObjects by remember(source, pageIndex) { mutableStateOf<List<com.localdoc.scanner.pdf.PdfTextObject>>(emptyList()) }
+    var textObjectError by remember(source, pageIndex) { mutableStateOf("") }
+    var textObjectKey by rememberToolState(request, "textObjectKey") { "" }
+    var replacementText by rememberToolState(request, "replacementText") { "" }
+    LaunchedEffect(source, pageIndex, operation) {
+        if (operation == 9) runCatching { withContext(Dispatchers.IO) { com.localdoc.scanner.pdf.PdfOriginalTextEditor.list(source, pageIndex) } }
+            .onSuccess { textObjects = it }.onFailure {
+                if (it is kotlinx.coroutines.CancellationException) throw it
+                textObjectError = "读取文字对象失败：${it.message}"
+            }
+    }
+    LaunchedEffect(source) {
+        runCatching { withContext(Dispatchers.IO) { com.localdoc.scanner.pdf.PdfAnnotationEditor.list(source) } }
+            .onSuccess { annotations = it }.onFailure {
+                if (it is kotlinx.coroutines.CancellationException) throw it
+                annotationError = "读取批注失败：${it.message}"
+            }
+    }
     val formFields = remember(source) { PdfOfficeTools.formFields(source) }
-    val formValues = remember(source) { mutableStateMapOf<String, String>() }
+    var formValues by rememberToolState<Map<String, String>>(request, "formValues") { emptyMap() }
     LaunchedEffect(formFields) {
-        formFields.forEach { field -> if (field.name !in formValues) formValues[field.name] = field.value }
+        formFields.filter { !it.readOnly && it.type != "PDSignatureField" }.forEach { field -> if (field.name !in formValues) formValues = formValues + (field.name to field.value) }
     }
 
     var preview by remember(source) { mutableStateOf<Bitmap?>(null) }
@@ -806,15 +966,17 @@ private fun PdfOfficeFlow(
     }
 
     val signaturePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let { runCatching { context.contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION) } }
         signatureUri = uri
     }
     val watermarkPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let { runCatching { context.contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION) } }
         watermarkUri = uri
     }
 
     fun snapshotCurrent() = PendingPdfEdit(
         operation = operation,
-        label = if (operation in setOf(1, 2, 3, 4, 5, 7)) "第${pageIndex + 1}页 · ${operations[operation]}" else operations[operation],
+        label = if (operation in setOf(1, 2, 3, 4, 5, 7, 8)) "第${pageIndex + 1}页 · ${operations[operation]}${if (operation == 8 && annotationDelete) "：移除" else ""}" else operations[operation],
         pageIndex = pageIndex,
         text = text,
         header = header,
@@ -830,14 +992,21 @@ private fun PdfOfficeFlow(
         strokes = strokes.map { it.toList() },
         signatureUri = signatureUri,
         watermarkUri = watermarkUri,
-        formValues = formValues.toMap()
+        formValues = formValues.toMap(),
+        annotationChange = if (operation == 8) com.localdoc.scanner.pdf.PdfAnnotationChange(annotationKey, pageIndex, annotationDelete, annotationText) else null,
+        decoration = com.localdoc.scanner.pdf.PdfDecorationOptions(numberStart.toIntOrNull() ?: 0, numberPrefix, numberSuffix, numberPosition, watermarkAngle),
+        textChange = if (operation == 9) com.localdoc.scanner.pdf.PdfTextChange(textObjectKey, pageIndex, replacementText) else null
     )
 
     fun currentCanApply(): Boolean = when (operation) {
-        1, 3 -> text.isNotBlank()
+        0 -> (numberStart.toIntOrNull() ?: 0) in 1..999999 && numberPrefix.length <= 40 && numberSuffix.length <= 40
+        1 -> text.isNotBlank() && text.length <= 300 && !text.contains('\n')
+        3 -> text.isNotBlank() && text.length <= 1000
         4 -> strokes.any { it.size >= 2 }
         5 -> signatureUri != null
         6 -> formFields.isNotEmpty()
+        8 -> annotations.any { it.key == annotationKey && it.pageIndex == pageIndex && it.editable } && (annotationDelete || annotationText.length <= 1000)
+        9 -> textObjects.any { it.key == textObjectKey && it.editable } && replacementText.length <= 300 && '\n' !in replacementText && '\r' !in replacementText
         else -> true
     }
 
@@ -884,6 +1053,7 @@ private fun PdfOfficeFlow(
             strokes = strokes,
             signatureBitmap = signaturePreview,
             watermarkBitmap = watermarkPreview,
+            decoration = snapshotCurrent().decoration!!,
             onRectChange = { nx, ny, nw, nh -> x = nx; y = ny; width = nw; height = nh },
             onInteractionStart = {
                 val current = PdfPlacement(x, y, width, height)
@@ -912,7 +1082,13 @@ private fun PdfOfficeFlow(
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(
-                onClick = { pendingEdits = pendingEdits + snapshotCurrent() },
+                onClick = {
+                    val edit = snapshotCurrent()
+                    pendingEdits = pendingEdits.filter {
+                        (edit.annotationChange == null || it.annotationChange?.key != edit.annotationChange.key) &&
+                            (edit.textChange == null || it.textChange?.key != edit.textChange.key)
+                    } + edit
+                },
                 enabled = currentCanApply()
             ) { Text("加入本次编辑") }
             if (pendingEdits.isNotEmpty()) TextButton(onClick = { pendingEdits = emptyList() }) { Text("清空清单") }
@@ -936,11 +1112,20 @@ private fun PdfOfficeFlow(
                 OutlinedTextField(header, { header = it }, label = { Text("页眉（可留空）") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(footer, { footer = it }, label = { Text("页脚（可留空）") }, modifier = Modifier.fillMaxWidth())
                 FilterChip(addPageNumbers, { addPageNumbers = !addPageNumbers }, label = { Text("添加页码") })
+                if (addPageNumbers) {
+                    OutlinedTextField(numberStart, { numberStart = it.filter(Char::isDigit).take(6) }, label = { Text("起始页码 1—999999") }, singleLine = true)
+                    OutlinedTextField(numberPrefix, { numberPrefix = it }, label = { Text("页码前缀，最多40字") }, singleLine = true)
+                    OutlinedTextField(numberSuffix, { numberSuffix = it }, label = { Text("页码后缀；{total}表示总页数，最多40字") }, singleLine = true)
+                    ChipRow(listOf("左上", "中上", "右上", "左下", "中下", "右下"), numberPosition) { numberPosition = it }
+                }
+                Text("水印角度 ${watermarkAngle.toInt()}°")
+                Slider(watermarkAngle, { watermarkAngle = it }, valueRange = -90f..90f)
                 Text("透明度 ${"%.0f".format(opacity * 100)}%")
                 Slider(opacity, { opacity = it }, valueRange = 0.08f..0.7f)
             }
             1 -> {
-                OutlinedTextField(text, { text = it }, label = { Text("填写到PDF的文字") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(text, { text = it }, label = { Text("填写文字（单行，上限300字）") }, modifier = Modifier.fillMaxWidth())
+                Text("${text.length}/300", color = if (text.length > 300 || text.contains('\n')) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
                 positionControls(showSize = false)
             }
             2 -> {
@@ -964,18 +1149,47 @@ private fun PdfOfficeFlow(
             }
             6 -> {
                 if (formFields.isEmpty()) Text("这份PDF没有检测到AcroForm表单字段。")
-                formFields.take(40).forEach { field ->
-                    OutlinedTextField(
-                        value = formValues[field.name].orEmpty(),
-                        onValueChange = { formValues[field.name] = it },
-                        label = { Text("${field.name} · ${field.type}") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
+                PdfFormEditor(formFields, formValues) { name, value -> formValues = formValues + (name to value) }
             }
             7 -> {
                 Text("黑框区域会被永久写入栅格页面，原文字和对象不会留在输出PDF中。", color = MaterialTheme.colorScheme.error)
+                OutlinedTextField(sensitiveKeywords, { sensitiveKeywords = it }, label = { Text("额外敏感关键词，逗号分隔（可留空）") }, modifier = Modifier.fillMaxWidth())
+                Button(onClick = {
+                    val page = pageIndex
+                    val keywords = sensitiveKeywords.split(',', '，').map(String::trim).filter(String::isNotEmpty)
+                    detectingSensitive = true
+                    sensitiveStatus = "正在用medium识别第${page + 1}页…"
+                    vm.runTool {
+                        try {
+                            val found = withContext(Dispatchers.IO) { com.localdoc.scanner.pdf.SensitiveRegionDetector.detect(context, source, page, keywords) }
+                            sensitiveRegions = sensitiveRegions.filter { it.page != page } + found
+                            sensitiveStatus = "第${page + 1}页发现${found.size}个候选。请确认；未命中不代表没有敏感信息。"
+                        } catch (e: Exception) {
+                            if (e is kotlinx.coroutines.CancellationException) throw e
+                            sensitiveStatus = "识别失败：${e.message}"
+                        } finally { detectingSensitive = false }
+                    }
+                }, enabled = !detectingSensitive && !vm.isToolRunning) { Text(if (detectingSensitive) "识别中…" else "查找本页敏感信息") }
+                if (sensitiveStatus.isNotBlank()) Text(sensitiveStatus, style = MaterialTheme.typography.bodySmall)
+                Text("候选范围覆盖整条识别行；使用后可拖动框调整。不会自动打码。", style = MaterialTheme.typography.bodySmall)
+                sensitiveRegions.filter { it.page == pageIndex }.forEach { region ->
+                    TextButton(onClick = { x = region.rect.x; y = region.rect.y; width = region.rect.width; height = region.rect.height }) {
+                        Text("使用范围：${region.label} · ${region.text.take(55)}")
+                    }
+                }
                 positionControls()
+            }
+            8 -> {
+                if (annotationError.isNotBlank()) Text(annotationError, color = MaterialTheme.colorScheme.error)
+                PdfAnnotationPanel(annotations.filter { it.pageIndex == pageIndex }, annotationKey, annotationText, annotationDelete,
+                    onSelect = { annotationKey = it.key; annotationText = it.contents; annotationDelete = false },
+                    onContents = { annotationText = it }, onDelete = { annotationDelete = it })
+            }
+            9 -> {
+                Text("直接修改原页Tj/TJ文字对象，保留原字体和后续文字位置。新文字需要原字体支持，且不能超过原宽度。图片文字、竖排和嵌套Form暂不支持。", style = MaterialTheme.typography.bodySmall)
+                if (textObjectError.isNotBlank()) Text(textObjectError, color = MaterialTheme.colorScheme.error)
+                PdfTextObjectPanel(textObjects, textObjectKey, replacementText,
+                    onSelect = { textObjectKey = it.key; replacementText = it.text }, onReplacement = { replacementText = it })
             }
         }
         Text("所有操作都会另存新PDF，原文件不会被覆盖。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -996,6 +1210,8 @@ private fun PdfOfficeFlow(
         val out = File(FileStore.exportDir(context), "${source.nameWithoutExtension}_${outLabel}_${stamp()}.pdf")
         var currentInput = source
         var ok = edits.isNotEmpty()
+        var complete = false
+        try {
         edits.forEachIndexed { index, edit ->
             if (!ok) return@forEachIndexed
             val target = if (index == edits.lastIndex) out else File(context.cacheDir, "pdf-edit-${System.nanoTime()}-$index.pdf")
@@ -1003,7 +1219,7 @@ private fun PdfOfficeFlow(
                 0 -> {
                     val bitmap = edit.watermarkUri?.let { ImageIo.loadFromUri(context, it, 1600) }
                     try {
-                        PdfOfficeTools.decorate(context, currentInput, target, edit.watermark, edit.header, edit.footer, edit.addPageNumbers, edit.opacity, bitmap)
+                        PdfOfficeTools.decorate(context, currentInput, target, edit.watermark, edit.header, edit.footer, edit.addPageNumbers, edit.opacity, bitmap, edit.decoration ?: com.localdoc.scanner.pdf.PdfDecorationOptions())
                     } finally { bitmap?.recycle() }
                 }
                 1 -> edit.text.isNotBlank() && PdfOfficeTools.addText(context, currentInput, target, edit.pageIndex, edit.text, edit.x, edit.y, 13f)
@@ -1016,12 +1232,15 @@ private fun PdfOfficeFlow(
                         PdfOfficeTools.addSignatureImage(currentInput, target, edit.pageIndex, bitmap, edit.x, edit.y, edit.width, edit.height)
                     } finally { bitmap.recycle() }
                 }
-                6 -> edit.formValues.isNotEmpty() && PdfOfficeTools.fillForm(context, currentInput, target, edit.formValues)
+                6 -> edit.formValues.isNotEmpty() && PdfOfficeTools.fillForm(context, currentInput, target, edit.formValues.filterKeys { name -> formFields.any { it.name == name && !it.readOnly && it.type != "PDSignatureField" } })
+                8 -> edit.annotationChange?.let { com.localdoc.scanner.pdf.PdfAnnotationEditor.apply(currentInput, target, it) } ?: false
+                9 -> edit.textChange?.let { com.localdoc.scanner.pdf.PdfOriginalTextEditor.apply(currentInput, target, it) } ?: false
                 else -> PdfTools.redactPermanent(currentInput, target, edit.pageIndex, edit.x, edit.y, edit.width, edit.height)
             }
             if (currentInput !== source) currentInput.delete()
             if (ok) currentInput = target else target.delete()
         }
+        complete = ok
         FlowOutcome(
             summary = listOf(
                 "操作" to edits.joinToString("、") { it.label },
@@ -1031,6 +1250,10 @@ private fun PdfOfficeFlow(
             ),
             files = if (ok) listOf(out) else emptyList()
         )
+        } finally {
+            if (currentInput !== source && currentInput !== out) currentInput.delete()
+            if (!complete) out.delete()
+        }
     }
 }
 
@@ -1089,8 +1312,9 @@ private fun OcrFlow(
     request: ToolRequest, vm: AppViewModel, onBack: () -> Unit, onOpenDoc: (String) -> Unit,
     modifier: Modifier
 ) {
-    var precise by remember { mutableIntStateOf(0) }
-    var manual by remember { mutableStateOf("") }
+    var precise by rememberToolState(request, "precise") { 1 }
+    var searchable by rememberToolState(request, "searchable") { true }
+    var manual by rememberToolState(request, "manual") { "" }
     val clipboard = LocalClipboardManager.current
     val engineAvailable = true
 
@@ -1099,6 +1323,7 @@ private fun OcrFlow(
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("识别档位", style = MaterialTheme.typography.titleSmall)
             ChipRow(listOf("普通(tiny)", "高精度(medium)"), precise) { precise = it }
+            Row { Switch(searchable, { searchable = it }); Text("同时生成可搜索PDF") }
             if (engineAvailable) {
                 Text("模型已内置，直接点下方按钮识别。", style = MaterialTheme.typography.bodySmall)
             } else {
@@ -1128,42 +1353,54 @@ private fun OcrFlow(
         },
         config = { panel() }
     ) { ctx ->
-        val text = if (engineAvailable) {
-            val source = request.files.firstOrNull()
-            val engine = PaddleOcrEngine(ctx)
-            val r = try {
-                if (source == null) {
-                    ""
-                } else if (source.extension.equals("pdf", ignoreCase = true)) {
-                    val pageCount = PdfTools.pageCount(source)
-                    buildString {
-                        for (index in 0 until pageCount) {
-                            val page = PdfTools.renderPage(source, index, if (precise == 1) 3000 else 2000) ?: continue
-                            val recognized = try { engine.recognize(page, precise == 1).text } finally { page.recycle() }
-                            if (recognized.isNotBlank()) {
-                                if (isNotEmpty()) append("\n\n")
-                                append("【第 ${index + 1} 页】\n")
-                                append(recognized)
+        val engine = PaddleOcrEngine(ctx)
+        val pages = mutableListOf<com.localdoc.scanner.export.SearchablePdfPage>()
+        val failures = mutableListOf<String>()
+        val raw = StringBuilder()
+        val temporary = File(ctx.cacheDir, "ocr-output-${System.nanoTime()}").apply { mkdirs() }
+        try {
+            request.files.forEach { source ->
+                val count = if (source.extension.equals("pdf", true)) PdfTools.pageCount(source) else 1
+                if (count == 0) failures += "${source.name}：无法读取PDF，请先解锁"
+                for (index in 0 until count) {
+                    try {
+                        val bitmap = if (source.extension.equals("pdf", true)) PdfTools.renderPage(source, index, if (precise == 1) 3000 else 2000)
+                            else ImageIo.loadFromFile(source, if (precise == 1) 3600 else 2400)
+                        requireNotNull(bitmap) { "图片无法读取" }
+                        try {
+                            val recognized = engine.recognize(bitmap, precise == 1)
+                            raw.append("【${source.name} 第${index + 1}页】\n${recognized.text}\n\n")
+                            if (recognized.text.isBlank()) failures += "${source.name} 第${index + 1}页：没有识别到文字"
+                            if (searchable) {
+                                val image = File(temporary, "${pages.size}.jpg")
+                                check(ImageIo.saveJpeg(bitmap, image, 94)) { "无法保留PDF页面" }
+                                pages += com.localdoc.scanner.export.SearchablePdfPage(image, recognized.text, recognized.boxes)
                             }
-                        }
+                        } finally { bitmap.recycle() }
+                    } catch (e: Exception) {
+                        if (e is kotlinx.coroutines.CancellationException) throw e
+                        failures += "${source.name} 第${index + 1}页：${e.message}"
                     }
-                } else {
-                    val bmp = ImageIo.loadFromFile(source, if (precise == 1) 3600 else 2400)
-                    if (bmp == null) "" else engine.recognize(bmp, precise == 1).text.also { bmp.recycle() }
                 }
-            } finally {
-                engine.close()
             }
-            r
-        } else {
-            manual
+            val outputs = mutableListOf<File>()
+            val text = raw.toString()
+            if (text.isNotBlank()) {
+                val out = File(FileStore.exportDir(ctx), "ocr_${System.currentTimeMillis()}.txt")
+                out.writeText(text); outputs += out
+            }
+            if (searchable && pages.isNotEmpty()) {
+                val pdf = File(FileStore.exportDir(ctx), "ocr_可搜索_${System.currentTimeMillis()}.pdf")
+                val ok = pdf.outputStream().use { com.localdoc.scanner.export.SearchablePdfExporter.export(ctx, pages, it) }
+                if (ok) outputs += pdf else { pdf.delete(); failures += "可搜索PDF生成失败，文字结果保留" }
+            }
+            FlowOutcome(listOf("字数" to "${text.length}", "PDF页面" to "${pages.size}") +
+                if (failures.isNotEmpty()) listOf("需复核" to failures.joinToString("\n")) else emptyList(), outputs)
+        } finally {
+            engine.close()
+            temporary.listFiles()?.forEach { it.delete() }
+            temporary.delete()
         }
-        val out = File(FileStore.exportDir(ctx), "ocr_${stamp()}.txt")
-        out.writeText(text)
-        FlowOutcome(
-            listOf("字数" to "${text.length}", "预览" to text.take(120)),
-            listOf(out)
-        )
     }
 }
 
@@ -1183,10 +1420,10 @@ private fun BarcodeFlow(
         request = request, vm = vm, onBack = onBack, onOpenDoc = onOpenDoc,
         runLabel = "识别条码", modifier = modifier,
         resultExtra = { o ->
-            val txt = o.files.firstOrNull()?.readText()?.lineSequence()?.firstOrNull() ?: ""
+            val txt = o.copyText ?: o.files.firstOrNull()?.readText()?.lineSequence()?.firstOrNull() ?: ""
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 TextButton(onClick = { clipboard.setText(AnnotatedString(txt)) }) { Text("复制") }
-                if (txt.startsWith("http", ignoreCase = true)) {
+                if (Uri.parse(txt).scheme?.lowercase() in setOf("http", "https") && !Uri.parse(txt).host.isNullOrBlank()) {
                     TextButton(onClick = {
                         runCatching {
                             context.startActivity(
@@ -1208,7 +1445,7 @@ private fun BarcodeFlow(
         request.files.forEach { file ->
             val bmp = ImageIo.loadFromFile(file, 2000) ?: return@forEach
             BarcodeDecoder.decode(bmp).forEach { r ->
-                found += "${r.text}    [${r.barcodeFormat}]"
+                found += r.text
             }
             bmp.recycle()
         }
@@ -1217,7 +1454,7 @@ private fun BarcodeFlow(
         FlowOutcome(
             if (found.isEmpty()) listOf("结果" to "没识别到条码")
             else found.mapIndexed { i, s -> "结果 ${i + 1}" to s },
-            if (found.isEmpty()) emptyList() else listOf(out)
+            if (found.isEmpty()) emptyList() else listOf(out), copyText = found.firstOrNull()
         )
     }
 }
@@ -1231,7 +1468,7 @@ private fun LongImageFlow(
     request: ToolRequest, vm: AppViewModel, onBack: () -> Unit, onOpenDoc: (String) -> Unit,
     modifier: Modifier
 ) {
-    var width by remember { mutableIntStateOf(0) }
+    var width by rememberToolState(request, "width") { 0 }
 
     @Composable
     fun panel() {
@@ -1246,15 +1483,12 @@ private fun LongImageFlow(
         runLabel = "拼接", modifier = modifier, config = { panel() }
     ) { ctx ->
         val maxW = intArrayOf(1080, 720, 480)[width]
-        val bitmaps = request.files.mapNotNull { ImageIo.loadFromFile(it, 2400) }
-        val stitched = Stitch.vertical(bitmaps, maxW)
+        val stitched = Stitch.verticalFiles(request.files, maxW)
         val out = File(FileStore.exportDir(ctx), "long_${stamp()}.jpg")
-        val ok = stitched != null && ImageIo.saveJpeg(stitched, out, 88)
-        val dims = if (stitched != null) "${stitched.width}×${stitched.height}" else "—"
-        bitmaps.forEach { it.recycle() }
-        stitched?.recycle()
+        val dims = "${stitched.width}×${stitched.height}"
+        val ok = try { ImageIo.saveJpeg(stitched, out, 88) } finally { stitched.recycle() }
         FlowOutcome(
-            listOf("拼接页数" to "${bitmaps.size}", "尺寸" to dims, "体积" to fmtSize(if (ok) out.length() else 0)),
+            listOf("拼接页数" to "${request.files.size}", "尺寸" to dims, "体积" to fmtSize(if (ok) out.length() else 0)),
             if (ok) listOf(out) else emptyList(),
             if (ok) listOf(out) else emptyList()
         )
@@ -1270,163 +1504,194 @@ private fun ImageEditFlow(
     request: ToolRequest, vm: AppViewModel, onBack: () -> Unit, onOpenDoc: (String) -> Unit,
     modifier: Modifier
 ) {
-    var filter by remember { mutableStateOf(ScanFilter.AUTO) }
-    var rotation by remember { mutableIntStateOf(0) }
-    var mode by remember { mutableIntStateOf(0) }
-    var bookSplit by remember { mutableFloatStateOf(0.5f) }
-    var bookHint by remember { mutableStateOf("拖动分割线位置，预览左右页") }
-    var flattenBook by remember { mutableStateOf(false) }
-    var flattenHint by remember { mutableStateOf("") }
-    LaunchedEffect(request.files, mode) {
-        if (mode == 1) withContext(Dispatchers.Default) {
-            ImageIo.loadFromFile(request.files.first(), 640)?.let { image ->
-                try { com.localdoc.scanner.cv.BookGutter.estimate(image) } finally { image.recycle() }
+    var filter by rememberToolState(request, "filter") { ScanFilter.AUTO }
+    var rotation by rememberToolState(request, "rotation") { 0 }
+    var mode by rememberToolState(request, "mode") { 0 }
+    var order by rememberToolState(request, "imageOrder") { request.files.toList() }
+    var selected by rememberToolState(request, "imageSelected") { 0 }
+    var splits by rememberToolState<Map<String, Float>>(request, "bookSplits") { emptyMap() }
+    var flattenBook by rememberToolState(request, "flattenBook") { false }
+    var deskew by rememberToolState(request, "autoDeskew") { false }
+    var rightFirst by rememberToolState(request, "bookRightFirst") { false }
+    var makePdf by rememberToolState(request, "imageBatchPdf") { true }
+    var previewNote by remember { mutableStateOf("") }
+    var previewError by remember { mutableStateOf("") }
+    var livePreview by remember { mutableStateOf<Bitmap?>(null) }
+    val selectedIndex = selected.coerceIn(order.indices)
+    val selectedFile = order[selectedIndex]
+    val split = splits[selectedFile.absolutePath] ?: .5f
+    LaunchedEffect(selectedFile, mode) {
+        if (mode == 1 && selectedFile.absolutePath !in splits) {
+            val hint = withContext(Dispatchers.Default) {
+                ImageIo.loadFromFile(selectedFile, 640)?.let { image ->
+                    try { com.localdoc.scanner.cv.BookGutter.estimate(image) } finally { image.recycle() }
+                }
             }
-        }?.let { suggestion ->
-            bookSplit = suggestion.ratio
-            bookHint = if (suggestion.confident) "已找到可能的书缝，请检查左右页预览" else "没有找到明显书缝，请手动调整分割位置"
+            splits = splits + (selectedFile.absolutePath to (hint?.ratio ?: .5f))
         }
     }
-    var livePreview by remember(request.files) { mutableStateOf<Bitmap?>(null) }
-    LaunchedEffect(request.files.map { it.absolutePath }, filter, rotation, mode, bookSplit, flattenBook) {
-        if (mode == 1 && flattenBook) kotlinx.coroutines.delay(250)
-        var pendingPreview: Bitmap? = null
-        var pendingHint = ""
+    LaunchedEffect(selectedFile, order, filter, rotation, mode, split, flattenBook, deskew, rightFirst) {
+        kotlinx.coroutines.delay(200)
+        var pending: Bitmap? = null
+        previewError = ""
         try {
-        withContext(Dispatchers.Default) {
-            pendingPreview =
-            when (mode) {
-                1 -> {
-                    val source = ImageIo.loadFromFile(request.files.first(), if (flattenBook) 4000 else 1400) ?: return@withContext null
-                    val owned = mutableListOf(source)
-                    try {
-                        val (left, right) = DocumentLayouts.splitBookSpread(source, splitRatio = bookSplit)
-                        owned.addAll(listOf(left, right))
-                        val pages = if (flattenBook) listOf(left, right).map { page ->
-                            BookDewarp.flatten(page).also { owned.add(it.bitmap) }
-                        } else emptyList()
-                        pendingHint = pages.mapIndexed { index, page -> "${if (index == 0) "左页" else "右页"}：${page.note}" }.joinToString("\n")
-                        Stitch.vertical(if (flattenBook) pages.map { it.bitmap } else listOf(left, right), 900)
-                    } finally { owned.forEach { it.recycle() } }
+            var note = ""
+            withContext(Dispatchers.Default) {
+                val owned = mutableListOf<Bitmap>()
+                fun transformed(source: Bitmap): Bitmap {
+                    val result = com.localdoc.scanner.cv.ImageBatchProcessor.render(source, rotation, deskew, filter)
+                    owned.add(result.bitmap)
+                    if (result.note.isNotBlank()) note += result.note + "\n"
+                    return result.bitmap
                 }
-                2 -> {
-                    val front = request.files.getOrNull(0)?.let { ImageIo.loadFromFile(it, 1200) }
-                    val back = request.files.getOrNull(1)?.let { ImageIo.loadFromFile(it, 1200) }
-                    if (front == null || back == null) {
-                        front?.recycle(); back?.recycle(); null
-                    } else DocumentLayouts.idCardSheet(front, back).also { front.recycle(); back.recycle() }
-                }
-                else -> {
-                    val source = ImageIo.loadFromFile(request.files.first(), 1400) ?: return@withContext null
-                    val rotated = ImageIo.rotate(source, rotation * 90f)
-                    if (rotated !== source) source.recycle()
-                    val filtered = applyFilter(rotated, filter)
-                    if (filtered !== rotated) rotated.recycle()
-                    filtered
-                }
+                try {
+                    pending = when (mode) {
+                        1 -> {
+                            val source = ImageIo.loadFromFile(selectedFile, if (flattenBook) 4000 else 1400)
+                                ?: error("图片读取失败")
+                            owned.add(source)
+                            val pair = DocumentLayouts.splitBookSpread(source, splitRatio = split)
+                            owned.addAll(listOf(pair.first, pair.second))
+                            var pages = listOf(pair.first, pair.second).map { page ->
+                                if (flattenBook) BookDewarp.flatten(page).let { result ->
+                                    owned.add(result.bitmap); note += result.note + "\n"; result.bitmap
+                                } else page
+                            }.map(::transformed)
+                            if (rightFirst) pages = pages.reversed()
+                            Stitch.vertical(pages, 900) ?: error("无法生成双页预览")
+                        }
+                        2 -> {
+                            require(order.size == 2) { "证件拼版请只选择正反面两张图" }
+                            val pages = order.map { file ->
+                                (ImageIo.loadFromFile(file, 1200) ?: error("图片读取失败")).also { owned.add(it) }
+                            }.map(::transformed)
+                            DocumentLayouts.idCardSheet(pages[0], pages[1])
+                        }
+                        else -> {
+                            val source = (ImageIo.loadFromFile(selectedFile, 1400) ?: error("图片读取失败")).also { owned.add(it) }
+                            transformed(source)
+                        }
+                    }
+                } finally { owned.distinct().filter { it !== pending }.forEach { it.recycle() } }
             }
-        }
-        val next = pendingPreview
-        livePreview?.takeIf { it !== next }?.recycle()
-        livePreview = next
-        pendingPreview = null
-        flattenHint = pendingHint
-        } finally { pendingPreview?.recycle() }
+            livePreview?.takeIf { it !== pending }?.recycle()
+            livePreview = pending; pending = null
+            previewNote = note.trim()
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            livePreview?.recycle(); livePreview = null
+            previewError = e.message ?: "无法生成预览"
+        } finally { pending?.recycle() }
     }
-    DisposableEffect(Unit) { onDispose { livePreview?.recycle() } }
+    val currentPreview by rememberUpdatedState(livePreview)
+    DisposableEffect(Unit) { onDispose { currentPreview?.recycle() } }
 
-    @Composable
-    fun panel() {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    fun moveSelected(delta: Int) {
+        val next = selectedIndex + delta
+        if (next !in order.indices) return
+        order = order.toMutableList().apply { add(next, removeAt(selectedIndex)) }
+        selected = next
+    }
+    ToolFlow(request, vm, onBack, onOpenDoc, modifier, runLabel = "处理并生成文件", showInputPreview = false,
+        config = {
             Text("处理方式", style = MaterialTheme.typography.titleSmall)
             ChipRow(listOf("编辑图片", "书本双页拆分", "证件双面拼版"), mode) { mode = it }
-            if (mode == 1) {
-                Text(bookHint)
-                Text("左页 ${ (bookSplit * 100).toInt() }% · 右页 ${ ((1f - bookSplit) * 100).toInt() }%")
-                Slider(value = bookSplit, onValueChange = { bookSplit = it }, valueRange = .2f.. .8f)
-                Text("调整书缝位置，拆分后的左右页可以分别裁边。", style = MaterialTheme.typography.bodySmall)
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("按文字行曲率展平")
-                    Switch(checked = flattenBook, onCheckedChange = { flattenBook = it })
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                order.forEachIndexed { index, file ->
+                    FilterChip(selectedIndex == index, { selected = index }, label = {
+                        Text("${index + 1}. ${(request.names.getOrNull(request.files.indexOf(file)) ?: file.name).take(18)}")
+                    })
                 }
-                if (flattenBook) Text(flattenHint.ifBlank { "正在建立左右页展平模型…" }, style = MaterialTheme.typography.bodySmall)
             }
-            if (mode == 2 && request.files.size < 2) {
-                Text("证件双面拼版需要一次选择正反面两张图片。", color = MaterialTheme.colorScheme.error)
+            Row {
+                TextButton(onClick = { moveSelected(-1) }, enabled = selectedIndex > 0) { Text("向前移") }
+                TextButton(onClick = { moveSelected(1) }, enabled = selectedIndex < order.lastIndex) { Text("向后移") }
             }
-            if (mode == 0) {
+            Text("共${order.size}张；旋转、滤镜与纠偏应用于全部图片。请逐张检查预览。", style = MaterialTheme.typography.bodySmall)
+            if (mode == 1) {
+                Text("当前第${selectedIndex + 1}张书缝：左 ${(split * 100).toInt()}% / 右 ${((1 - split) * 100).toInt()}%")
+                Slider(split, { splits = splits + (selectedFile.absolutePath to it) }, valueRange = .2f.. .8f)
+                Text("书缝位置按每张图分别保存；未预览的图片自动估计书缝。", style = MaterialTheme.typography.bodySmall)
+                Row(verticalAlignment = Alignment.CenterVertically) { Text("按文字行曲率展平", Modifier.weight(1f)); Switch(flattenBook, { flattenBook = it }) }
+                Row(verticalAlignment = Alignment.CenterVertically) { Text("右页在前", Modifier.weight(1f)); Switch(rightFirst, { rightFirst = it }) }
+            }
+            if (mode == 2 && order.size != 2) Text("证件拼版必须正好两张图。", color = MaterialTheme.colorScheme.error)
             Text("滤镜", style = MaterialTheme.typography.titleSmall)
             ChipRow(ScanFilter.entries.map { it.label }, filter.ordinal) { filter = ScanFilter.entries[it] }
-            Text("旋转", style = MaterialTheme.typography.titleSmall)
             ChipRow(listOf("0°", "90°", "180°", "270°"), rotation) { rotation = it }
-            }
+            Row(verticalAlignment = Alignment.CenterVertically) { Text("自动纠偏（保留完整边缘）", Modifier.weight(1f)); Switch(deskew, { deskew = it }) }
+            Row(verticalAlignment = Alignment.CenterVertically) { Text("同时生成按序合并PDF", Modifier.weight(1f)); Switch(makePdf, { makePdf = it }) }
             Text("实时处理预览", style = MaterialTheme.typography.titleSmall)
-            if (livePreview == null) Box(Modifier.fillMaxWidth().height(260.dp), contentAlignment = Alignment.Center) { Text("正在生成预览…") }
-            else AsyncImage(model = livePreview, contentDescription = "图片处理预览", modifier = Modifier.fillMaxWidth().height(300.dp))
+            if (previewError.isNotBlank()) Text(previewError, color = MaterialTheme.colorScheme.error)
+            else livePreview?.let { ZoomableImage(it, "${selectedFile.path}:$mode:$split:$rotation:$filter", Modifier.fillMaxWidth().height(360.dp)) }
+                ?: Text("正在生成预览…")
+            if (previewNote.isNotBlank()) Text(previewNote, style = MaterialTheme.typography.bodySmall)
         }
-    }
-
-    ToolFlow(
-        request = request, vm = vm, onBack = onBack, onOpenDoc = onOpenDoc,
-        runLabel = "保存", showInputPreview = false, modifier = modifier, config = { panel() }
     ) { ctx ->
-        if (mode == 1) {
-            val source = ImageIo.loadFromFile(request.files.first(), 4000)
-            if (source == null) return@ToolFlow FlowOutcome(listOf("结果" to "图片读取失败"), emptyList())
-            val owned = mutableListOf(source)
+        // Capture configuration once; a running batch must not observe later UI changes.
+        val inputs = order.toList(); val ratios = splits.toMap(); val operation = mode
+        val chosenFilter = filter; val quarterTurns = rotation; val autoSkew = deskew
+        val flatten = flattenBook; val reversed = rightFirst; val exportPdf = makePdf
+        val outputs = mutableListOf<File>(); val notes = mutableListOf<String>(); val failures = mutableListOf<String>()
+        val token = java.util.UUID.randomUUID().toString().take(8)
+        val directory = FileStore.exportDir(ctx)
+        var pageNumber = 0
+        fun savePage(bitmap: Bitmap, suffix: String): File {
+            val file = File(directory, "image_${token}_${(++pageNumber).toString().padStart(4, '0')}_$suffix.jpg")
+            if (!ImageIo.saveJpeg(bitmap, file, 94)) { file.delete(); error("保存图片失败") }
+            return file
+        }
+        if (operation == 2) {
+            require(inputs.size == 2) { "证件拼版必须正好选择正反面两张图" }
+            val owned = mutableListOf<Bitmap>()
             try {
-            val (left, right) = DocumentLayouts.splitBookSpread(source, splitRatio = bookSplit)
-            owned.addAll(listOf(left, right))
-            val pages = if (flattenBook) listOf(left, right).map { page ->
-                BookDewarp.flatten(page).also { owned.add(it.bitmap) }
-            } else emptyList()
-            val leftFile = File(FileStore.exportDir(ctx), "book_${stamp()}_左页.jpg")
-            val rightFile = File(FileStore.exportDir(ctx), "book_${stamp()}_右页.jpg")
-            val ok = ImageIo.saveJpeg(pages.getOrNull(0)?.bitmap ?: left, leftFile, 94) &&
-                ImageIo.saveJpeg(pages.getOrNull(1)?.bitmap ?: right, rightFile, 94)
-            val flattenSummary = pages.mapIndexed { index, page -> "${if (index == 0) "左页" else "右页"}：${page.note}" }.joinToString("；")
-            if (!ok) { leftFile.delete(); rightFile.delete() }
-            return@ToolFlow FlowOutcome(
-                listOf("结果" to if (ok) "已拆为左右2页${if (flattenBook) "；$flattenSummary" else ""}" else "保存失败"),
-                if (ok) listOf(leftFile, rightFile) else emptyList(),
-                if (ok) listOf(leftFile, rightFile) else emptyList()
-            )
-            } finally { owned.forEach { it.recycle() } }
+                val pages = inputs.map { file ->
+                    val source = (ImageIo.loadFromFile(file, 2400) ?: error("图片读取失败")).also { owned.add(it) }
+                    com.localdoc.scanner.cv.ImageBatchProcessor.render(source, quarterTurns, autoSkew, chosenFilter).bitmap.also { owned.add(it) }
+                }
+                val sheet = DocumentLayouts.idCardSheet(pages[0], pages[1]).also { owned.add(it) }
+                outputs.add(savePage(sheet, "证件双面"))
+            } finally { owned.distinct().forEach { it.recycle() } }
+        } else inputs.forEachIndexed { index, file ->
+            val owned = mutableListOf<Bitmap>(); val currentOutputs = mutableListOf<File>()
+            try {
+                val source = (ImageIo.loadFromFile(file, 3200) ?: error("图片读取失败")).also { owned.add(it) }
+                val pages = if (operation == 1) {
+                    val ratio = ratios[file.absolutePath] ?: com.localdoc.scanner.cv.BookGutter.estimate(source).ratio
+                    val pair = DocumentLayouts.splitBookSpread(source, splitRatio = ratio)
+                    listOf(pair.first to "左页", pair.second to "右页").also { p -> owned.addAll(p.map { it.first }) }
+                        .let { if (reversed) it.reversed() else it }
+                } else listOf(source to "编辑")
+                pages.forEach { (original, suffix) ->
+                    val page = if (operation == 1 && flatten) BookDewarp.flatten(original).let {
+                        owned.add(it.bitmap); notes.add("第${index + 1}张 $suffix：${it.note}"); it.bitmap
+                    } else original
+                    val result = com.localdoc.scanner.cv.ImageBatchProcessor.render(page, quarterTurns, autoSkew, chosenFilter)
+                    owned.add(result.bitmap)
+                    if (result.note.isNotBlank()) notes.add("第${index + 1}张 $suffix：${result.note}")
+                    currentOutputs.add(savePage(result.bitmap, suffix))
+                }
+                outputs.addAll(currentOutputs)
+            } catch (e: Exception) {
+                currentOutputs.forEach { it.delete() }
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                failures.add("第${index + 1}张：${e.message}")
+            } finally { owned.distinct().forEach { it.recycle() } }
         }
-        if (mode == 2) {
-            if (request.files.size < 2) return@ToolFlow FlowOutcome(listOf("结果" to "请重新选择正反面两张图片"), emptyList())
-            val front = ImageIo.loadFromFile(request.files[0], 2400)
-            val back = ImageIo.loadFromFile(request.files[1], 2400)
-            if (front == null || back == null) {
-                front?.recycle(); back?.recycle()
-                return@ToolFlow FlowOutcome(listOf("结果" to "图片读取失败"), emptyList())
+        val allOutputs = outputs.toMutableList()
+        if (exportPdf && outputs.isNotEmpty()) {
+            val pdf = File(directory, "image_${token}_按序合并.pdf")
+            try {
+                check(pdf.outputStream().use { PdfExporter.exportFiles(outputs, it) }) { "无法生成PDF" }
+                allOutputs.add(pdf)
             }
-            val sheet = DocumentLayouts.idCardSheet(front, back)
-            val out = File(FileStore.exportDir(ctx), "证件双面_${stamp()}.jpg")
-            val ok = ImageIo.saveJpeg(sheet, out, 94)
-            front.recycle(); back.recycle(); sheet.recycle()
-            return@ToolFlow FlowOutcome(
-                listOf("结果" to if (ok) "已生成双面拼版" else "保存失败"),
-                if (ok) listOf(out) else emptyList(),
-                if (ok) listOf(out) else emptyList()
-            )
+            catch (e: Exception) { pdf.delete(); if (e is kotlinx.coroutines.CancellationException) throw e; failures.add("合并PDF失败：${e.message}") }
         }
-        val src = ImageIo.loadFromFile(request.files.first(), 2400)
-        var bmp: Bitmap? = src
-        bmp = src?.let { ImageIo.rotate(it, rotation * 90f) }
-        if (bmp != null && bmp !== src) src?.recycle()
-        val filtered = bmp?.let { applyFilter(it, filter) } ?: bmp
-        val out = File(FileStore.exportDir(ctx), "edit_${stamp()}.jpg")
-        val ok = filtered != null && ImageIo.saveJpeg(filtered, out, 92)
-        val dims = if (filtered != null) "${filtered.width}×${filtered.height}" else "—"
-        if (filtered != null && filtered !== bmp) filtered.recycle()
-        bmp?.recycle()
-        FlowOutcome(
-            listOf("尺寸" to dims, "体积" to fmtSize(if (ok) out.length() else 0)),
-            if (ok) listOf(out) else emptyList(),
-            if (ok) listOf(out) else emptyList()
-        )
+        FlowOutcome(buildList {
+            add("结果" to "已处理${inputs.size - failures.count { it.startsWith("第") }}/${inputs.size}张，生成${outputs.size}页")
+            if (failures.isNotEmpty()) add("失败项" to failures.joinToString("\n"))
+            if (notes.isNotEmpty()) add("处理说明" to notes.joinToString("\n"))
+        }, allOutputs, outputs)
     }
 }
 
@@ -1444,14 +1709,14 @@ private fun CardFlow(
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
     val kinds = StructureExtractor.Kind.entries
-    var kind by remember { mutableStateOf(StructureExtractor.Kind.ID_CARD) }
-    var text by remember { mutableStateOf("") }
-    var precise by remember { mutableStateOf(false) }
+    var kind by rememberToolState(request, "kind") { StructureExtractor.Kind.ID_CARD }
+    var text by rememberToolState(request, "text") { "" }
+    var precise by rememberToolState(request, "precise") { false }
     var ocrBusy by remember { mutableStateOf(false) }
-    var result by remember { mutableStateOf<StructureExtractor.Result?>(null) }
-    var edited by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
-    var exported by remember { mutableStateOf<File?>(null) }
-    var exportStatus by remember { mutableStateOf("") }
+    var result by rememberToolState<StructureExtractor.Result?>(request, "result") { null }
+    var edited by rememberToolState<Map<String, String>>(request, "edited") { emptyMap() }
+    var exported by rememberToolState<File?>(request, "exported") { null }
+    var exportStatus by rememberToolState(request, "exportStatus") { "" }
 
     val saveExport = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
         val file = exported

@@ -48,15 +48,19 @@ fun LockGate(content: @Composable () -> Unit) {
         onDispose { lifecycle.removeObserver(observer) }
     }
 
-    if (unlocked || !AppLock.enabled(context)) content() else LockScreen { pin ->
-        AppLock.verify(context, pin).also { if (it) unlocked = true }
-    }
+    if (unlocked || !AppLock.enabled(context)) content() else LockScreen(
+        onBiometricUnlock = { unlocked = true },
+        onUnlock = { pin -> AppLock.verify(context, pin).also { if (it) unlocked = true } })
 }
 
 @Composable
-private fun LockScreen(onUnlock: (String) -> Boolean) {
+private fun LockScreen(onBiometricUnlock: () -> Unit, onUnlock: (String) -> Boolean) {
+    val context = LocalContext.current
     var pin by remember { mutableStateOf("") }
     var error by remember { mutableStateOf(false) }
+    var biometricError by remember { mutableStateOf("") }
+    var prompt by remember { mutableStateOf<androidx.biometric.BiometricPrompt?>(null) }
+    DisposableEffect(Unit) { onDispose { prompt?.cancelAuthentication() } }
     Column(
         modifier = Modifier.fillMaxSize().padding(28.dp),
         verticalArrangement = Arrangement.Center,
@@ -79,5 +83,13 @@ private fun LockScreen(onUnlock: (String) -> Boolean) {
             enabled = pin.length >= 4,
             modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
         ) { Text("解锁") }
+        if (AppLock.biometricEnabled(context) && BiometricUnlock.available(context)) {
+            Button(onClick = {
+                BiometricUnlock.activity(context)?.let { activity ->
+                    prompt = BiometricUnlock.prompt(activity, onBiometricUnlock) { biometricError = it }
+                }
+            }, modifier = Modifier.fillMaxWidth()) { Text("指纹 / 生物识别解锁") }
+        }
+        if (biometricError.isNotBlank()) Text(biometricError, color = MaterialTheme.colorScheme.error)
     }
 }

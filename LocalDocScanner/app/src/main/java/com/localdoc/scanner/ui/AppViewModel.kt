@@ -68,7 +68,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val messages = _messages.asSharedFlow()
 
     var pendingTool: ToolEntry? = null
-    var toolRequest by mutableStateOf<ToolRequest?>(null)
+    var toolRequest by mutableStateOf(com.localdoc.scanner.data.ToolDrafts.restoreRequest(application))
         private set
     var editTarget by mutableStateOf<EditTarget?>(null)
         private set
@@ -77,12 +77,20 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private var importQueue: List<String> = emptyList()
     private var retakeTemplate: EditTarget? = null
     val isRetaking: Boolean get() = retakeTemplate != null
+    var captureProcessing by mutableStateOf(false)
+        private set
+    private var toolJob: kotlinx.coroutines.Job? = null
+    val isToolRunning: Boolean get() = toolJob?.isActive == true
+    fun runTool(block: suspend () -> Unit) {
+        if (!isToolRunning) toolJob = viewModelScope.launch { block() }
+    }
 
     fun notify(text: String) {
         viewModelScope.launch { _messages.emit(text) }
     }
 
     fun startNewScan() {
+        if (captureProcessing) { notify("正在保存拍摄页，请稍候"); return }
         draft = DraftStore.start(app)
         appendDocId = null
         importQueue = emptyList()
@@ -92,6 +100,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun resumeDraft() {
+        if (captureProcessing) { notify("正在保存拍摄页，请稍候"); return }
         draft = DraftStore.load(app)
         appendDocId = draft.appendDocId
         syncDraft()
@@ -100,6 +109,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun discardDraft() = startNewScan()
 
     fun startAppend(docId: String) {
+        if (captureProcessing) { notify("正在保存拍摄页，请稍候"); return }
         draft = DraftStore.start(app, docId)
         appendDocId = docId
         importQueue = emptyList()
@@ -117,7 +127,35 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         retakeTemplate = null
     }
 
+    fun appendContinuousShot(file: File, book: Boolean) {
+        if (captureProcessing) { notify("上一张仍在处理，请稍候"); return }
+        captureProcessing = true
+        viewModelScope.launch {
+            try {
+                val notes = withContext(Dispatchers.IO) {
+                    com.localdoc.scanner.capture.ContinuousCaptureProcessor.prepare(app, file, book).use {
+                        draft = DraftStore.addBatch(app, draft, it.pages)
+                        it.notes
+                    }
+                }
+                syncDraft()
+                file.delete()
+                notify(if (notes.isEmpty()) "已加入${if (book) 2 else 1}页，可继续换页拍摄" else notes.joinToString("；"))
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                // Keep a failed shot in the durable inbox rather than losing it with cache eviction.
+                val recovery = withContext(Dispatchers.IO) { runCatching {
+                    file.copyTo(File(FileStore.exportDir(app), "连拍恢复_${java.util.UUID.randomUUID()}.jpg")).also {
+                        com.localdoc.scanner.output.OutputHistoryStore.recordGenerated(app, it, "image/jpeg")
+                    }
+                }.getOrNull() }
+                notify("连拍处理失败，${if (recovery != null) "原图在导出记录" else "原图仍在临时拍摄目录，请重新拍摄"}：${e.message}")
+            } finally { captureProcessing = false }
+        }
+    }
+
     fun editDraftPage(page: DraftPage, index: Int) {
+        if (captureProcessing) { notify("正在保存拍摄页，请稍候再编辑"); return }
         editTarget = EditTarget(
             sourcePath = page.sourcePath,
             pageIndex = index,
@@ -177,6 +215,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     /** 返回null表示多图导入还有下一张，编辑页原地切换。 */
     suspend fun confirmEdit(result: EditResult): EditorReturn? = withContext(Dispatchers.IO) {
+        check(!captureProcessing) { "正在保存连拍页面，请稍候再提交编辑" }
         val target = editTarget ?: return@withContext EditorReturn.SESSION
         if (target.documentPageId != null) {
             repo.updatePage(target.documentPageId, result)
@@ -218,21 +257,25 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun removeSessionPage(pageId: String) {
+        if (captureProcessing) { notify("正在保存拍摄页，请稍候"); return }
         draft = DraftStore.remove(app, draft, pageId)
         syncDraft()
     }
 
     fun moveSessionPage(from: Int, to: Int) {
+        if (captureProcessing) { notify("正在保存拍摄页，请稍候"); return }
         draft = DraftStore.move(app, draft, from, to)
         syncDraft()
     }
 
     fun setDraftTitle(title: String) {
+        if (captureProcessing) return
         draft = DraftStore.setTitle(app, draft, title)
         syncDraft()
     }
 
     suspend fun commitSession(title: String): String? = withContext(Dispatchers.IO) {
+        if (captureProcessing) { notify("正在保存拍摄页，请稍候再完成文档"); return@withContext null }
         if (draft.pages.isEmpty()) return@withContext null
         val existing = draft.appendDocId
         val id = existing ?: repo.createDoc(title.ifBlank { "未命名文档" })
@@ -253,12 +296,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             val files = mutableListOf<File>()
             val names = mutableListOf<String>()
             uris.forEachIndexed { index, uri ->
-                val name = uri.lastPathSegment ?: "file_$index"
+                val name = com.localdoc.scanner.output.OutputHistoryStore.displayName(app, uri).ifBlank { uri.lastPathSegment ?: "file_$index" }
                 val stamp = System.currentTimeMillis()
                 val dir = FileStore.importDir(app)
                 val asImage = tool.accept == FileKind.IMAGE ||
                     (tool.accept == FileKind.ANY && (app.contentResolver.getType(uri) ?: "").startsWith("image/"))
-                val dest = File(dir, "imp_${stamp}_$index.${if (asImage) "jpg" else "pdf"}")
+                val extension = when {
+                    asImage -> "jpg"
+                    tool.accept == FileKind.PDF -> "pdf"
+                    else -> name.substringAfterLast('.', "bin").lowercase().takeIf { it.matches(Regex("[a-z0-9]{1,12}")) } ?: "bin"
+                }
+                val dest = File(dir, "imp_${stamp}_$index.$extension")
                 val ok = if (asImage) {
                     val bmp = ImageIo.loadFromUri(app, uri, 3200)
                     if (bmp == null) false else ImageIo.saveJpeg(bmp, dest, 94).also { bmp.recycle() }
@@ -268,14 +316,22 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 if (ok && dest.exists()) { files.add(dest); names.add(name) }
             }
             withContext(Dispatchers.Main) {
-                if (files.isEmpty()) notify("没有读到可用的文件") else toolRequest = ToolRequest(tool, files, names)
+                if (files.isEmpty()) notify("没有读到可用的文件") else { toolRequest = ToolRequest(tool, files, names); com.localdoc.scanner.data.ToolDrafts.saveRequest(app, toolRequest) }
             }
         }
     }
 
     fun closeTool() {
+        com.localdoc.scanner.data.ToolDrafts.saveRequest(app, null)
         toolRequest = null
         pendingTool = null
+    }
+
+    fun replaceToolInput(source: File, workingCopy: File) {
+        val current = toolRequest ?: return
+        if (!workingCopy.isFile || current.files.none { it == source }) return
+        toolRequest = current.copy(files = current.files.map { if (it == source) workingCopy else it })
+        com.localdoc.scanner.data.ToolDrafts.saveRequest(app, toolRequest)
     }
 
     suspend fun openExternalPdfForEditing(source: File, displayName: String) {
@@ -290,6 +346,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             listOf(target),
             listOf(displayName)
         )
+        com.localdoc.scanner.data.ToolDrafts.saveRequest(app, toolRequest)
     }
 
     suspend fun saveFilesAsDoc(title: String, files: List<File>): String? {
@@ -313,7 +370,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun applyEnhancementToAll(docId: String, filter: ScanFilter, brightness: Float, contrast: Float) =
         repo.applyEnhancementToAll(docId, filter, brightness, contrast)
     suspend fun backupLibrary(uri: Uri) = repo.backupLibrary(uri)
+    suspend fun backupEncryptedLibrary(uri: Uri, password: CharArray) = repo.backupLibrary(uri, password)
     suspend fun restoreLibrary(uri: Uri) = repo.restoreLibrary(uri)
+    suspend fun restoreEncryptedLibrary(uri: Uri, password: CharArray) = repo.restoreEncryptedLibrary(uri, password)
     suspend fun exportPdf(docId: String, output: File, size: PdfExporter.PageSize, maxImageSide: Int = 3200): Boolean =
         repo.exportPdf(docId, output, size, maxImageSide)
     suspend fun exportPdf(docId: String, output: Uri, size: PdfExporter.PageSize, maxImageSide: Int = 3200): Boolean =

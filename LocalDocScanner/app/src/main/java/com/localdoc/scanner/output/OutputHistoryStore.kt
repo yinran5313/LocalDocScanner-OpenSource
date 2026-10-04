@@ -17,7 +17,8 @@ data class OutputRecord(
     val createdAt: Long,
     val internalPath: String,
     val savedUri: String = "",
-    val savedLabel: String = ""
+    val savedLabel: String = "",
+    val contentHash: String = ""
 )
 
 object OutputHistoryStore {
@@ -27,6 +28,20 @@ object OutputHistoryStore {
     private val lock = Any()
 
     fun all(context: Context): List<OutputRecord> = synchronized(lock) {
+        File(context.filesDir, "office-export-receipts").listFiles()?.filter { it.extension == "json" }?.forEach { receipt ->
+            runCatching {
+                val data = JSONObject(receipt.readText())
+                val file = File(data.getString("file"))
+                require(file.isFile && file.canonicalPath.startsWith(context.filesDir.canonicalPath + File.separator))
+                val uri = Uri.parse(data.getString("uri"))
+                markSaved(context, file, uri, describeDestination(context, uri))
+                receipt.delete()
+            }
+        }
+        // Recover even if Android killed the main activity before the editor receipt arrived.
+        File(context.filesDir, "office-recovery").listFiles()?.filter { it.isFile && it.length() > 0 }?.forEach { file ->
+            if (allUnlocked(context).none { it.internalPath == file.absolutePath }) recordGenerated(context, file, mimeFor(file))
+        }
         decode(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, "[]").orEmpty())
             .sortedByDescending { it.createdAt }
     }
@@ -34,6 +49,8 @@ object OutputHistoryStore {
     fun recordGenerated(context: Context, file: File, mime: String): OutputRecord = synchronized(lock) {
         val current = allUnlocked(context).toMutableList()
         val existing = current.indexOfFirst { it.internalPath == file.absolutePath }
+        val hash = fingerprint(file)
+        val unchanged = hash.isNotBlank() && existing >= 0 && current[existing].contentHash == hash
         val record = OutputRecord(
             id = if (existing >= 0) current[existing].id else UUID.randomUUID().toString(),
             name = file.name,
@@ -41,8 +58,9 @@ object OutputHistoryStore {
             size = file.length(),
             createdAt = System.currentTimeMillis(),
             internalPath = file.absolutePath,
-            savedUri = if (existing >= 0) current[existing].savedUri else "",
-            savedLabel = if (existing >= 0) current[existing].savedLabel else ""
+            savedUri = if (unchanged) current[existing].savedUri else "",
+            savedLabel = if (unchanged) current[existing].savedLabel else "",
+            contentHash = hash
         )
         if (existing >= 0) current.removeAt(existing)
         current.add(0, record)
@@ -61,6 +79,7 @@ object OutputHistoryStore {
             size = file.length(),
             savedUri = uri.toString(),
             savedLabel = label,
+            contentHash = fingerprint(file),
             createdAt = System.currentTimeMillis()
         )
         current.add(0, updated)
@@ -113,7 +132,7 @@ object OutputHistoryStore {
             array.put(JSONObject().apply {
                 put("id", r.id); put("name", r.name); put("mime", r.mime); put("size", r.size)
                 put("createdAt", r.createdAt); put("internalPath", r.internalPath)
-                put("savedUri", r.savedUri); put("savedLabel", r.savedLabel)
+                put("savedUri", r.savedUri); put("savedLabel", r.savedLabel); put("contentHash", r.contentHash)
             })
         }
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY, array.toString()).apply()
@@ -128,11 +147,24 @@ object OutputHistoryStore {
                     id = o.optString("id"), name = o.optString("name"), mime = o.optString("mime", "*/*"),
                     size = o.optLong("size"), createdAt = o.optLong("createdAt"),
                     internalPath = o.optString("internalPath"), savedUri = o.optString("savedUri"),
-                    savedLabel = o.optString("savedLabel")
+                    savedLabel = o.optString("savedLabel"), contentHash = o.optString("contentHash")
                 ))
             }
         }
     }.getOrDefault(emptyList())
+
+    private fun fingerprint(file: File): String = runCatching {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        file.inputStream().buffered().use { input ->
+            val bytes = ByteArray(64 * 1024)
+            while (true) {
+                val n = input.read(bytes)
+                if (n < 0) break
+                digest.update(bytes, 0, n)
+            }
+        }
+        digest.digest().joinToString("") { "%02x".format(it) }
+    }.getOrDefault("")
 
     fun mimeFor(file: File): String = when (file.extension.lowercase()) {
         "pdf" -> "application/pdf"

@@ -72,6 +72,7 @@ internal fun PdfEditPreview(
     strokes: List<List<PdfInkPoint>>,
     signatureBitmap: Bitmap?,
     watermarkBitmap: Bitmap?,
+    decoration: com.localdoc.scanner.pdf.PdfDecorationOptions = com.localdoc.scanner.pdf.PdfDecorationOptions(),
     onRectChange: (Float, Float, Float, Float) -> Unit,
     onInteractionStart: () -> Unit,
     onPreviousPage: () -> Unit,
@@ -173,10 +174,17 @@ internal fun PdfEditPreview(
                                 val subtle = Paint(previewPaint).apply { alpha = (opacity.coerceIn(0.08f, 0.7f) * 255).toInt() }
                                 if (header.isNotBlank()) native.drawText(header.take(50), left + 12f, top + subtle.textSize + 8f, subtle)
                                 if (footer.isNotBlank()) native.drawText(footer.take(50), left + 12f, top + pageHeight - 12f, subtle)
-                                if (addPageNumbers) native.drawText("${pageIndex + 1}", left + pageWidth / 2f, top + pageHeight - 12f, subtle)
+                                if (addPageNumbers) {
+                                    val label = runCatching { decoration.numberLabel(pageIndex, pageCount) }.getOrDefault("页码无效")
+                                    val position = decoration.numberPosition
+                                    subtle.textAlign = when (position % 3) { 0 -> Paint.Align.LEFT; 1 -> Paint.Align.CENTER; else -> Paint.Align.RIGHT }
+                                    val xx = when (position % 3) { 0 -> left + 12f; 1 -> left + pageWidth / 2f; else -> left + pageWidth - 12f }
+                                    native.drawText(label, xx, if (position < 3) top + subtle.textSize + 8f else top + pageHeight - 12f, subtle)
+                                    subtle.textAlign = Paint.Align.LEFT
+                                }
                                 if (watermark.isNotBlank()) {
                                     native.save()
-                                    native.rotate(-28f, left + pageWidth / 2f, top + pageHeight / 2f)
+                                    native.rotate(-decoration.watermarkAngle, left + pageWidth / 2f, top + pageHeight / 2f)
                                     subtle.textSize = (pageWidth * 0.08f).coerceIn(22f, 58f)
                                     subtle.textAlign = Paint.Align.CENTER
                                     native.drawText(watermark.take(32), left + pageWidth / 2f, top + pageHeight / 2f, subtle)

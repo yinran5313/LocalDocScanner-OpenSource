@@ -1,10 +1,10 @@
 # LocalDocScanner 本地文档扫描
 
-Android 离线扫描、文档库、PP-OCRv6 tiny/medium、PDF工具及同包Office编辑器。开发候选版 **4.3.2-rc1**，ARM64，Android8.0及以上。
+Android 离线扫描、文档库、PP-OCRv6 tiny/medium、PDF工具及同包Office编辑器。开发候选版 **4.4.1-rc1**，ARM64，Android8.0及以上。
 
 支持多页拍摄与手动四角裁边、OpenCV 透视和增强、连续扫描换页判断、可调书籍双页拆分、OCR 与可搜索 PDF、PDF 批注/手写/表单、工作副本预览、另存和分享。文档保存在手机本地。
 
-本版将Collabora完整Office引擎接入同一APK，打开Office文件后进入内置真实排版界面；无需另装Office App。书籍双页可启用Leptonica文字行曲率展平，不可靠的模型保留原页。PDF压缩只处理图片对象并保留文字/表单/批注，转图片与永久打码按页释放位图。**当前为构建候选版，Office往返、相机和展平效果尚未通过手机验收；任意PDF转完整可编辑Office及证书数字签名尚未实现。** 详细复用入口见 [源码复用矩阵](docs/SOURCE_REUSE.md)。
+本版将Collabora完整Office引擎接入同一APK，打开Office文件后进入内置真实排版界面；无需另装Office App。书籍双页可启用Leptonica文字行曲率展平，不可靠的模型保留原页。PDF压缩处理图片对象并保留文字/表单/批注，转图片与永久打码按页释放位图。新增连续书籍拍摄、多图批量编辑、自动纠偏、密码PDF处理联动、独立批注管理、有限范围原文字修改、页码/水印参数、medium敏感范围建议、PKCS12数字签名、CSV/Markdown预览，以及票据/表格XLSX复核、全文检索、文件保存分享与恢复；文档OCR已有持久逐页任务，新增系统强生物识别入口和AES-GCM密码加密备份。**当前为开发候选，Office往返、相机和OCR效果尚未通过手机验收；内部文档保险库、其他工具的后台作业、语义模型和任意复杂PDF转完整可编辑Office仍未实现。** 详细范围及源码入口见 [V4.4.1进度](LocalDocScanner/docs/V4.4.1_PROGRESS.md) 与 [原复用矩阵](docs/SOURCE_REUSE.md)。
 
 ## 构建
 
@@ -25,6 +25,6 @@ Windows 使用 `gradlew.bat`。`local.properties` 可配置本机 SDK，勿提�
 
 ## 许可
 
-本项目自有代码采用 [MIT](LICENSE)。上游文件、模型、字体和依赖保留各自许可，见 [THIRD_PARTY_NOTICES](LocalDocScanner/THIRD_PARTY_NOTICES.md)。Leptonica为BSD-2-Clause；Collabora Java/资源和修改文件保留MPL许可，详见 [内置Office来源与修改](office-engine/README.md)。没有复制GPL/AGPL参考仓库实现；独立许可未确认的拼写词典不分发。
+本项目自有代码采用 [MIT](LICENSE)。上游文件、模型、字体和依赖保留各自许可，见 [THIRD_PARTY_NOTICES](LocalDocScanner/THIRD_PARTY_NOTICES.md)。Leptonica为BSD-2-Clause；Collabora Java/资源和修改文件保留MPL许可，详见 [内置Office来源与修改](LocalDocScanner/office-engine/README.md)。没有复制GPL/AGPL参考仓库实现；独立许可未确认的拼写词典不分发。
 
 贡献请提供可复现样本与修改前后结果；请移除姓名、电话、账号、地址等私人信息后提交公开样本。

@@ -57,7 +57,7 @@ object PdfExporter {
         return try {
             var written = 0
             imageFiles.forEach { file ->
-                val bitmap = ImageIo.loadFromFile(file, maxImageSide) ?: return@forEach
+                val bitmap = ImageIo.loadFromFile(file, maxImageSide) ?: error("无法读取图片：${file.name}")
                 val info = when (pageSize) {
                     PageSize.FIT_IMAGE -> PageInfo.Builder(bitmap.width, bitmap.height, written + 1).create()
                     else -> PageInfo.Builder(pageSize.widthPt, pageSize.heightPt, written + 1).create()

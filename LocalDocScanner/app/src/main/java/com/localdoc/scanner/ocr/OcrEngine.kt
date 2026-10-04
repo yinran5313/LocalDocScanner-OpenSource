@@ -37,9 +37,13 @@ object PlaceholderOcrEngine : OcrEngine {
 
 class PaddleOcrEngine(context: Context) : OcrEngine {
     private val app = context.applicationContext
-    private val mutex = Mutex()
-    private var fast: PaddleOCR? = null
-    private var preciseEngine: PaddleOCR? = null
+    // UI tools and background jobs share one model pool and one inference lock.
+    // Closing a client releases the pool under that lock; later calls reload it.
+    private companion object {
+        val mutex = Mutex()
+        var fast: PaddleOCR? = null
+        var preciseEngine: PaddleOCR? = null
+    }
 
     override val available: Boolean = true
     override val label: String = "PP-OCRv6 本地离线"
@@ -49,8 +53,10 @@ class PaddleOcrEngine(context: Context) : OcrEngine {
             "OpenCV 初始化失败：${OpenCVUtils.lastError ?: "设备无法加载图像处理库"}"
         }
         val engine = if (precise) {
+            fast?.release(); fast = null
             preciseEngine ?: create("medium", precise = true).also { preciseEngine = it }
         } else {
+            preciseEngine?.release(); preciseEngine = null
             fast ?: create("tiny", precise = false).also { fast = it }
         }
         val result = engine.recognize(bitmap)

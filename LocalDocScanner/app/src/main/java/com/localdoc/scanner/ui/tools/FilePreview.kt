@@ -45,7 +45,8 @@ import java.io.File
 internal fun FilePreview(
     files: List<File>,
     title: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    pdfInitialPage: Int = 0
 ) {
     if (files.isEmpty()) return
     var selected by remember(files.map { it.absolutePath }) { mutableIntStateOf(0) }
@@ -73,9 +74,10 @@ internal fun FilePreview(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         when (file.extension.lowercase()) {
-            "pdf" -> PdfFilePreview(file)
+            "pdf" -> PdfReader(file, Modifier.fillMaxWidth().height(560.dp), initialPage = pdfInitialPage)
             "jpg", "jpeg", "png", "webp", "bmp" -> ZoomableImage(model = file, key = file.absolutePath)
             "txt", "csv", "json", "md", "markdown", "xml" -> TextFilePreview(file)
+            "docx", "xlsx", "pptx" -> OpenXmlFilePreview(file)
             else -> Box(
                 Modifier.fillMaxWidth().height(120.dp).background(MaterialTheme.colorScheme.surfaceVariant),
                 contentAlignment = Alignment.Center
@@ -85,38 +87,30 @@ internal fun FilePreview(
 }
 
 @Composable
-private fun PdfFilePreview(file: File) {
-    val count = remember(file, file.lastModified()) { PdfTools.pageCount(file).coerceAtLeast(0) }
-    var index by remember(file) { mutableIntStateOf(0) }
-    var bitmap by remember(file) { mutableStateOf<Bitmap?>(null) }
-    LaunchedEffect(file, index) {
-        val next = withContext(Dispatchers.IO) { PdfTools.renderPage(file, index, 1400) }
-        val old = bitmap
-        bitmap = next
-        old?.takeIf { it !== next }?.recycle()
+private fun OpenXmlFilePreview(file: File) {
+    var preview by remember(file, file.lastModified()) { mutableStateOf("正在读取内容…") }
+    LaunchedEffect(file, file.lastModified()) {
+        preview = withContext(Dispatchers.IO) { runCatching {
+            com.localdoc.scanner.office.OpenXmlEditor.read(file).units.joinToString("\n") { "${it.section} · ${it.label}：${it.text}" }
+        }.getOrElse { "内容预览失败：${it.message}" } }
     }
-    DisposableEffect(file) { onDispose { bitmap?.recycle() } }
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = { index-- }, enabled = index > 0) { Text("上一页") }
-            Text(if (count > 0) "${index + 1} / $count" else "无法预览")
-            TextButton(onClick = { index++ }, enabled = index + 1 < count) { Text("下一页") }
-        }
-        val value = bitmap
-        if (value == null) Box(
-            Modifier.fillMaxWidth().height(300.dp).background(Color(0xFF15171A)),
-            contentAlignment = Alignment.Center
-        ) { Text(if (count > 0) "正在渲染预览…" else "文件可能已加密或无法读取", color = Color.White) }
-        else ZoomableImage(model = value, key = "${file.absolutePath}:$index")
+    androidx.compose.foundation.text.selection.SelectionContainer {
+        Text(preview, modifier = Modifier.fillMaxWidth().height(260.dp).verticalScroll(rememberScrollState()).padding(8.dp))
     }
+    Text("此处显示文字和单元格内容；完整排版可点打开进入内置Office。", style = MaterialTheme.typography.bodySmall)
 }
 
 @Composable
-private fun ZoomableImage(model: Any, key: Any) {
+private fun PdfFilePreview(file: File) {
+    PdfReader(file, Modifier.fillMaxWidth().height(560.dp))
+}
+
+@Composable
+internal fun ZoomableImage(model: Any, key: Any, modifier: Modifier = Modifier.fillMaxWidth().height(300.dp)) {
     var scale by remember(key) { mutableFloatStateOf(1f) }
     var offset by remember(key) { mutableStateOf(Offset.Zero) }
     Box(
-        Modifier.fillMaxWidth().height(300.dp).background(Color(0xFF15171A)),
+        modifier.background(Color(0xFF15171A)),
         contentAlignment = Alignment.Center
     ) {
         AsyncImage(

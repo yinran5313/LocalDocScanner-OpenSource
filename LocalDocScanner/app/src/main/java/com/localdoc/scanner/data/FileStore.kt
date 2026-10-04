@@ -51,7 +51,7 @@ object FileStore {
         File(draftDir(context), "inbox").apply { mkdirs() }
 
     fun importDir(context: Context): File =
-        File(context.cacheDir, "import").apply { mkdirs() }
+        File(context.filesDir, "tool-import").apply { mkdirs() }
 
     fun newSessionFile(context: Context): File =
         File(sessionDir(context), "shot_${System.currentTimeMillis()}.jpg")

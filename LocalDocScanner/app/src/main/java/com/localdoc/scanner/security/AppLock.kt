@@ -13,12 +13,19 @@ object AppLock {
     private const val ITERATIONS = 120_000
 
     fun enabled(context: Context): Boolean = prefs(context).contains(HASH)
+    fun biometricEnabled(context: Context): Boolean = enabled(context) && prefs(context).getBoolean("biometric", false)
+    fun setBiometric(context: Context, pin: String, value: Boolean): Boolean {
+        if (!verify(context, pin)) return false
+        prefs(context).edit().putBoolean("biometric", value).apply()
+        return true
+    }
 
     fun setPin(context: Context, pin: String) {
         require(pin.matches(Regex("\\d{4,12}"))) { "密码需为4到12位数字" }
         val salt = ByteArray(16).also { SecureRandom().nextBytes(it) }
         val hash = derive(pin, salt)
         prefs(context).edit()
+            .putBoolean("biometric", false)
             .putString(SALT, Base64.encodeToString(salt, Base64.NO_WRAP))
             .putString(HASH, Base64.encodeToString(hash, Base64.NO_WRAP))
             .apply()

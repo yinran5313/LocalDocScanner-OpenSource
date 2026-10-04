@@ -130,6 +130,7 @@ public class LOActivity extends AppCompatActivity {
 
     /// Unique number identifying this app + document.
     private long loadDocumentMillis = 0;
+    private boolean localDocPdfExportRequested = false;
 
     @Nullable
     private URI documentUri;
@@ -885,110 +886,79 @@ public class LOActivity extends AppCompatActivity {
     }
 
     /** Check that we have created a temp file, and if yes, copy it back to the content: URI. */
-    private void copyTempBackToIntent() {
-        if (!isDocEditable || mTempFile == null || getIntent().getData() == null || !getIntent().getData().getScheme().equals(ContentResolver.SCHEME_CONTENT))
-            return;
-
-        if (mResolvedFile != null) {
-            copyTempBackToFile();
-            return;
-        }
-
-        final ContentResolver contentResolver = getContentResolver();
+    private boolean copyTempBackToIntent() {
+        if (!isDocEditable || mTempFile == null)
+            return true;
+        if (mResolvedFile != null)
+            return copyTempBackToFile();
+        Uri uri = getIntent().getData();
+        if (uri == null || !ContentResolver.SCHEME_CONTENT.equals(uri.getScheme()))
+            return true;
         try {
-            Thread copyThread = new Thread(new Runnable() {
-                @Override
-                public void run() {
-                    InputStream inputStream = null;
-                    OutputStream outputStream = null;
-                    try {
-                        try {
-                            inputStream = new FileInputStream(mTempFile);
-
-                            int len = inputStream.available();
-                            if (len <= 0)
-                                // empty for some reason & do not write it back
-                                return;
-
-                            Uri uri = getIntent().getData();
-                            try {
-                                outputStream = contentResolver.openOutputStream(uri, "wt");
-                            }
-                            catch (FileNotFoundException e) {
-                                Log.i(TAG, "failed with the 'wt' mode, trying without: " + e.getMessage());
-                                outputStream = contentResolver.openOutputStream(uri);
-                            }
-
-                            byte[] buffer = new byte[1024];
-                            int length;
-                            long bytes = 0;
-                            while ((length = inputStream.read(buffer)) != -1) {
-                                outputStream.write(buffer, 0, length);
-                                bytes += length;
-                            }
-
-                            Log.i(TAG, "Success copying " + bytes + " bytes from " + mTempFile + " to " + uri);
-                        } finally {
-                            if (inputStream != null)
-                                inputStream.close();
-                            if (outputStream != null)
-                                outputStream.close();
-                        }
-                    } catch (FileNotFoundException e) {
-                        Log.e(TAG, "file not found: " + e.getMessage());
-                    } catch (Exception e) {
-                        Log.e(TAG, "exception: " + e.getMessage());
-                    }
-                }
-            });
-            copyThread.start();
-            copyThread.join();
+            if (mTempFile.length() <= 0) throw new IOException("Empty saved document");
+            OutputStream target;
+            try { target = getContentResolver().openOutputStream(uri, "wt"); }
+            catch (FileNotFoundException e) { target = getContentResolver().openOutputStream(uri); }
+            if (target == null) throw new IOException("Cannot open output URI");
+            try (InputStream input = new FileInputStream(mTempFile); OutputStream output = target) {
+                byte[] buffer = new byte[65536];
+                int n;
+                while ((n = input.read(buffer)) != -1) output.write(buffer, 0, n);
+                output.flush();
+            }
+            return true;
         } catch (Exception e) {
-            Log.i(TAG, "copyTempBackToIntent: " + e.getMessage());
+            Log.e(TAG, "copyTempBackToIntent failed", e);
+            reportSaveToFileFailed();
+            return false;
         }
     }
 
-    /** Copy the temp file back to the document. */
-    private void copyTempBackToFile() {
+    /** Atomic replacement keeps the previous work copy intact if writing fails. */
+    private boolean copyTempBackToFile() {
         final File resolvedFile = mResolvedFile;
-        if (resolvedFile == null)
-            return;
-
+        if (resolvedFile == null) return false;
         File newContent = new File(resolvedFile.getParentFile(), "." + resolvedFile.getName() + ".part");
         try {
-            long bytes = 0;
-            try (InputStream inputStream = new FileInputStream(mTempFile)) {
-                int len = inputStream.available();
-                if (len <= 0)
-                    return;
-
-                try (FileOutputStream outputStream = new FileOutputStream(newContent)) {
-                    byte[] buffer = new byte[1024];
-                    int length;
-                    while ((length = inputStream.read(buffer)) != -1) {
-                        outputStream.write(buffer, 0, length);
-                        bytes += length;
-                    }
-                    outputStream.flush();
-                    outputStream.getFD().sync();
-                }
+            if (mTempFile.length() <= 0) throw new IOException("Empty saved document");
+            try (InputStream input = new FileInputStream(mTempFile);
+                 FileOutputStream output = new FileOutputStream(newContent)) {
+                byte[] buffer = new byte[65536];
+                int n;
+                while ((n = input.read(buffer)) != -1) output.write(buffer, 0, n);
+                output.flush();
+                output.getFD().sync();
             }
-
-            if (!newContent.renameTo(resolvedFile)) {
-                Log.e(TAG, "failed to put the new content in place of " + resolvedFile);
-                newContent.delete();
-                reportSaveToFileFailed();
-                return;
-            }
-
-            Log.i(TAG, "Success copying " + bytes + " bytes from " + mTempFile + " to " + resolvedFile);
-
-            // Make the system read the file again to update meta data.
+            if (!newContent.renameTo(resolvedFile)) throw new IOException("Cannot replace work copy");
             MediaScannerConnection.scanFile(this, new String[]{resolvedFile.getAbsolutePath()}, null, null);
+            return true;
         } catch (Exception e) {
-            Log.e(TAG, "copyTempBackToFile: " + e.getMessage());
+            Log.e(TAG, "copyTempBackToFile failed", e);
             newContent.delete();
             reportSaveToFileFailed();
+            return false;
+        }
+    }
+
+    /** Retain edited bytes outside the cache before the office process exits. */
+    private String retainRecoveryCopy() {
+        try {
+            File dir = new File(getFilesDir(), "office-recovery");
+            if (!dir.isDirectory() && !dir.mkdirs()) throw new IOException("Cannot create recovery directory");
+            String name = mResolvedFile != null ? mResolvedFile.getName() : mTempFile.getName();
+            File saved = new File(dir, System.currentTimeMillis() + "-" + name);
+            try (InputStream input = new FileInputStream(mTempFile);
+                 FileOutputStream output = new FileOutputStream(saved)) {
+                byte[] buffer = new byte[65536];
+                int n;
+                while ((n = input.read(buffer)) != -1) output.write(buffer, 0, n);
+                output.flush();
+                output.getFD().sync();
+            }
+            return saved.getAbsolutePath();
+        } catch (Exception e) {
+            Log.e(TAG, "Recovery copy could not be written", e);
+            return mTempFile != null ? mTempFile.getAbsolutePath() : "";
         }
     }
 
@@ -1129,6 +1099,7 @@ public class LOActivity extends AppCompatActivity {
                         outputStream.write(buffer, 0, len);
                     }
                     outputStream.flush();
+                    OfficeExportReceipt.retain(this, srcFile, intent.getData());
                 } catch (Exception e) {
                     Toast.makeText(this, "Something went wrong while exporting: " + e.getMessage(), Toast.LENGTH_SHORT).show();
                     e.printStackTrace();
@@ -1182,6 +1153,7 @@ public class LOActivity extends AppCompatActivity {
                             outputStream.write(buffer, 0, len);
                         }
                         outputStream.flush();
+                        OfficeExportReceipt.retain(this, tempFile, intent.getData());
                         _tempFile = tempFile;
                     } catch (Exception e) {
                         Toast.makeText(this, "Something went wrong while Saving as: " + e.getMessage(), Toast.LENGTH_SHORT).show();
@@ -1254,8 +1226,11 @@ public class LOActivity extends AppCompatActivity {
                 documentLoaded = false;
                 postMobileMessageNative("BYE");
                 // Native close waits for the document broker; copy its final saved work file back.
-                copyTempBackToIntent();
-                setResult(RESULT_OK);
+                boolean saved = copyTempBackToIntent();
+                Intent receipt = new Intent();
+                receipt.putExtra("localdoc_save_failed", !saved);
+                if (!saved) receipt.putExtra("localdoc_recovery_path", retainRecoveryCopy());
+                setResult(saved ? RESULT_OK : RESULT_FIRST_USER, receipt);
 
                 runOnUiThread(new Runnable() {
                     @Override
@@ -1459,6 +1434,13 @@ public class LOActivity extends AppCompatActivity {
 
                 if (messageID.equals("finish")) {
                     mProgressDialog.dismiss();
+                    if (!localDocPdfExportRequested && getIntent().getBooleanExtra("localdoc_export_pdf", false)) {
+                        localDocPdfExportRequested = true;
+                        String name = mResolvedFile != null ? mResolvedFile.getName() : "document";
+                        int dot = name.lastIndexOf('.');
+                        if (dot > 0) name = name.substring(0, dot);
+                        createNewFileInputDialog(LOActivity.this, name + ".pdf", "application/pdf", REQUEST_SAVEAS_PDF);
+                    }
                     if (BuildConfig.GOOGLE_PLAY_ENABLED && rateAppController != null)
                         rateAppController.askUserForRating();
                     return;

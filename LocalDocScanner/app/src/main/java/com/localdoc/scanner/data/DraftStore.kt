@@ -88,29 +88,46 @@ object DraftStore {
         draft.copy(appendDocId = docId, updatedAt = System.currentTimeMillis()).also { save(context, it) }
 
     fun add(context: Context, draft: ScanDraft, result: EditResult): ScanDraft {
-        val pageId = "p${System.currentTimeMillis().toString(36)}${UUID.randomUUID().toString().take(5)}"
-        val page = persistResult(context, pageId, result)
-        return draft.copy(pages = draft.pages + page, updatedAt = System.currentTimeMillis()).also { save(context, it) }
+        return addBatch(context, draft, listOf(result))
+    }
+
+    fun addBatch(context: Context, draft: ScanDraft, results: List<EditResult>): ScanDraft {
+        val pages = mutableListOf<DraftPage>()
+        try {
+            results.forEach { result ->
+                val pageId = "p${System.currentTimeMillis().toString(36)}${UUID.randomUUID().toString().take(8)}"
+                pages.add(persistResult(context, pageId, result))
+            }
+            return draft.copy(pages = draft.pages + pages, updatedAt = System.currentTimeMillis()).also { save(context, it) }
+        } catch (e: Exception) {
+            pages.forEach { File(it.sourcePath).delete(); File(it.renderedPath).delete() }
+            throw e
+        }
     }
 
     fun replace(context: Context, draft: ScanDraft, pageId: String, result: EditResult): ScanDraft {
         val old = draft.pages.firstOrNull { it.id == pageId } ?: return draft
         val replacement = persistResult(context, pageId, result, old.createdAt)
-        return draft.copy(
+        val next = draft.copy(
             pages = draft.pages.map { if (it.id == pageId) replacement else it },
             updatedAt = System.currentTimeMillis()
-        ).also { save(context, it) }
+        )
+        try { save(context, next) } catch (e: Exception) {
+            File(replacement.sourcePath).delete(); File(replacement.renderedPath).delete()
+            throw e
+        }
+        File(old.sourcePath).delete(); File(old.renderedPath).delete()
+        return next
     }
 
     fun remove(context: Context, draft: ScanDraft, pageId: String): ScanDraft {
+        val next = draft.copy(pages = draft.pages.filterNot { it.id == pageId }, updatedAt = System.currentTimeMillis())
+        save(context, next)
         draft.pages.firstOrNull { it.id == pageId }?.let {
             File(it.sourcePath).delete()
             File(it.renderedPath).delete()
         }
-        return draft.copy(
-            pages = draft.pages.filterNot { it.id == pageId },
-            updatedAt = System.currentTimeMillis()
-        ).also { save(context, it) }
+        return next
     }
 
     fun move(context: Context, draft: ScanDraft, from: Int, to: Int): ScanDraft {
@@ -132,11 +149,18 @@ object DraftStore {
         result: EditResult,
         createdAt: Long = System.currentTimeMillis()
     ): DraftPage {
-        val source = File(FileStore.draftSourceDir(context), "$pageId.jpg")
-        val rendered = File(FileStore.draftRenderedDir(context), "$pageId.jpg")
-        if (result.sourceFile.absolutePath != source.absolutePath) result.sourceFile.copyTo(source, overwrite = true)
-        if (result.renderedFile.absolutePath != rendered.absolutePath) result.renderedFile.copyTo(rendered, overwrite = true)
-        return DraftPage(pageId, source.absolutePath, rendered.absolutePath, result.width, result.height, result.recipe, createdAt)
+        val filename = "${pageId}_${UUID.randomUUID()}.jpg"
+        val source = File(FileStore.draftSourceDir(context), filename)
+        val rendered = File(FileStore.draftRenderedDir(context), filename)
+        try {
+            result.sourceFile.copyTo(source)
+            result.renderedFile.copyTo(rendered)
+            listOf(source, rendered).forEach { file -> java.io.RandomAccessFile(file, "rw").use { it.channel.force(true) } }
+            return DraftPage(pageId, source.absolutePath, rendered.absolutePath, result.width, result.height, result.recipe, createdAt)
+        } catch (e: Exception) {
+            source.delete(); rendered.delete()
+            throw e
+        }
     }
 
     private fun save(context: Context, draft: ScanDraft) {
@@ -160,15 +184,17 @@ object DraftStore {
                 put("createdAt", page.createdAt)
             })
         }
-        staged.writeText(JSONObject().apply {
+        val bytes = JSONObject().apply {
             put("title", draft.title)
             put("appendDocId", draft.appendDocId ?: "")
             put("updatedAt", draft.updatedAt)
             put("pages", pages)
-        }.toString(), Charsets.UTF_8)
-        if (!staged.renameTo(target)) {
-            staged.copyTo(target, overwrite = true)
-            staged.delete()
+        }.toString().toByteArray(Charsets.UTF_8)
+        java.io.FileOutputStream(staged).use { it.write(bytes); it.flush(); it.fd.sync() }
+        try {
+            java.nio.file.Files.move(staged.toPath(), target.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+        } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
+            java.nio.file.Files.move(staged.toPath(), target.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
         }
     }
 }

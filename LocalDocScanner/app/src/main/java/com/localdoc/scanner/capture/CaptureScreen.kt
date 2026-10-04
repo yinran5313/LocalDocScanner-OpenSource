@@ -49,6 +49,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -87,6 +88,9 @@ fun CaptureScreen(
     onCaptured: (File) -> Unit,
     onFinish: () -> Unit,
     onBack: () -> Unit,
+    processing: Boolean = false,
+    allowContinuous: Boolean = true,
+    onContinuousCaptured: (File, Boolean) -> Unit = { file, _ -> onCaptured(file) },
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -133,23 +137,27 @@ fun CaptureScreen(
     var autoCapture by remember { mutableStateOf(false) }
     val currentAutoEdge by rememberUpdatedState(autoEdge)
     var busy by remember { mutableStateOf(false) }
+    var mode by rememberSaveable { mutableStateOf(0) }
     var errorText by remember { mutableStateOf<String?>(null) }
     var focusPoint by remember { mutableStateOf<Offset?>(null) }
 
     fun captureNow() {
-        if (busy) return
+        if (busy || processing) return
         busy = true
+        errorText = null
         captureGate.markCaptured(android.os.SystemClock.elapsedRealtime(), detection?.quad, analyzedFrame?.hash)
         shoot(imageCapture, captureExecutor, context) { file ->
             busy = false
-            if (file != null) onCaptured(file) else errorText = "拍照失败"
+            if (file != null) {
+                if (allowContinuous && mode > 0) onContinuousCaptured(file, mode == 2) else onCaptured(file)
+            } else { captureGate.reset(); errorText = "拍照失败" }
         }
     }
 
     LaunchedEffect(analyzedFrame, autoCapture) {
         if (!autoCapture) return@LaunchedEffect
         val frame = analyzedFrame ?: return@LaunchedEffect
-        val fire = captureGate.observe(frame.detection?.quad, frame.hash, frame.timeMs, frame.warnings.isEmpty(), busy)
+        val fire = captureGate.observe(frame.detection?.quad, frame.hash, frame.timeMs, frame.warnings.isEmpty(), busy || processing)
         captureHint = if (captureGate.state == AutoCaptureGate.State.QUALITY) frame.warnings.firstOrNull() ?: captureGate.state.hint else captureGate.state.hint
         if (fire) captureNow()
     }
@@ -340,6 +348,17 @@ fun CaptureScreen(
             }
         }
 
+        if (allowContinuous) Column(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 68.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Row {
+                listOf("逐页编辑", "连续扫描", "书籍双页").forEachIndexed { index, label ->
+                    TextButton(onClick = { mode = index; captureGate.reset() }, enabled = !busy && !processing) {
+                        Text(if (mode == index) "● $label" else label, color = if (mode == index) Color(0xFF31D158) else Color.White)
+                    }
+                }
+            }
+            if (mode > 0) Text(if (mode == 2) "拍整幅书页，自动按左→右拆分；完成后逐页检查" else "拍摄后直接加入草稿；完成后检查裁边和顺序", color = Color.White, style = MaterialTheme.typography.labelSmall)
+        }
+
         // 底部：快门 + 完成
         Row(
             modifier = Modifier
@@ -369,9 +388,9 @@ fun CaptureScreen(
                 shape = CircleShape,
                 modifier = Modifier.size(76.dp)
             ) {
-                Text(if (busy) "..." else "拍摄", style = MaterialTheme.typography.titleMedium)
+                Text(if (busy || processing) "保存中" else "拍摄", style = MaterialTheme.typography.titleMedium)
             }
-            Button(onClick = onFinish, enabled = pageCount > 0 && !busy) {
+            Button(onClick = onFinish, enabled = pageCount > 0 && !busy && !processing) {
                 Text("完成")
             }
         }

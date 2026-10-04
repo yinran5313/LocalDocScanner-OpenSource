@@ -135,6 +135,7 @@ fun AppNav(modifier: Modifier = Modifier, vm: AppViewModel = viewModel()) {
                 onDiscardDraft = { vm.discardDraft() },
                 onTrashClick = { navController.navigate(Route.TRASH) },
                 onOutputHistoryClick = { navController.navigate(Route.OUTPUT_HISTORY) },
+                onLibraryWorkbench = { navController.navigate("library-workbench") },
                 onSettingsClick = { navController.navigate(Route.SETTINGS) },
                 onToolClick = { tool ->
                     vm.pendingTool = tool
@@ -152,6 +153,9 @@ fun AppNav(modifier: Modifier = Modifier, vm: AppViewModel = viewModel()) {
         composable(Route.CAPTURE) {
             CaptureScreen(
                 pageCount = if (vm.isRetaking) 0 else session.size,
+                processing = vm.captureProcessing,
+                allowContinuous = !vm.isRetaking,
+                onContinuousCaptured = vm::appendContinuousShot,
                 onCaptured = { file ->
                     val replacing = vm.isRetaking
                     vm.editShot(file.absolutePath, session.size)
@@ -269,6 +273,9 @@ fun AppNav(modifier: Modifier = Modifier, vm: AppViewModel = viewModel()) {
         composable(Route.SETTINGS) { SettingsScreen(vm = vm, onBack = { navController.popBackStack() }) }
 
         composable(Route.OUTPUT_HISTORY) { OutputHistoryScreen(onBack = { navController.popBackStack() }) }
+        composable("library-workbench") {
+            com.localdoc.scanner.ui.home.LibraryWorkbench(vm, { navController.popBackStack() }, { navController.navigate(Route.doc(it)) })
+        }
 
         composable(Route.TOOL) {
             ToolScreen(

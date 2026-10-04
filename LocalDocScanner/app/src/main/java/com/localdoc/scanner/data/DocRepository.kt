@@ -346,21 +346,18 @@ class DocRepository(context: Context) {
     }
 
     suspend fun exportLongImage(docId: String, output: File): Boolean = withContext(Dispatchers.IO) {
-        val bitmaps = dao.getPages(docId).mapNotNull { ImageIo.loadFromFile(File(it.filePath), 1600) }
-        if (bitmaps.isEmpty()) return@withContext false
-        val stitched = Stitch.vertical(bitmaps) ?: return@withContext false
-        val ok = ImageIo.saveJpeg(stitched, output, 90)
-        bitmaps.forEach { it.recycle() }
-        stitched.recycle()
-        ok
+        val files = dao.getPages(docId).map { File(it.filePath) }
+        val stitched = Stitch.verticalFiles(files)
+        try { ImageIo.saveJpeg(stitched, output, 90) } finally { stitched.recycle() }
     }
 
-    suspend fun backupLibrary(uri: Uri): LibraryTransferResult = withContext(Dispatchers.IO) {
+    suspend fun backupLibrary(uri: Uri, password: CharArray? = null): LibraryTransferResult = withContext(Dispatchers.IO) {
         runCatching {
             val docs = dao.getAllDocs()
             var pageCount = 0
             app.contentResolver.openOutputStream(uri, "w")?.use { raw ->
-                ZipOutputStream(raw.buffered()).use { zip ->
+                val output = if (password == null) raw else com.localdoc.scanner.security.EncryptedBackup.output(raw, password)
+                ZipOutputStream(output.buffered()).use { zip ->
                     val root = JSONObject().put("format", 1).put("exportedAt", System.currentTimeMillis())
                     val docsJson = JSONArray()
                     val files = mutableListOf<Pair<String, File>>()
@@ -372,6 +369,7 @@ class DocRepository(context: Context) {
                             val base = "files/d${docIndex}/p${pageIndex}"
                             val source = File(page.sourcePath.ifBlank { page.filePath })
                             val rendered = File(page.filePath)
+                            require(source.isFile && rendered.isFile) { "${doc.title}第${pageIndex + 1}页原图或处理图缺失，未生成完整备份" }
                             val sourceEntry = "$base-source.jpg"
                             val renderedEntry = "$base-rendered.jpg"
                             if (source.exists()) files += sourceEntry to source
@@ -423,26 +421,50 @@ class DocRepository(context: Context) {
         }.getOrElse { LibraryTransferResult(0, 0, false, it.message ?: "备份失败") }
     }
 
+    suspend fun restoreEncryptedLibrary(uri: Uri, password: CharArray): LibraryTransferResult = withContext(Dispatchers.IO) {
+        val verified = File(app.cacheDir, "secure-restore-${UUID.randomUUID()}.zip")
+        try {
+            app.contentResolver.openInputStream(uri)?.use {
+                com.localdoc.scanner.security.EncryptedBackup.decrypt(it, verified, password)
+            } ?: error("无法读取加密备份")
+            restoreLibrary(Uri.fromFile(verified))
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            LibraryTransferResult(0, 0, false, e.message ?: "加密备份恢复失败")
+        } finally { verified.delete() }
+    }
+
     suspend fun restoreLibrary(uri: Uri): LibraryTransferResult = withContext(Dispatchers.IO) {
         val temporary = File(app.cacheDir, "restore-${System.nanoTime()}").apply { mkdirs() }
         val createdDocIds = mutableListOf<String>()
         runCatching {
             var manifest: String? = null
+            val entries = mutableSetOf<String>()
+            var extractedBytes = 0L
             app.contentResolver.openInputStream(uri)?.use { raw ->
                 ZipInputStream(raw.buffered()).use { zip ->
                     while (true) {
                         val entry = zip.nextEntry ?: break
                         val name = entry.name.replace('\\', '/')
-                        require(!entry.isDirectory && !name.contains("..") && (name == "manifest.json" || name.startsWith("files/"))) {
+                        require(!entry.isDirectory && (name == "manifest.json" || name.matches(Regex("files/d\\d+/p\\d+-(source|rendered)\\.jpg"))) && entries.add(name) && entries.size <= 50000) {
                             "备份包含无效路径"
                         }
+                        fun copyBounded(target: OutputStream, limit: Long) {
+                            val buffer = ByteArray(64 * 1024); var entryBytes = 0L
+                            while (true) {
+                                val count = zip.read(buffer); if (count < 0) break
+                                entryBytes += count; extractedBytes += count
+                                require(entryBytes <= limit && extractedBytes <= 8L * 1024 * 1024 * 1024) { "备份内容超过恢复大小限制" }
+                                target.write(buffer, 0, count)
+                            }
+                        }
                         if (name == "manifest.json") {
-                            manifest = zip.readBytes().toString(Charsets.UTF_8)
+                            manifest = java.io.ByteArrayOutputStream().apply { copyBounded(this, 64L * 1024 * 1024) }.toString("UTF-8")
                         } else {
                             val target = File(temporary, name)
                             require(target.canonicalPath.startsWith(temporary.canonicalPath + File.separator)) { "备份路径越界" }
                             target.parentFile?.mkdirs()
-                            target.outputStream().buffered().use { zip.copyTo(it) }
+                            target.outputStream().buffered().use { copyBounded(it, 8L * 1024 * 1024 * 1024) }
                         }
                         zip.closeEntry()
                     }
@@ -479,6 +501,7 @@ class DocRepository(context: Context) {
                 for (pageIndex in 0 until pagesJson.length()) {
                     val page = pagesJson.getJSONObject(pageIndex)
                     val pageId = "${id}_p${pageIndex}_${UUID.randomUUID().toString().take(5)}"
+                    require(page.optString("renderedEntry") in entries && page.optString("sourceEntry").let { it.isBlank() || it in entries }) { "备份清单引用了不存在的文件" }
                     val source = File(temporary, page.optString("sourceEntry"))
                     val rendered = File(temporary, page.optString("renderedEntry"))
                     require(rendered.isFile) { "备份缺少第 ${pageIndex + 1} 页文件" }
@@ -576,7 +599,8 @@ class DocRepository(context: Context) {
             ?: FileStore.legacyPageFile(app, id, 0).takeIf { it.exists() }?.absolutePath,
         folder = folder,
         tags = tags,
-        ocrText = ocrText
+        ocrText = ocrText,
+        createdAt = createdAt
     )
 }
 

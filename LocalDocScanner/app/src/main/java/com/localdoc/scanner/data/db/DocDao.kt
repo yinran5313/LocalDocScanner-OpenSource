@@ -52,6 +52,9 @@ interface DocDao {
     @Update
     suspend fun updatePage(page: PageEntity)
 
+    @Query("UPDATE pages SET ocrText = :text, ocrLayout = :layout, ocrMode = :mode, ocrUpdatedAt = :now, updatedAt = :now WHERE id = :id AND deleted = 0 AND updatedAt = :expected")
+    suspend fun setOcrIfUnchanged(id: String, expected: Long, now: Long, text: String, layout: String, mode: String): Int
+
     @Query("UPDATE pages SET deleted = 1, updatedAt = :updatedAt WHERE id = :pageId")
     suspend fun trashPage(pageId: String, updatedAt: Long)
 

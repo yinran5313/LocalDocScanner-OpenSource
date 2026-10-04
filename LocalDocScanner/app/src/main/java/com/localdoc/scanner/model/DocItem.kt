@@ -10,5 +10,6 @@ data class DocItem(
     val coverPath: String? = null,
     val folder: String? = null,
     val tags: String = "",
-    val ocrText: String = ""
+    val ocrText: String = "",
+    val createdAt: Long = updatedAt
 )
