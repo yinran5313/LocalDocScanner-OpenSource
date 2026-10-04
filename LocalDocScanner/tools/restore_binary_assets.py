@@ -49,4 +49,7 @@ def main():
                 target.parent.mkdir(parents=True,exist_ok=True)
                 with target.open('xb') as out: out.write(data)
     print(f'Restored {len(missing)} verified assets; readable source left intact.')
-if __name__=='__main__': main()
+if __name__=='__main__':
+    main()
+    import subprocess, sys
+    subprocess.check_call([sys.executable, str(project/'tools/restore_ui_font.py')])
