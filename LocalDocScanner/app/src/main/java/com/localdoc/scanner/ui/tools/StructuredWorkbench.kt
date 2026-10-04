@@ -12,6 +12,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.localdoc.scanner.ui.components.ScannerTopBar
 import com.localdoc.scanner.jobs.*
 import com.localdoc.scanner.data.ToolDrafts
 import com.localdoc.scanner.data.FileStore
@@ -108,7 +109,7 @@ internal fun StructuredWorkbench(request: ToolRequest, vm: AppViewModel, onBack:
             finally { submitting = false }
         }
     }
-    Scaffold(modifier, topBar = { TopAppBar(title = { Text(request.tool.label) }, navigationIcon = { TextButton(onClick = onBack) { Text("返回") } }) }) { padding ->
+    Scaffold(modifier, topBar = { ScannerTopBar(request.tool.label, onBack, "识别与人工复核") }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("表格行列和票据字段为识别建议，请对照原图复核。合并单元格和复杂版面需要手工调整。")
             if (!tableOnly) Row {

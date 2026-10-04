@@ -1,20 +1,9 @@
 package com.localdoc.scanner.ui.home
 
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Card
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -22,72 +11,32 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.localdoc.scanner.R
 import com.localdoc.scanner.model.DocItem
+import com.localdoc.scanner.ui.components.AppIcon
 import java.io.File
-
-private const val DOC_COLUMNS = 2
-
-@Composable
-fun DocRow(
-    items: List<DocItem>,
-    onDocClick: (DocItem) -> Unit,
-    onDocLongClick: (DocItem) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Row(modifier = modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        items.forEach { doc ->
-            DocCard(
-                doc = doc,
-                modifier = Modifier.weight(1f),
-                onClick = { onDocClick(doc) },
-                onLongClick = { onDocLongClick(doc) }
-            )
-        }
-        repeat(DOC_COLUMNS - items.size) { Spacer(modifier = Modifier.weight(1f)) }
-    }
-}
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun DocCard(doc: DocItem, modifier: Modifier = Modifier, onClick: () -> Unit, onLongClick: () -> Unit) {
-    Card(modifier = modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            Box(
-                modifier = Modifier.fillMaxWidth().height(96.dp).background(MaterialTheme.colorScheme.surfaceVariant),
-                contentAlignment = Alignment.Center
-            ) {
-                if (doc.coverPath != null) {
-                    AsyncImage(
-                        model = File(doc.coverPath),
-                        contentDescription = doc.title,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else {
-                    Text("${doc.pageCount} 页", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+fun RecentDocumentRow(doc: DocItem, onClick: () -> Unit, onMenu: () -> Unit, modifier: Modifier = Modifier) {
+    Surface(modifier = modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onMenu), shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surface) {
+        Row(Modifier.padding(start = 12.dp, top = 12.dp, bottom = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.size(width = 60.dp, height = 76.dp)) {
+                Box(contentAlignment = Alignment.Center) {
+                    if (doc.coverPath != null) AsyncImage(File(doc.coverPath), null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize().padding(4.dp))
+                    else AppIcon(R.drawable.ic_tool_picture_as_pdf)
                 }
             }
-            Column(modifier = Modifier.padding(8.dp)) {
-                Text(doc.title, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(formatSize(doc.sizeBytes), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text(doc.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text("${doc.pageCount} 页 · ${SimpleDateFormat("MM月dd日", Locale.CHINA).format(Date(doc.updatedAt))}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 val organization = listOfNotNull(doc.folder, doc.tags.takeIf { it.isNotBlank() }).joinToString(" · ")
-                if (organization.isNotBlank()) {
-                    Text(
-                        organization,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
+                if (organization.isNotBlank()) Text(organization, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
+            IconButton(onClick = onMenu) { AppIcon(R.drawable.ic_ui_more, "${doc.title}的操作菜单") }
         }
     }
-}
-
-private fun formatSize(bytes: Long): String {
-    if (bytes <= 0L) return "0 KB"
-    val kb = bytes / 1024.0
-    if (kb < 1024) return "%.0f KB".format(kb)
-    return "%.1f MB".format(kb / 1024.0)
 }

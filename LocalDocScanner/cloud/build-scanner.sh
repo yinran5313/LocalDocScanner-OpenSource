@@ -14,6 +14,7 @@ command -v javac >/dev/null || { printf 'BLOCKED: a full JDK is required.\n'; ex
 [[ -d "$ANDROID_HOME/ndk/29.0.14206865" && -d "$ANDROID_HOME/cmake/3.22.1" ]] || {
   printf 'BLOCKED: install NDK 29.0.14206865 and CMake 3.22.1 with sdkmanager.\n'; exit 2;
 }
+python3 tools/restore_ui_font.py
 python3 tools/restore_office_runtime.py --verify
 mkdir -p cloud-results
 [[ ! -f cloud/assets.sha256 ]] || sha256sum --check cloud/assets.sha256

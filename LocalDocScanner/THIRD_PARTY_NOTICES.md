@@ -73,3 +73,7 @@ The main MIT license does not replace any MPL/other component obligations.
   Project, Apache-2.0. Direct library use for persisted scheduling and the system
   biometric prompt; `AndroidX_Apache-2.0.txt` is bundled. BC also supplies AES-GCM
   backup authentication; the custom envelope is documented in EncryptedBackup.kt.
+
+## UI字体与补充图标
+
+Noto Sans SC来自Google Fonts，OFL-1.1；字体固定版本及SHA256见ui-font.json，许可证见app/src/main/assets/third_party/NotoSansSC_OFL.txt。仅用于界面，PDF原字体保留。Google Material Design Icons（Apache-2.0）的原始path用于新增UI矢量，逐个来源见docs/UI_ICON_SOURCES.json。

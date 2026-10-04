@@ -38,6 +38,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
+import com.localdoc.scanner.R
+import com.localdoc.scanner.ui.components.*
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.text.style.TextOverflow
 import com.localdoc.scanner.model.DocItem
 import com.localdoc.scanner.model.ToolEntry
 
@@ -66,6 +72,8 @@ fun HomeScreen(
     onTrashDoc: (DocItem) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val configuration = LocalConfiguration.current
+    val compactActions = configuration.screenWidthDp < 360 || configuration.fontScale > 1.15f
     var query by rememberSaveable { mutableStateOf("") }
     var confirmDiscard by remember { mutableStateOf(false) }
     var menuDoc by remember { mutableStateOf<DocItem?>(null) }
@@ -77,6 +85,7 @@ fun HomeScreen(
     var confirmTrashDoc by remember { mutableStateOf<DocItem?>(null) }
     var topMenuOpen by remember { mutableStateOf(false) }
     var importMenuOpen by remember { mutableStateOf(false) }
+    var showAllDocs by rememberSaveable { mutableStateOf(false) }
 
     val visibleDocs = remember(docs, query) {
         if (query.isBlank()) docs else docs.filter {
@@ -91,111 +100,82 @@ fun HomeScreen(
         modifier = modifier,
         topBar = {
             TopAppBar(
-                title = {
-                    Column {
-                        Text("本地扫描")
-                        Text("文件只保存在你的手机", style = MaterialTheme.typography.labelSmall)
+                title = { Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("本地扫描", style = MaterialTheme.typography.headlineMedium)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        AppIcon(R.drawable.ic_tool_lock, modifier = Modifier.size(13.dp))
+                        Text("文件留在本机", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                },
+                } },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
                 actions = {
-                    TextButton(onClick = onOutputHistoryClick) { Text("导出记录") }
+                    IconButton(onClick = onOutputHistoryClick) { AppIcon(R.drawable.ic_ui_history, "导出记录") }
                     Box {
-                        TextButton(onClick = { topMenuOpen = true }) { Text("更多") }
+                        IconButton(onClick = { topMenuOpen = true }) { AppIcon(R.drawable.ic_ui_more, "更多操作") }
                         DropdownMenu(expanded = topMenuOpen, onDismissRequest = { topMenuOpen = false }) {
                             DropdownMenuItem(text = { Text("回收站") }, onClick = { topMenuOpen = false; onTrashClick() })
-                            DropdownMenuItem(text = { Text("内部文件 / 空间") }, onClick = { topMenuOpen = false; onStorage() })
+                            DropdownMenuItem(text = { Text("内部文件与空间") }, onClick = { topMenuOpen = false; onStorage() })
                             DropdownMenuItem(text = { Text("设置") }, onClick = { topMenuOpen = false; onSettingsClick() })
                         }
                     }
                 }
             )
         },
-        bottomBar = {
-            Surface(tonalElevation = 3.dp, shadowElevation = 5.dp) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Button(
-                        onClick = if (draftCount > 0) onResumeDraft else onCaptureClick,
-                        modifier = Modifier.weight(1.25f)
-                    ) {
-                        Text(if (draftCount > 0) "继续扫描 · $draftCount 页" else "扫描")
-                    }
-                    OutlinedButton(onClick = { importMenuOpen = true }, modifier = Modifier.weight(1f)) { Text("导入/打开") }
-                }
+        bottomBar = { ActionDock {
+            Button(onClick = if (draftCount > 0) onResumeDraft else onCaptureClick,
+                modifier = Modifier.weight(1.35f).heightIn(min = 54.dp), shape = MaterialTheme.shapes.medium) {
+                if (!compactActions) { AppIcon(R.drawable.ic_ui_camera); Spacer(Modifier.width(8.dp)) }
+                Text(if (draftCount > 0) "继续扫描" else "拍照扫描", maxLines = 1)
             }
-        }
+            OutlinedButton(onClick = { importMenuOpen = true }, modifier = Modifier.weight(1f).heightIn(min = 54.dp), shape = MaterialTheme.shapes.medium) {
+                if (!compactActions) { AppIcon(R.drawable.ic_ui_folder); Spacer(Modifier.width(6.dp)) }; Text(if (compactActions) "导入" else "导入 / 打开", maxLines = 1)
+            }
+        } }
     ) { padding ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
+        LazyColumn(modifier = Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             item {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("搜索名称、文件夹、标签或识别文字") },
-                    singleLine = true,
-                    shape = RoundedCornerShape(18.dp)
-                )
-                TextButton(onClick = onToolTasks) { Text("工具任务 / 续跑") }
-                TextButton(onClick = onLibraryWorkbench) { Text("全文检索 / 批量归档") }
+                OutlinedTextField(value = query, onValueChange = { query = it }, modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("搜索文档或识别文字", style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    leadingIcon = { AppIcon(R.drawable.ic_ui_search) },
+                    trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { AppIcon(R.drawable.ic_ui_close, "清除搜索") } },
+                    singleLine = true, shape = MaterialTheme.shapes.medium,
+                    colors = OutlinedTextFieldDefaults.colors(unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant, unfocusedContainerColor = MaterialTheme.colorScheme.surface, focusedContainerColor = MaterialTheme.colorScheme.surface))
             }
+            item { Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                HomeQuickAction("工具任务", "查看进度 · 继续处理", R.drawable.ic_ui_play, onToolTasks, Modifier.weight(1f))
+                HomeQuickAction("文档整理", "全文搜索 · 批量归档", R.drawable.ic_ui_folder, onLibraryWorkbench, Modifier.weight(1f))
+            } }
             if (draftProblem.isNotBlank()) item {
-                Text(draftProblem, color = MaterialTheme.colorScheme.error)
-                Row {
-                    Button(onClick = onBackupDraft) { Text("备份草稿原始文件") }
-                    TextButton(onClick = { confirmDiscard = true }) { Text("明确放弃草稿") }
-                }
-            }
-            if (draftCount > 0) {
-                item {
-                    Surface(
-                        onClick = onResumeDraft,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.secondaryContainer
-                    ) {
-                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("未完成的扫描", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                            Text("已保留 $draftCount 页，退出应用后仍可继续", color = MaterialTheme.colorScheme.onSecondaryContainer)
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Button(onClick = onResumeDraft, modifier = Modifier.weight(1f)) { Text("继续整理") }
-                                TextButton(onClick = { confirmDiscard = true }) { Text("放弃草稿") }
-                            }
-                        }
+                Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.errorContainer) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("草稿需要处理", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onErrorContainer)
+                        Text(draftProblem, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
+                        Row { TextButton(onClick = onBackupDraft) { Text("备份原始文件") }; TextButton(onClick = { confirmDiscard = true }) { Text("放弃草稿") } }
                     }
                 }
             }
-            item { Text("文档工具", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) }
+            if (draftCount > 0) item {
+                Surface(onClick = onResumeDraft, shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.primaryContainer) {
+                    Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) { Text("还有 $draftCount 页待整理", style = MaterialTheme.typography.titleSmall); Text("草稿已保留，点此继续", style = MaterialTheme.typography.bodySmall) }
+                        TextButton(onClick = { confirmDiscard = true }) { Text("放弃") }
+                        AppIcon(R.drawable.ic_chevron_right)
+                    }
+                }
+            }
+            item { SectionHeading(if (query.isBlank()) "最近文档" else "搜索结果") {
+                if (query.isBlank() && visibleDocs.size > 3) TextButton(onClick = { showAllDocs = !showAllDocs }) { Text(if (showAllDocs) "收起" else "查看全部 · ${visibleDocs.size}") }
+                else Text("${visibleDocs.size} 份", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } }
+            if (visibleDocs.isEmpty()) item {
+                InfoCard(if (query.isBlank()) "你的文件，从这里开始" else "没有找到匹配文档",
+                    if (query.isBlank()) "扫描纸张，或打开已有的图片、PDF和Office文件。" else "试试名称、文件夹、标签或识别文字中的关键词。", R.drawable.ic_ui_folder)
+            }
+            items(if (showAllDocs || query.isNotBlank()) visibleDocs else visibleDocs.take(3), key = { it.id }) { doc ->
+                RecentDocumentRow(doc, onClick = { onDocClick(doc) }, onMenu = { menuDoc = doc })
+            }
+            item { SectionHeading("文档工具") { Text("按用途分组", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
             item { ToolGrid(onToolClick = onToolClick) }
-            item {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("最近文档", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Text("${visibleDocs.size} 份", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-            if (visibleDocs.isEmpty()) {
-                item {
-                    Box(Modifier.fillMaxWidth().padding(vertical = 36.dp), contentAlignment = Alignment.Center) {
-                        Text(
-                            if (query.isBlank()) "还没有文档，用下方按钮开始扫描或导入" else "没有找到匹配的文档",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            } else {
-                items(visibleDocs.chunked(2)) { row ->
-                    DocRow(items = row, onDocClick = onDocClick, onDocLongClick = { menuDoc = it })
-                }
-            }
         }
     }
 
@@ -345,5 +325,15 @@ fun HomeScreen(
             },
             dismissButton = { TextButton(onClick = { confirmDiscard = false }) { Text("继续保留") } }
         )
+    }
+}
+
+@Composable
+private fun HomeQuickAction(title: String, subtitle: String, icon: Int, onClick: () -> Unit, modifier: Modifier) {
+    Surface(onClick = onClick, modifier = modifier, shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surface) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            AppIcon(icon)
+            Column { Text(title, style = MaterialTheme.typography.titleSmall); Text(subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
     }
 }
