@@ -54,6 +54,15 @@ class OcrResumeInstrumentedTest {
             val dao = AppDatabase.get(context).docDao()
             assertEquals(0, dao.setOcrIfUnchanged(pages[0].id, -1, 1, "旧任务", "", "tiny"))
             assertEquals("第一张完成", dao.getPage(pages[0].id)?.ocrText)
+            dao.renameDoc(docId, "新名称", 1)
+            dao.organizeDoc(docId, "新文件夹", "新标签", 2)
+            dao.setDocOcr(docId, "后台OCR", 3)
+            dao.setDocMeta(docId, 2, 100, "封面", 4)
+            val document = dao.getDoc(docId)!!
+            assertEquals("新名称", document.title)
+            assertEquals("新文件夹", document.folder)
+            assertEquals("新标签", document.tags)
+            assertEquals("后台OCR", document.ocrText)
         } finally { repo.deleteForever(docId); input.delete(); OcrCheckpointStore.file(OcrJobs.root(context), id).delete() }
     }
 }

@@ -60,6 +60,7 @@ class DocumentOcrWorker(context: Context, parameters: WorkerParameters) : Corout
                 // Yield before WorkManager's normal execution limit; committed pages are reused.
                 if (android.os.SystemClock.elapsedRealtime() - started > 240000 && index < job.pages.lastIndex) return Result.retry()
             }
+            repo.rebuildDocumentOcr(job.docId)
             val failures = job.pages.filterNot { it.done }
             val data = workDataOf("done" to job.pages.count { it.done }, "total" to job.pages.size,
                 "failed" to failures.size, "error" to failures.joinToString("；") { "${job.pages.indexOf(it) + 1}页：${it.error}" }.take(1800))

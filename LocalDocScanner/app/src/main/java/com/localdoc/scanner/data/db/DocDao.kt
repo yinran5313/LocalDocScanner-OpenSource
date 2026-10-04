@@ -28,6 +28,15 @@ interface DocDao {
     @Update
     suspend fun updateDoc(doc: DocEntity)
 
+    @Query("UPDATE docs SET title = :title, updatedAt = :now WHERE id = :id")
+    suspend fun renameDoc(id: String, title: String, now: Long)
+    @Query("UPDATE docs SET folder = :folder, tags = :tags, updatedAt = :now WHERE id = :id")
+    suspend fun organizeDoc(id: String, folder: String?, tags: String, now: Long)
+    @Query("UPDATE docs SET ocrText = :text, updatedAt = :now WHERE id = :id")
+    suspend fun setDocOcr(id: String, text: String, now: Long)
+    @Query("UPDATE docs SET pageCount = :count, sizeBytes = :bytes, coverPath = :cover, updatedAt = :now WHERE id = :id")
+    suspend fun setDocMeta(id: String, count: Int, bytes: Long, cover: String, now: Long)
+
     @Query("UPDATE docs SET deleted = 1 WHERE id = :id")
     suspend fun moveToTrash(id: String)
 

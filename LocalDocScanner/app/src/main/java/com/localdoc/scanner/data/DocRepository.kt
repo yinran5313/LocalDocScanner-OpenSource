@@ -228,29 +228,20 @@ class DocRepository(context: Context) {
     }
 
     suspend fun rename(docId: String, title: String) = withContext(Dispatchers.IO) {
-        val doc = dao.getDoc(docId) ?: return@withContext
-        dao.updateDoc(doc.copy(title = title, updatedAt = System.currentTimeMillis()))
+        dao.renameDoc(docId, title, System.currentTimeMillis())
     }
 
     suspend fun setOrganization(docId: String, folder: String?, tags: String) = withContext(Dispatchers.IO) {
-        val doc = dao.getDoc(docId) ?: return@withContext
         val normalizedTags = tags.split(',', '，', ';', '；')
             .map { it.trim() }
             .filter { it.isNotBlank() }
             .distinct()
             .joinToString(",")
-        dao.updateDoc(
-            doc.copy(
-                folder = folder?.trim()?.takeIf { it.isNotBlank() },
-                tags = normalizedTags,
-                updatedAt = System.currentTimeMillis()
-            )
-        )
+        dao.organizeDoc(docId, folder?.trim()?.takeIf { it.isNotBlank() }, normalizedTags, System.currentTimeMillis())
     }
 
     suspend fun setOcrText(docId: String, text: String) = withContext(Dispatchers.IO) {
-        val doc = dao.getDoc(docId) ?: return@withContext
-        dao.updateDoc(doc.copy(ocrText = text, updatedAt = System.currentTimeMillis()))
+        dao.setDocOcr(docId, text, System.currentTimeMillis())
     }
 
     suspend fun setPageOcr(pageId: String, text: String, mode: String, boxes: List<com.localdoc.scanner.ocr.OcrTextBox> = emptyList()) = withContext(Dispatchers.IO) {
@@ -270,8 +261,7 @@ class DocRepository(context: Context) {
         val combined = dao.getPages(docId).mapIndexedNotNull { index, page ->
             page.ocrText.trim().takeIf { it.isNotBlank() }?.let { "【第 ${index + 1} 页】\n$it" }
         }.joinToString("\n\n")
-        val doc = dao.getDoc(docId)
-        if (doc != null) dao.updateDoc(doc.copy(ocrText = combined, updatedAt = System.currentTimeMillis()))
+        dao.setDocOcr(docId, combined, System.currentTimeMillis())
         combined
     }
 
@@ -573,17 +563,10 @@ class DocRepository(context: Context) {
     }
 
     private suspend fun refreshMeta(docId: String) {
-        val doc = dao.getDoc(docId) ?: return
+        if (dao.getDoc(docId) == null) return
         val pages = dao.getPages(docId)
         val size = FileStore.docDir(app, docId).walkTopDown().filter { it.isFile }.sumOf { it.length() }
-        dao.updateDoc(
-            doc.copy(
-                pageCount = pages.size,
-                updatedAt = System.currentTimeMillis(),
-                sizeBytes = size,
-                coverPath = pages.firstOrNull()?.filePath.orEmpty()
-            )
-        )
+        dao.setDocMeta(docId, pages.size, size, pages.firstOrNull()?.filePath.orEmpty(), System.currentTimeMillis())
     }
 
     private fun uniquePageId(docId: String): String =
