@@ -7,13 +7,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.localdoc.scanner.pdf.PdfFormField
+import com.localdoc.scanner.ui.components.WrappingOptions
 
 @Composable
 internal fun PdfFormEditor(fields: List<PdfFormField>, values: Map<String, String>, onChange: (String, String) -> Unit) {
     var page by rememberSaveable { mutableIntStateOf(0) }
     val pages = ((fields.size + 19) / 20).coerceAtLeast(1)
     val currentPage = page.coerceIn(0, pages - 1)
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+    WrappingOptions {
         TextButton(onClick = { page-- }, enabled = currentPage > 0) { Text("前20项") }
         Text("${fields.size}项 · ${currentPage + 1}/$pages")
         TextButton(onClick = { page++ }, enabled = currentPage + 1 < pages) { Text("后20项") }

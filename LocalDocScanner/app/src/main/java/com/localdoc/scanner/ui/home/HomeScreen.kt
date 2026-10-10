@@ -76,8 +76,6 @@ fun HomeScreen(
     modifier: Modifier = Modifier,
     onFavoriteDoc: (DocItem) -> Unit = {}
 ) {
-    val configuration = LocalConfiguration.current
-    val compactActions = configuration.screenWidthDp < 360 || configuration.fontScale > 1.15f
     val context = androidx.compose.ui.platform.LocalContext.current
     val preferences = remember { com.localdoc.scanner.data.AppPreferences(context) }
     val sort by com.localdoc.scanner.data.rememberPreference("sort", "updated")
@@ -117,13 +115,15 @@ fun HomeScreen(
                         Image(painterResource(R.drawable.brand_mark), null, Modifier.size(40.dp).padding(4.dp))
                     }
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(stringResource(R.string.app_name), style = MaterialTheme.typography.headlineMedium)
+                    Text(stringResource(R.string.app_name), style = MaterialTheme.typography.headlineMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                        AppIcon(R.drawable.ic_tool_lock, modifier = Modifier.size(13.dp))
-                        Text("文件留在本机", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (androidx.compose.ui.platform.LocalDensity.current.fontScale <= 1.5f)
+                            AppIcon(R.drawable.ic_tool_lock, modifier = Modifier.size(13.dp))
+                        Text("文件留在本机", style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 } } },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
+                expandedHeight = readableTopBarHeight(listOf(MaterialTheme.typography.headlineMedium, MaterialTheme.typography.labelSmall)),
                 actions = {
                     IconButton(onClick = onOutputHistoryClick) { AppIcon(R.drawable.ic_ui_history, "导出记录") }
                     Box {
@@ -138,14 +138,10 @@ fun HomeScreen(
             )
         },
         bottomBar = { ActionDock {
-            Button(onClick = if (draftCount > 0) onResumeDraft else onCaptureClick,
-                modifier = Modifier.weight(1.35f).heightIn(min = 54.dp), shape = MaterialTheme.shapes.medium) {
-                if (!compactActions) { AppIcon(R.drawable.ic_ui_camera); Spacer(Modifier.width(8.dp)) }
-                Text(if (draftCount > 0) "继续扫描" else "拍照扫描", maxLines = 1)
-            }
-            OutlinedButton(onClick = { importMenuOpen = true }, modifier = Modifier.weight(1f).heightIn(min = 54.dp), shape = MaterialTheme.shapes.medium) {
-                if (!compactActions) { AppIcon(R.drawable.ic_ui_folder); Spacer(Modifier.width(6.dp)) }; Text(if (compactActions) "导入" else "导入 / 打开", maxLines = 1)
-            }
+            AdaptiveActions(listOf(
+                DockAction(if (draftCount > 0) "继续扫描" else "拍照扫描", if (draftCount > 0) onResumeDraft else onCaptureClick, R.drawable.ic_ui_camera),
+                DockAction("导入 / 打开", { importMenuOpen = true }, R.drawable.ic_ui_folder, ActionStyle.OUTLINED)
+            ))
         } }
     ) { padding ->
         LazyColumn(modifier = Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {

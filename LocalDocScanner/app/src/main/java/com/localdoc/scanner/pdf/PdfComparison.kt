@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
 import com.localdoc.scanner.export.PdfExporter
 import com.localdoc.scanner.util.ImageIo
 import java.io.File
@@ -56,8 +57,25 @@ object PdfComparison {
                     }
                 } finally { combined.recycle(); a?.recycle(); b?.recycle() }
             }
-            if (images.isNotEmpty()) check(output.outputStream().use { PdfExporter.exportFiles(images, it, PdfExporter.PageSize.FIT_IMAGE, 2400) }) { "无法导出差异预览" }
-            return images.size to notes
+            val changedPages = images.size
+            if (images.isEmpty()) {
+                // A successful zero-difference comparison still needs a real, previewable
+                // result file so the task checkpoint/export path can complete normally.
+                val summary = Bitmap.createBitmap(1200, 360, Bitmap.Config.ARGB_8888)
+                try {
+                    Canvas(summary).apply {
+                        drawColor(Color.WHITE)
+                        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK; textSize = 48f }
+                        drawText("PDF 对比完成：未发现页面显示差异", 48f, 110f, paint)
+                        paint.textSize = 34f
+                        drawText("共核查 ${maxOf(aCount, bCount)} 页 · 按页码对齐", 48f, 210f, paint)
+                    }
+                    val image = File(temporary, "summary.jpg")
+                    check(ImageIo.saveJpeg(summary, image, 94)); images += image
+                } finally { summary.recycle() }
+            }
+            check(output.outputStream().use { PdfExporter.exportFiles(images, it, PdfExporter.PageSize.FIT_IMAGE, 2400) }) { "无法导出差异预览" }
+            return changedPages to notes
         } finally { temporary.listFiles()?.forEach { it.delete() }; temporary.delete() }
     }
 }

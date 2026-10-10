@@ -211,16 +211,15 @@ internal fun ToolFlow(
             ActionDock {
                 when (stage) {
                     0 -> {
-                        Button(onClick = { start() }, enabled = !busy, modifier = Modifier.weight(1f).heightIn(min = 52.dp), shape = MaterialTheme.shapes.medium) { Text(runLabel) }
-                        TextButton(onClick = onBack, modifier = Modifier.weight(1f)) { Text("取消") }
+                        AdaptiveActions(listOf(DockAction(runLabel, { start() }, enabled = !busy), DockAction("取消", onBack, style = ActionStyle.TEXT)))
                     }
                     1 -> {
-                        TextButton(onClick = { taskId?.let { scope.launch { ToolTasks.pause(context, it) } } }) { Text("暂停并保留进度") }
-                        TextButton(onClick = onBack) { Text("返回，后台继续") }
+                        AdaptiveActions(listOf(
+                            DockAction("暂停并保留进度", { taskId?.let { scope.launch { ToolTasks.pause(context, it) } } }, style = ActionStyle.TEXT),
+                            DockAction("返回，后台继续", onBack, style = ActionStyle.TEXT)))
                     }
                     else -> {
                         val o = outcome
-                        if(com.localdoc.scanner.data.AppPreferences(context).text("destination").isNotBlank()) TextButton(onClick={ saveToPhone(o?.files.orEmpty(), false) },enabled=!busy) { Text("另选位置") }
                         Button(onClick = { saveToPhone(o?.files.orEmpty()) }, enabled = !busy && !o?.files.isNullOrEmpty(), modifier = Modifier.weight(1f).heightIn(min = 52.dp), shape = MaterialTheme.shapes.medium) {
                             Text(if (busy) "保存中…" else "保存到手机")
                         }
@@ -297,6 +296,7 @@ internal fun ToolFlow(
                 }, style = MaterialTheme.typography.titleMedium)
                 if (o != null) {
                     if (o.files.isNotEmpty()) {
+                        if(com.localdoc.scanner.data.AppPreferences(context).text("destination").isNotBlank()) TextButton(onClick={ saveToPhone(o.files, false) },enabled=!busy) { Text("另选保存位置") }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             FilterChip(!showInputAfterProcessing, { showInputAfterProcessing = false }, label = { Text("处理结果") })
                             FilterChip(showInputAfterProcessing, { showInputAfterProcessing = true }, label = { Text("原文件") })

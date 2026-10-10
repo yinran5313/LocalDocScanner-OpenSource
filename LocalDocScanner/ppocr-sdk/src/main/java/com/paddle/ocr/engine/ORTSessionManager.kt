@@ -18,9 +18,13 @@ import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
 import android.content.Context
+import android.os.Build
 import com.paddle.ocr.EngineConfig
 import com.paddle.ocr.model.OCRError
 import java.nio.FloatBuffer
+import java.io.File
+import java.io.IOException
+import java.security.MessageDigest
 
 class ORTSessionManager(
     private val context: Context,
@@ -43,15 +47,13 @@ class ORTSessionManager(
         }
         try {
             val ortEnv = env ?: throw OCRError.ModelLoadFailed("OCR", Exception("Environment not initialized"))
-            val detBytes = readModelAsset(detAssetPath)
-            val recBytes = readModelAsset(recAssetPath)
             try {
-                detSession = ortEnv.createSession(detBytes, opts)
+                detSession = ortEnv.createSession(modelFile(detAssetPath).absolutePath, opts)
             } catch (t: Throwable) {
                 throw OCRError.ModelLoadFailed("detection", t)
             }
             try {
-                recSession = ortEnv.createSession(recBytes, opts)
+                recSession = ortEnv.createSession(modelFile(recAssetPath).absolutePath, opts)
             } catch (t: Throwable) {
                 detSession?.close()
                 detSession = null
@@ -69,6 +71,9 @@ class ORTSessionManager(
                 throw OCRError.ModelLoadFailed("recognition", t)
             }
             coldLoadTimeMs = System.currentTimeMillis() - loadStart
+        } catch (t: Throwable) {
+            release()
+            throw t
         } finally {
             opts.close()
         }
@@ -104,13 +109,39 @@ class ORTSessionManager(
         }
     }
 
-    private fun readModelAsset(assetPath: String): ByteArray {
-        return try {
-            context.assets.open(assetPath).use { it.readBytes() }
-        } catch (t: Throwable) {
-            throw OCRError.ModelNotFound(assetPath, t)
+    // ORT supports a file path directly. Streaming assets to codeCache avoids keeping
+    // the detection model, recognition model and readBytes copies on the Java heap.
+    private fun modelFile(assetPath: String): File = synchronized(modelCacheLock) {
+        val info = context.packageManager.getPackageInfo(context.packageName, 0)
+        @Suppress("DEPRECATION")
+        val version = if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
+        val directory = File(context.codeCacheDir, "ocr-models-v$version").apply {
+            if (!isDirectory && !mkdirs()) throw IOException("Cannot create OCR model cache")
         }
+        val key = MessageDigest.getInstance("SHA-256").digest(assetPath.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+        val output = File(directory, "$key.onnx")
+        val asset = try { context.assets.open(assetPath) }
+            catch (e: IOException) { throw OCRError.ModelNotFound(assetPath, e) }
+        asset.use { input ->
+            val expectedLength = try { context.assets.openFd(assetPath).use { it.length } }
+                catch (_: IOException) { -1L }
+            if (output.length() > 0 && (expectedLength < 0 || output.length() == expectedLength)) {
+                return@synchronized output
+            }
+            val temporary = File.createTempFile("model-", ".tmp", directory)
+            try {
+                val copied = temporary.outputStream().use { input.copyTo(it, 64 * 1024) }
+                if (copied == 0L || (expectedLength >= 0 && copied != expectedLength)) {
+                    throw IOException("Incomplete OCR model: $assetPath")
+                }
+                if (!temporary.renameTo(output)) throw IOException("Cannot commit OCR model: $assetPath")
+            } finally { temporary.delete() }
+        }
+        output
     }
+
+    companion object { private val modelCacheLock = Any() }
 
     private fun runSession(
         ortEnv: OrtEnvironment,

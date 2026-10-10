@@ -42,6 +42,8 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.localdoc.scanner.ui.components.WrappingOptions
+import com.localdoc.scanner.util.DisplayNames
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -54,6 +56,24 @@ fun OutputHistoryScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     var records by remember { mutableStateOf<List<com.localdoc.scanner.output.OutputRecord>>(emptyList()) }
     androidx.compose.runtime.LaunchedEffect(Unit) { records = withContext(Dispatchers.IO) { OutputHistoryStore.all(context) } }
     var officeEngine by remember { mutableStateOf(OfficeEngineBridge.installed(context)) }
+    var pendingSaveJson by rememberSaveable { mutableStateOf("") }
+    val saveCopy = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
+        val record = runCatching { com.localdoc.scanner.data.ToolDrafts.gson.fromJson(pendingSaveJson, com.localdoc.scanner.output.OutputRecord::class.java) }.getOrNull()
+        pendingSaveJson = ""
+        if (uri != null && record != null) scope.launch {
+            busy = true
+            try {
+                status = withContext(Dispatchers.IO) {
+                    OutputHistoryStore.saveCopy(context, record, uri)
+                    "已保存：${OutputHistoryStore.describeDestination(context, uri)}"
+                }
+                records = withContext(Dispatchers.IO) { OutputHistoryStore.all(context) }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                status = "保存失败：${e.message}；原副本仍保留"
+            } finally { busy = false }
+        }
+    }
     val editor = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val record = runCatching { com.localdoc.scanner.data.ToolDrafts.gson.fromJson(pendingJson, com.localdoc.scanner.output.OutputRecord::class.java) }.getOrNull()
         if (record != null) scope.launch {
@@ -109,7 +129,7 @@ fun OutputHistoryScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                 val officeFormat = OfficeFormats.detect(record.name, record.mime)
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(record.name, style = MaterialTheme.typography.titleSmall)
+                        Text(DisplayNames.readable(record.name), style = MaterialTheme.typography.titleSmall)
                         Text("${formatSize(record.size)} · ${formatTime(record.createdAt)}", style = MaterialTheme.typography.bodySmall)
                         Text(
                             if (record.savedUri.isNotBlank()) "已保存：${record.savedLabel}" else "应用内部结果，尚未保存到手机",
@@ -168,10 +188,16 @@ fun OutputHistoryScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                             else -> "打开"
                         }) }
                         if (!isFolder) {
+                            WrappingOptions {
+                            TextButton(onClick = {
+                                pendingSaveJson = com.localdoc.scanner.data.ToolDrafts.gson.toJson(record)
+                                saveCopy.launch(DisplayNames.readable(record.name))
+                            }, enabled = !busy && (internal.isFile || record.savedUri.isNotBlank())) { Text("另存到手机") }
                             TextButton(onClick = {
                                 if (record.savedUri.isNotBlank()) Share.uri(context, Uri.parse(record.savedUri), record.mime)
                                 else if (internal.isFile) Share.file(context, internal, record.mime)
                             }, enabled = !busy) { Text("分享") }
+                            }
                         }
                     }
                 }

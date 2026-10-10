@@ -6,7 +6,7 @@ android {
     ndkVersion = "29.0.14206865"
     defaultConfig {
         minSdk = 26
-        ndk { abiFilters += "arm64-v8a" }
+        ndk { abiFilters += providers.gradleProperty("auditAbi").orNull ?: "arm64-v8a" }
         externalNativeBuild { cmake { arguments += "-DANDROID_STL=none" } }
     }
     externalNativeBuild { cmake {

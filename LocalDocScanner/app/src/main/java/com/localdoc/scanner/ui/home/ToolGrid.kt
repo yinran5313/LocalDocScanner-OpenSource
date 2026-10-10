@@ -33,11 +33,12 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.ui.platform.LocalDensity
 import com.localdoc.scanner.R
 import com.localdoc.scanner.model.TOOL_ENTRIES
 import com.localdoc.scanner.model.ToolEntry
 
-private const val COLUMNS = 3
 private val toolsById = TOOL_ENTRIES.associateBy { it.id }
 
 private data class ToolGroup(val id: String, val title: String, val toolIds: List<String>)
@@ -96,18 +97,22 @@ fun ToolGrid(onToolClick: (ToolEntry) -> Unit, modifier: Modifier = Modifier) {
 
 @Composable
 private fun ToolRows(tools: List<ToolEntry>, onToolClick: (ToolEntry) -> Unit) {
+    val fontScale = LocalDensity.current.fontScale
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+    val columns = (maxWidth.value / (104f * fontScale.coerceAtLeast(1f))).toInt().coerceIn(1, 5)
     Column(
         modifier = Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 4.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        tools.chunked(COLUMNS).forEach { rowTools ->
+        tools.chunked(columns).forEach { rowTools ->
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 rowTools.forEach { tool ->
                     ToolCard(tool = tool, modifier = Modifier.weight(1f), onClick = { onToolClick(tool) })
                 }
-                repeat(COLUMNS - rowTools.size) { Spacer(modifier = Modifier.weight(1f)) }
+                repeat(columns - rowTools.size) { Spacer(modifier = Modifier.weight(1f)) }
             }
         }
+    }
     }
 }
 
@@ -137,7 +142,7 @@ private fun ToolCard(tool: ToolEntry, modifier: Modifier = Modifier, onClick: ()
                 )
             }
             Spacer(modifier = Modifier.height(8.dp))
-            Text(tool.label, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center, maxLines = 2)
+            Text(tool.label, modifier = Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
         }
     }
 }

@@ -105,6 +105,36 @@ object OutputHistoryStore {
         record
     }
 
+    /** Save either an internal result or a previously saved provider document. Keep the original
+     * history entry and its working copy, including when the provider only exposes a URI. */
+    fun saveCopy(context: Context, record: OutputRecord, uri: Uri) {
+        val internal = File(record.internalPath)
+        val sameInternal = internal.isFile && runCatching {
+            androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", internal) == uri
+        }.getOrDefault(false)
+        if (!sameInternal && (internal.isFile || uri.toString() != record.savedUri)) {
+            val input = if (internal.isFile) internal.inputStream() else {
+                require(record.savedUri.isNotBlank()) { "原文件已不存在" }
+                context.contentResolver.openInputStream(Uri.parse(record.savedUri)) ?: error("无法读取原文件")
+            }
+            input.use { source ->
+                context.contentResolver.openOutputStream(uri, "w")?.use { destination -> source.copyTo(destination) }
+                    ?: error("无法写入保存位置")
+            }
+        }
+        runCatching { context.contentResolver.takePersistableUriPermission(uri,
+            android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
+        synchronized(lock) {
+            val current = allUnlocked(context).toMutableList()
+            val index = current.indexOfFirst { it.id == record.id }
+            require(index >= 0) { "导出记录已不存在" }
+            current[index] = current[index].copy(name = displayName(context, uri).ifBlank { record.name },
+                savedUri = uri.toString(), savedLabel = describeDestination(context, uri),
+                size = querySize(context, uri), createdAt = System.currentTimeMillis())
+            write(context, current)
+        }
+    }
+
     fun describeDestination(context: Context, uri: Uri): String {
         val provider = uri.authority?.let { authority ->
             context.packageManager.resolveContentProvider(authority, 0)?.loadLabel(context.packageManager)?.toString()

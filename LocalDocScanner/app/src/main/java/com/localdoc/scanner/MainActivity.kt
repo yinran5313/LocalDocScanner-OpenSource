@@ -29,9 +29,11 @@ class MainActivity : FragmentActivity() {
         enableEdgeToEdge()
         setContent {
             LocalDocScannerTheme {
-                androidx.compose.runtime.key(unlockSerial) {
-                    LockGate(onUnlocked = { if (unlockOnly) unlockReturned() }) {
-                        if (unlockOnly) androidx.compose.runtime.LaunchedEffect(Unit) { unlockReturned() } else AppNav()
+                com.localdoc.scanner.ui.components.AppSafeFrame {
+                    androidx.compose.runtime.key(unlockSerial) {
+                        LockGate(onUnlocked = { if (unlockOnly) unlockReturned() }) {
+                            if (unlockOnly) androidx.compose.runtime.LaunchedEffect(Unit) { unlockReturned() } else AppNav()
+                        }
                     }
                 }
             }

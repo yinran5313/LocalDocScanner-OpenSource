@@ -58,6 +58,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.security.MessageDigest
+import com.localdoc.scanner.ui.components.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -340,45 +341,30 @@ fun ExternalFileScreen(
                     onShare = ::shareCurrent,
                     onDetect = { engineInfo = OfficeEngineBridge.installed(context) }
                 )
-                else -> Row(
-                    modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
+                else -> ActionDock { Column(Modifier.fillMaxWidth()) {
+                    val mainActions = buildList {
                     if (textContent != null) {
-                        Button(
-                            onClick = {
+                        add(DockAction("另存修改副本", {
                                 val base = displayName.substringBeforeLast('.', displayName)
                                 saveCopy.launch("${base}_修改.$extension")
-                            },
-                            enabled = !busy,
-                            modifier = Modifier.weight(1f)
-                        ) { Text("另存修改副本") }
+                            }, enabled = !busy))
                     }
                     if (isPdf && localFile != null) {
-                        Button(
-                            onClick = {
-                                val file = localFile ?: return@Button
+                        add(DockAction("编辑副本", {
+                                val file = localFile
+                                if (file != null)
                                 scope.launch { com.localdoc.scanner.data.ToolDrafts.forget(context, externalDraft); onEditPdf(file, displayName) }
-                            },
-                            enabled = !busy,
-                            modifier = Modifier.weight(1f)
-                        ) { Text("编辑副本") }
-                        TextButton(onClick = { saveCopy.launch(displayName) }) { Text("保存") }
-                        Box {
-                            var pdfMenu by remember { mutableStateOf(false) }
-                            androidx.compose.material3.IconButton(onClick = { pdfMenu = true }) { com.localdoc.scanner.ui.components.AppIcon(com.localdoc.scanner.R.drawable.ic_ui_more, "文件操作") }
-                            androidx.compose.material3.DropdownMenu(pdfMenu, { pdfMenu = false }) {
-                                com.localdoc.scanner.ui.components.SaveDefaultButton(listOf(localFile!!)) { status = it; pdfMenu=false }
-                                androidx.compose.material3.DropdownMenuItem(text = { Text("打印") }, onClick = { pdfMenu=false; printPdf(context,localFile!!,displayName) })
-                            }
-                        }
+                            }, enabled = !busy))
                     }
-                    TextButton(
-                        onClick = ::shareCurrent,
-                        enabled = !busy && localFile != null,
-                        modifier = Modifier.weight(1f)
-                    ) { Text("分享副本") }
-                }
+                    if (textContent == null) add(DockAction("保存到手机", { saveCopy.launch(displayName) }, style = ActionStyle.OUTLINED, enabled = !busy && localFile != null))
+                    }
+                    AdaptiveActions(mainActions)
+                    WrappingOptions {
+                        TextButton(onClick = ::shareCurrent, enabled = !busy && localFile != null) { AppIcon(com.localdoc.scanner.R.drawable.ic_ui_share); Text("分享副本") }
+                        if (isPdf && localFile != null) TextButton(onClick = { printPdf(context,localFile!!,displayName) }, enabled = !busy) { Text("打印") }
+                        localFile?.let { SaveDefaultButton(listOf(it)) { status = it } }
+                    }
+                } }
             }
         }
     ) { padding ->
@@ -438,15 +424,11 @@ private fun OfficeBottomBar(
 ) {
     Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         if (engine?.embedded == true) TextButton(onClick = onExportPdf, enabled = enabled) { Text("转PDF并选择保存位置") }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = onFullEdit, enabled = enabled, modifier = Modifier.weight(1f)) {
-                Text(if (engine == null) "安装完整引擎" else "完整Office编辑")
-            }
-            Button(onClick = onSave, enabled = enabled, modifier = Modifier.weight(1f)) { Text("保存到手机") }
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton(onClick = onShare, enabled = enabled, modifier = Modifier.weight(1f)) { Text("分享工作副本") }
-            if (engine == null) TextButton(onClick = onDetect, modifier = Modifier.weight(1f)) { Text("安装后重新检测") }
+        AdaptiveActions(listOf(DockAction(if (engine == null) "安装完整引擎" else "完整Office编辑", onFullEdit, enabled = enabled),
+            DockAction("保存到手机", onSave, style = ActionStyle.OUTLINED, enabled = enabled)))
+        WrappingOptions {
+            TextButton(onClick = onShare, enabled = enabled) { Text("分享工作副本") }
+            if (engine == null) TextButton(onClick = onDetect) { Text("安装后重新检测") }
         }
     }
 }

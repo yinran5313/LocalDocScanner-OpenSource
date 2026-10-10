@@ -12,6 +12,7 @@ import androidx.compose.ui.unit.dp
 import com.localdoc.scanner.data.AppPreferences
 import com.localdoc.scanner.data.rememberPreference
 import com.localdoc.scanner.export.PdfExporter
+import com.localdoc.scanner.ui.components.WrappingOptions
 
 @Composable
 internal fun DefaultSettings() {
@@ -34,16 +35,16 @@ internal fun DefaultSettings() {
         Text("常用默认设置", style = MaterialTheme.typography.titleMedium)
         OutlinedTextField(name, { prefs.set("name", it.take(100)) }, label = { Text("扫描文档命名") }, supportingText = { Text("{date} 日期 · {time} 时间；新文档使用此规则") }, modifier = Modifier.fillMaxWidth())
         Text("纸张")
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { PdfExporter.PageSize.entries.forEach { size ->
+        WrappingOptions { PdfExporter.PageSize.entries.forEach { size ->
             FilterChip(paper == size.name, { prefs.set("paper", size.name) }, label = { Text(when(size.name) { "FIT_IMAGE" -> "适合图片"; else -> size.name }) })
         } }
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { listOf("高清", "标准").forEach { item -> FilterChip(quality == item, { prefs.set("quality", item) }, label = { Text(item) }) } }
+        WrappingOptions { listOf("高清", "标准").forEach { item -> FilterChip(quality == item, { prefs.set("quality", item) }, label = { Text(item) }) } }
         Text("外观")
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { listOf("system" to "跟随系统", "light" to "浅色", "dark" to "深色").forEach { (key, label) ->
+        WrappingOptions { listOf("system" to "跟随系统", "light" to "浅色", "dark" to "深色").forEach { (key, label) ->
             FilterChip(theme == key, { prefs.set("theme", key) }, label = { Text(label) })
         } }
         Text(if (destination.isBlank()) "保存时询问位置" else "默认文件夹：${android.net.Uri.parse(destination).lastPathSegment}", style = MaterialTheme.typography.bodySmall)
-        Row { TextButton(onClick = { picker.launch(null) }) { Text("选择保存文件夹") }; if (destination.isNotBlank()) TextButton(onClick = { prefs.set("destination", "") }) { Text("清除默认") } }
+        WrappingOptions { TextButton(onClick = { picker.launch(null) }) { Text("选择保存文件夹") }; if (destination.isNotBlank()) TextButton(onClick = { prefs.set("destination", "") }) { Text("清除默认") } }
         Text("导出结果可点“保存到默认文件夹”，也可每次另选位置；不会覆盖同名文件。", style = MaterialTheme.typography.bodySmall)
         if (status.isNotBlank()) Text(status)
     } }

@@ -13,19 +13,26 @@ android {
         applicationId = "com.localdoc.scanner"
         minSdk = 26
         targetSdk = 35
-        versionCode = 14
-        versionName = "5.0.0"
+        versionCode = 15
+        versionName = "5.0.1"
 
         // 当前交付目标为近年的小米手机。OCR/OpenCV 原生库仅保留 ARM64，
         // 避免把 x86 模拟器和旧 32 位手机的三套二进制重复塞进安装包。
         ndk {
-            abiFilters += "arm64-v8a"
+            val auditAbi = providers.gradleProperty("auditAbi").orNull
+            require(auditAbi == null || providers.gradleProperty("auditBuild").orNull == "true") { "auditAbi is for isolated tests only" }
+            require(auditAbi == null || auditAbi in listOf("arm64-v8a", "x86_64"))
+            abiFilters += auditAbi ?: "arm64-v8a"
         }
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
+        getByName("debug") {
+            // Separate application/data directory for full phone instrumentation acceptance.
+            if (providers.gradleProperty("auditBuild").orNull == "true") applicationIdSuffix = ".audit"
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
@@ -121,6 +128,8 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.work:work-testing:2.10.5")
+    androidTestImplementation(composeBom)
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
