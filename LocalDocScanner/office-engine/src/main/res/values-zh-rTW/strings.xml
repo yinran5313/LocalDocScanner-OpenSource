@@ -23,4 +23,5 @@
     <string name="ask_for_convert_odf">確認檔案格式</string>
     <string name="use_odf">使用 ODF 格式</string>
     <string name="use_text">使用文字格式</string>
+    <string name="copy_format_unavailable">無法確定檔案格式，原始檔案已保留。請使用「另存新檔」選擇格式。</string>
 </resources>

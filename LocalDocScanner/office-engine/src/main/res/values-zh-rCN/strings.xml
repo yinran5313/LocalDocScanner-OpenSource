@@ -22,4 +22,5 @@
     <string name="ask_for_convert_odf">确认文件格式</string>
     <string name="convert_odf_message">此文档可能包含无法以当前选择的文件格式“Text”保存的格式或内容。</string>
     <string name="cant_open_the_document">打不开文档</string>
+    <string name="copy_format_unavailable">无法确定文件格式，原文件已保留。请使用“另存为”选择格式。</string>
 </resources>

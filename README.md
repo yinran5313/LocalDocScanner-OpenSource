@@ -1,6 +1,6 @@
 # 拾页 · LocalDocScanner
 
-Android 离线扫描、文档库、PP-OCRv6 tiny/medium、PDF工具及同包Office编辑器。开发候选版 **5.0.1 / V5.0.1**，ARM64，Android8.0及以上。
+Android 离线扫描、文档库、PP-OCRv6 tiny/medium、PDF工具及同包Office编辑器。开发候选版 **5.0.2 / V5.0.2**，ARM64，Android8.0及以上。
 
 支持多页拍摄与手动四角裁边、OpenCV 透视和增强、连续扫描换页判断、可调书籍双页拆分、OCR 与可搜索 PDF、PDF 批注/手写/表单、工作副本预览、另存和分享。文档保存在手机本地。
 
@@ -9,6 +9,8 @@ Android 离线扫描、文档库、PP-OCRv6 tiny/medium、PDF工具及同包Offi
 V5新增固定比例/证件取景、收藏排序与布局、真实默认设置、组合PDF预览、字段重新校验、OCR语言入口、表格合并/类型及跨页导出、旧Office与增量索引；PDF支持连续拖动、吸附与缩放。逐项边界及验收见 [V5进度](LocalDocScanner/docs/V5_PROGRESS.md) 和 [V5源码复用](LocalDocScanner/docs/V5_SOURCE_REUSE.md)。
 
 V5.0.1修复首页按钮截字，扩大窄屏、横屏、大字体与挖孔安全区适配，补结果历史另存入口，修复相同PDF对比及小内存设备中文表单/medium OCR加载。详见 [V5.0.1修复与验收](LocalDocScanner/docs/V5.0.1_PROGRESS.md)。
+
+V5.0.2修复 Office 文件名缺失或没有扩展名时的复制/转换崩溃，关闭文件名查询与图片粘贴资源，并修正 SAF 写回初始化异常的资源关闭。包含本机编译、JVM 与 Lint 验证，未重新进行手机验收。详见 [V5.0.2修复与验收](LocalDocScanner/docs/V5.0.2_PROGRESS.md)。
 
 ## 构建
 

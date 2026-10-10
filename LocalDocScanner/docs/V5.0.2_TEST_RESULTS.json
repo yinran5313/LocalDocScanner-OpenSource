@@ -1,0 +1,59 @@
+{
+  "version": "5.0.2",
+  "versionCode": 16,
+  "date": "2026-10-10",
+  "failures": 0,
+  "jvm_tests": 110,
+  "jvm_test_summary": {
+    "tests": 110,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "build_passed": true,
+  "lint_errors": 0,
+  "lint_warnings": 202,
+  "lint_warnings_app": 38,
+  "lint_modules": {
+    "app": {
+      "errors": 0,
+      "warnings": 38,
+      "information": 1,
+      "resource_recycle_warnings": 0
+    },
+    "office-engine": {
+      "errors": 0,
+      "warnings": 159,
+      "information": 0,
+      "resource_recycle_warnings": 0
+    },
+    "scan-native": {
+      "errors": 0,
+      "warnings": 1,
+      "information": 0,
+      "resource_recycle_warnings": 0
+    },
+    "ppocr-sdk": {
+      "errors": 0,
+      "warnings": 4,
+      "information": 0,
+      "resource_recycle_warnings": 0
+    }
+  },
+  "new_file_name_regression_tests": 4,
+  "office_js_syntax": [
+    "localdoc-office-ui.js",
+    "localdoc-office-zh-data.js",
+    "localdoc-office-zh.js"
+  ],
+  "office_zoom_js_regression_passed": true,
+  "office_zh_js_regression_passed": true,
+  "locked_office_resources": 5330,
+  "native_libraries": 22,
+  "elf_jni_alignment_passed": true,
+  "apk_sha256": "6269981dbe159365d3d15fe097cb4b5156f2497e1192d2bf3d03f1f8c91a64f3",
+  "phone_installed": false,
+  "android_tests_run_this_version": false,
+  "full_office_source_rebuild_verified": false,
+  "verification_boundary": "Host compile/JVM/JS/Lint/artifact checks only; no phone or emulator testing. Final Office HTML entry/zoom remains unverified on device."
+}

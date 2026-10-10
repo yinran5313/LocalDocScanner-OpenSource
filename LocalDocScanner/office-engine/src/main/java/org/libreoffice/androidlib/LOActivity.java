@@ -898,15 +898,15 @@ public class LOActivity extends AppCompatActivity {
             return true;
         try {
             if (mTempFile.length() <= 0) throw new IOException("Empty saved document");
-            OutputStream target;
-            try { target = getContentResolver().openOutputStream(uri, "wt"); }
-            catch (FileNotFoundException e) { target = getContentResolver().openOutputStream(uri); }
-            if (target == null) throw new IOException("Cannot open output URI");
-            try (InputStream input = new FileInputStream(mTempFile); OutputStream output = target) {
-                byte[] buffer = new byte[65536];
-                int n;
-                while ((n = input.read(buffer)) != -1) output.write(buffer, 0, n);
-                output.flush();
+            // Open the source before the destination: a source failure must not
+            // truncate the user's saved file or leave a destination stream open.
+            try (InputStream input = new FileInputStream(mTempFile)) {
+                try (OutputStream output = openDocumentOutput(uri)) {
+                    byte[] buffer = new byte[65536];
+                    int n;
+                    while ((n = input.read(buffer)) != -1) output.write(buffer, 0, n);
+                    output.flush();
+                }
             }
             return true;
         } catch (Exception e) {
@@ -914,6 +914,14 @@ public class LOActivity extends AppCompatActivity {
             reportSaveToFileFailed();
             return false;
         }
+    }
+
+    private OutputStream openDocumentOutput(Uri uri) throws IOException {
+        OutputStream output;
+        try { output = getContentResolver().openOutputStream(uri, "wt"); }
+        catch (FileNotFoundException e) { output = getContentResolver().openOutputStream(uri); }
+        if (output == null) throw new IOException("Cannot open output URI");
+        return output;
     }
 
     /** Atomic replacement keeps the previous work copy intact if writing fails. */
@@ -1070,9 +1078,17 @@ public class LOActivity extends AppCompatActivity {
                 requestCode = REQUEST_SAVEAS_ODS;
             } else {
                 String filename = getFileName(true);
-                String extension = filename.substring(filename.lastIndexOf('.') + 1);
+                String extension = OfficeFileName.extension(filename);
                 requestCode = getRequestIDForFormat(extension);
-                assert (requestCode != 0);
+                if (requestCode == 0) {
+                    String mime = getMimeType();
+                    String mimeExtension = mime == null ? null : MimeTypeMap.getSingleton().getExtensionFromMimeType(mime);
+                    requestCode = getRequestIDForFormat(mimeExtension == null ? "" : mimeExtension);
+                }
+                if (requestCode == 0) {
+                    Toast.makeText(this, R.string.copy_format_unavailable, Toast.LENGTH_LONG).show();
+                    return;
+                }
             }
         }
         switch (requestCode) {
@@ -1294,7 +1310,14 @@ public class LOActivity extends AppCompatActivity {
         }
 
         // load the page
-        mWebView.loadUrl(finalUrlToLoad);
+        try (java.io.InputStream entry = getAssets().open("dist/cool.html")) {
+            mWebView.loadDataWithBaseURL(finalUrlToLoad, OfficeUiLanguage.readEntry(entry),
+                    "text/html", "UTF-8", finalUrlToLoad);
+        } catch (Exception error) {
+            Log.e("LocalDocOffice", "Could not load local Office UI overlays", error);
+            // A future entry change must not prevent opening the user's document.
+            mWebView.loadUrl(finalUrlToLoad);
+        }
 
         documentLoaded = true;
 
@@ -1622,22 +1645,39 @@ public class LOActivity extends AppCompatActivity {
         Uri data = getIntent().getData();
         if (data == null) return null;
 
-        return cR.getType(data);
+        try {
+            String mime = cR.getType(data);
+            return mime == null ? getIntent().getType() : mime;
+        } catch (RuntimeException e) {
+            // Metadata failures must not break the non-empty file-name fallback.
+            Log.w(TAG, "Could not read document MIME type", e);
+            return getIntent().getType();
+        }
     }
 
     private String getFileName(boolean withExtension) {
-        Cursor cursor = null;
         String filename = null;
-        try {
-            cursor = getContentResolver().query(getIntent().getData(), null, null, null, null);
-            if (cursor != null && cursor.moveToFirst())
-                filename = cursor.getString(cursor.getColumnIndexOrThrow(OpenableColumns.DISPLAY_NAME));
-        } catch (Exception e) {
-            return null;
+        Uri uri = getIntent().getData();
+        if (uri != null) {
+            try (Cursor cursor = getContentResolver().query(uri,
+                    new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+                if (cursor != null && cursor.moveToFirst()) {
+                    int column = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                    if (column >= 0) filename = cursor.getString(column);
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "Could not read document display name", e);
+            }
         }
-        if (!withExtension)
-            filename = filename.substring(0, filename.lastIndexOf("."));
-        return filename;
+        String fallback = mResolvedFile == null ? null : mResolvedFile.getName();
+        if (fallback == null && uri != null && ContentResolver.SCHEME_FILE.equals(uri.getScheme()))
+            fallback = uri.getLastPathSegment();
+        if (fallback == null) {
+            String mime = getMimeType();
+            String extension = mime == null ? null : MimeTypeMap.getSingleton().getExtensionFromMimeType(mime);
+            fallback = "文档" + (extension == null || extension.isEmpty() ? "" : "." + extension);
+        }
+        return OfficeFileName.displayName(filename, fallback, withExtension);
     }
 
     private void requestForCopy() {
@@ -1934,8 +1974,8 @@ public class LOActivity extends AppCompatActivity {
             else if (clipDesc.getMimeType(i).startsWith("image/")) {
                 ClipData.Item item = clipData.getItemAt(i);
                 Uri uri = item.getUri();
-                try {
-                    InputStream imageStream = getContentResolver().openInputStream(uri);
+                try (InputStream imageStream = getContentResolver().openInputStream(uri)) {
+                    if (imageStream == null) throw new IOException("Cannot open clipboard image");
                     ByteArrayOutputStream buffer = new ByteArrayOutputStream();
 
                     int nRead;

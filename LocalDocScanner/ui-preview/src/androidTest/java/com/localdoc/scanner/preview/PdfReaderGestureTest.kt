@@ -9,7 +9,8 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import org.junit.Rule
 import org.junit.Test
 class PdfReaderGestureTest {
-    @get:Rule val activity=ActivityScenarioRule<PreviewActivity>(Intent(ApplicationProvider.getApplicationContext(),PreviewActivity::class.java).putExtra("screen","pdf"))
+    @get:Rule val activity=ActivityScenarioRule<PreviewActivity>(Intent(ApplicationProvider.getApplicationContext(),PreviewActivity::class.java)
+        .setAction(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).putExtra("screen","pdf"))
     @get:Rule val compose=createEmptyComposeRule()
     private fun ready() { compose.waitUntil(15000) { compose.onAllNodesWithTag("pdf-pages").fetchSemanticsNodes().isNotEmpty() } }
     @Test fun searchNavigatesToMatchAndInvalidJumpShowsErrorInsideDialog() {
