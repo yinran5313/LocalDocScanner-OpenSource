@@ -34,7 +34,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-data class ToolRequest(val tool: ToolEntry, val files: List<File>, val names: List<String>)
 
 enum class EditorReturn { CAPTURE, SESSION, DOCUMENT }
 

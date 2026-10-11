@@ -62,6 +62,12 @@ object ToolDrafts {
             override fun component2(): (T) -> Unit = { this.value = it }
         }
         states[key] = holder
+        // A submitted task must receive displayed defaults even if the user never touches a control.
+        if (!prefs.contains(key)) {
+            pending[key] = context.applicationContext to { gson.toJson(backing.value, type) }
+            handler.removeCallbacks(flushPending)
+            handler.postDelayed(flushPending, 250)
+        }
         return holder
     }
     fun saveRequest(context: Context, request: ToolRequest?) {
