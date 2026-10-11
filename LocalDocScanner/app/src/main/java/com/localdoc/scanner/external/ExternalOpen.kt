@@ -23,7 +23,7 @@ object ExternalOpenBus {
                 if (cursor.moveToFirst()) cursor.getString(0) else null
             }
         }.getOrNull() ?: uri.lastPathSegment?.substringAfterLast('/') ?: "外部文件"
-        _current.value = ExternalFile(uri, mime, name)
+        _current.value = ExternalFile(uri, mime, com.localdoc.scanner.util.DisplayNames.readable(name))
     }
 
     fun close() {

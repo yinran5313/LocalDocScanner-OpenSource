@@ -8,6 +8,7 @@ val syncPreviewSources by tasks.registering(Sync::class) {
         include("com/localdoc/scanner/ui/home/HomeScreen.kt", "com/localdoc/scanner/ui/home/DocList.kt", "com/localdoc/scanner/ui/home/ToolGrid.kt", "com/localdoc/scanner/ui/theme/**", "com/localdoc/scanner/ui/components/**", "com/localdoc/scanner/model/**")
         include("com/localdoc/scanner/data/ToolDrafts.kt", "com/localdoc/scanner/ui/ToolRequest.kt", "com/localdoc/scanner/data/AppPreferences.kt", "com/localdoc/scanner/data/FileStore.kt", "com/localdoc/scanner/export/PdfExporter.kt", "com/localdoc/scanner/util/ImageIo.kt", "com/localdoc/scanner/util/BitmapOwnership.kt", "com/localdoc/scanner/util/AtomicFiles.kt")
         include("com/localdoc/scanner/pdf/PdfReadSession.kt", "com/localdoc/scanner/pdf/PdfViewportMath.kt", "com/localdoc/scanner/ui/tools/PdfReader.kt", "com/localdoc/scanner/ui/tools/PdfContinuousPages.kt", "com/localdoc/scanner/office/LegacyOfficeText.kt")
+        include("com/localdoc/scanner/ui/settings/DefaultSettings.kt")
         exclude("com/localdoc/scanner/ui/components/SaveDefaultButton.kt")
     }
     into(layout.buildDirectory.dir("generated/previewKotlin"))
@@ -37,6 +38,7 @@ dependencies {
     implementation("com.google.code.gson:gson:2.10.1")
     implementation("org.apache.poi:poi:5.4.1")
     implementation("org.apache.poi:poi-scratchpad:5.4.1")
+    implementation("androidx.documentfile:documentfile:1.0.1")
     androidTestImplementation(platform("androidx.compose:compose-bom:2024.12.01"))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")

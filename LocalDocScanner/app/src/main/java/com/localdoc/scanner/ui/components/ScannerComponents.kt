@@ -8,6 +8,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
 import com.localdoc.scanner.R
 
 @Composable
@@ -18,9 +19,20 @@ fun AppIcon(@DrawableRes resource: Int, description: String? = null, modifier: M
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ScannerTopBar(title: String, onBack: () -> Unit, subtitle: String? = null) {
-    TopAppBar(title = { Column { Text(title, style = MaterialTheme.typography.titleLarge); subtitle?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } } },
+    TopAppBar(title = { Column { Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis); subtitle?.let { Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant) } } },
         navigationIcon = { IconButton(onClick = onBack) { AppIcon(R.drawable.ic_ui_back, "返回") } },
+        expandedHeight = readableTopBarHeight(listOfNotNull(MaterialTheme.typography.titleLarge, subtitle?.let { MaterialTheme.typography.bodySmall })),
         colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background))
+}
+
+/** Material's default 64dp bar cannot contain two scaled text lines at large fonts. */
+@Composable
+fun readableTopBarHeight(styles: List<androidx.compose.ui.text.TextStyle>): androidx.compose.ui.unit.Dp {
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val textHeight = styles.fold(0.dp) { height, style -> height + with(density) {
+        (if (style.lineHeight.isSp) style.lineHeight else style.fontSize).toDp()
+    } }
+    return maxOf(64.dp, textHeight + 2.dp * (styles.size - 1).coerceAtLeast(0) + 16.dp)
 }
 
 @Composable
@@ -28,7 +40,7 @@ fun ActionDock(content: @Composable RowScope.() -> Unit) {
     Surface(color = MaterialTheme.colorScheme.surface) {
         Column {
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically, content = content)
+            Row(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal = 16.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically, content = content)
         }
     }
 }
@@ -36,7 +48,7 @@ fun ActionDock(content: @Composable RowScope.() -> Unit) {
 @Composable
 fun SectionHeading(title: String, trailing: @Composable () -> Unit = {}) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(title, style = MaterialTheme.typography.titleMedium)
+        Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f).padding(end = 8.dp))
         trailing()
     }
 }

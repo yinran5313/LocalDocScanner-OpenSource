@@ -1,6 +1,10 @@
 package com.localdoc.scanner.edit
 
 import android.graphics.Bitmap
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -48,6 +52,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -242,25 +247,8 @@ fun EditScreen(
         }
     }
 
-    Column(modifier = modifier.fillMaxSize().background(Color(0xFF0D1117))) {
-        Row(
-            modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 6.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            TextButton(onClick = onBack, enabled = !busy) { Text("返回", color = Color.White) }
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("第 ${pageIndex + 1} 页", color = Color.White, style = MaterialTheme.typography.titleMedium)
-                Text(
-                    if (step == EditStep.CROP) "调整边缘" else "预览与增强",
-                    color = Color(0xFFB7C0CD),
-                    style = MaterialTheme.typography.labelSmall
-                )
-            }
-            TextButton(onClick = onRetake, enabled = !busy) { Text("重拍", color = Color.White) }
-        }
-
-        Box(modifier = Modifier.weight(1f).fillMaxWidth().background(Color.Black)) {
+    @Composable fun editorPreview(previewModifier: Modifier) {
+        Box(modifier = previewModifier.background(Color.Black).testTag("scan-preview")) {
             when (step) {
                 EditStep.CROP -> {
                     val preview = rotatedPreview
@@ -306,6 +294,8 @@ fun EditScreen(
             }
         }
 
+    }
+    @Composable fun editorControls() {
         if (step == EditStep.CROP) {
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp)) {
                 CropAspect.presets.forEach { (label, ratio) -> FilterChip(cropRatio == ratio, {
@@ -347,7 +337,7 @@ fun EditScreen(
                 modifier = Modifier.padding(horizontal = 62.dp)
             )
             Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 TextButton(
@@ -370,6 +360,8 @@ fun EditScreen(
             }
         }
 
+    }
+    @Composable fun editorFooter() {
         Row(
             modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(10.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -388,6 +380,38 @@ fun EditScreen(
                 },
                 enabled = source != null && !busy
             ) { Text(if (busy) "正在保存…" else if (step == EditStep.CROP) "下一步" else "保存此页") }
+        }    }
+    BoxWithConstraints(modifier.fillMaxSize().background(Color(0xFF0D1117))) {
+        val wide = maxWidth > maxHeight
+        val controlsHeight = maxHeight * 0.52f
+        Column(Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 6.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextButton(onClick = onBack, enabled = !busy) { Text("返回", color = Color.White) }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("第 ${pageIndex + 1} 页", color = Color.White, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    if (step == EditStep.CROP) "调整边缘" else "预览与增强",
+                    color = Color(0xFFB7C0CD),
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
+            TextButton(onClick = onRetake, enabled = !busy) { Text("重拍", color = Color.White) }
+        }
+
+            if (wide) Row(Modifier.weight(1f).fillMaxWidth()) {
+                editorPreview(Modifier.weight(1.2f).fillMaxHeight())
+                Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState())) {
+                    editorControls(); editorFooter()
+                }
+            } else {
+                editorPreview(Modifier.weight(1f).fillMaxWidth())
+                Column(Modifier.fillMaxWidth().heightIn(max = controlsHeight).verticalScroll(rememberScrollState())) { editorControls() }
+                editorFooter()
+            }
         }
     }
 }
@@ -405,7 +429,7 @@ private fun AdjustmentSlider(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(label, color = Color.White, style = MaterialTheme.typography.labelMedium, modifier = Modifier.size(width = 48.dp, height = 24.dp))
+        Text(label, color = Color.White, style = MaterialTheme.typography.labelMedium, modifier = Modifier.width(48.dp))
         Slider(
             value = value,
             onValueChange = {

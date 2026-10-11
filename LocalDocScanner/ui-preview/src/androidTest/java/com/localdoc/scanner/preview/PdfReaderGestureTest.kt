@@ -12,6 +12,21 @@ class PdfReaderGestureTest {
     @get:Rule val activity=ActivityScenarioRule<PreviewActivity>(Intent(ApplicationProvider.getApplicationContext(),PreviewActivity::class.java).putExtra("screen","pdf"))
     @get:Rule val compose=createEmptyComposeRule()
     private fun ready() { compose.waitUntil(15000) { compose.onAllNodesWithTag("pdf-pages").fetchSemanticsNodes().isNotEmpty() } }
+    @Test fun searchNavigatesToMatchAndInvalidJumpShowsErrorInsideDialog() {
+        ready()
+        compose.onNodeWithContentDescription("文内搜索").performClick()
+        compose.onNode(hasSetTextAction()).performTextInput("PAGE 5")
+        compose.waitUntil(10000) { compose.onAllNodesWithText("匹配 1 页").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("下个").performClick()
+        compose.onNodeWithTag("pdf-page-4").assertIsDisplayed()
+        compose.onNodeWithText("5 / 6 页").performClick()
+        compose.onNode(hasSetTextAction() and hasText("5")).performTextReplacement("99")
+        compose.onNodeWithText("跳转",useUnmergedTree=true).performClick()
+        compose.onNodeWithText("请输入1至6的页码").assertIsDisplayed()
+        compose.onNode(hasSetTextAction() and hasText("99")).performTextReplacement("2")
+        compose.onNodeWithText("跳转",useUnmergedTree=true).performClick()
+        compose.onNodeWithTag("pdf-page-1").assertIsDisplayed()
+    }
     @Test fun draggingCanStopAcrossTwoPagesAndJump() {
         ready()
         compose.onNodeWithTag("pdf-pages").performTouchInput { swipeUp(startY=bottom*0.7f,endY=bottom*0.5f,durationMillis=1200) }

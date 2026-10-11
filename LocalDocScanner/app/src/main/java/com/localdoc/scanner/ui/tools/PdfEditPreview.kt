@@ -50,6 +50,8 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.math.abs
 import kotlin.math.min
+import com.localdoc.scanner.ui.components.*
+import androidx.compose.ui.platform.LocalConfiguration
 
 @Composable
 internal fun PdfEditPreview(
@@ -84,18 +86,16 @@ internal fun PdfEditPreview(
     val latestChange by androidx.compose.runtime.rememberUpdatedState(onRectChange)
     val latestStart by androidx.compose.runtime.rememberUpdatedState(onInteractionStart)
     val density = LocalDensity.current
-    val canvasHeight = 430.dp
+    val canvasHeight = (LocalConfiguration.current.screenHeightDp * 0.55f).coerceIn(220f, 430f).dp
     val canvasHeightPx = with(density) { canvasHeight.toPx() }
     val image = remember(bitmap) { bitmap?.asImageBitmap() }
     val signature = remember(signatureBitmap) { signatureBitmap?.asImageBitmap() }
     val watermarkImage = remember(watermarkBitmap) { watermarkBitmap?.asImageBitmap() }
 
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Button(onClick = onPreviousPage, enabled = pageIndex > 0) { Text("上一页") }
-            Text("${pageIndex + 1} / $pageCount · 实时预览")
-            Button(onClick = onNextPage, enabled = pageIndex + 1 < pageCount) { Text("下一页") }
-        }
+        Text("${pageIndex + 1} / $pageCount · 实时预览", style = MaterialTheme.typography.bodySmall)
+        AdaptiveActions(listOf(DockAction("上一页", onPreviousPage, style = ActionStyle.TEXT, enabled = pageIndex > 0),
+            DockAction("下一页", onNextPage, style = ActionStyle.TEXT, enabled = pageIndex + 1 < pageCount)))
         LazyRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             items((0 until pageCount.coerceAtMost(200)).toList(), key = { it }) { index ->
                 PdfPageThumbnail(source, index, selected = index == pageIndex, onClick = { onSelectPage(index) })

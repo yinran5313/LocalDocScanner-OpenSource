@@ -290,6 +290,14 @@ object PdfOfficeTools {
             val embedded = fontInput?.let { PDType0Font.load(document, it, false) }
             val resources = form.defaultResources ?: PDResources().also { form.defaultResources = it }
             val fontName = embedded?.let { resources.add(it) }
+            if (embedded != null && fontName != null) {
+                // PDAcroForm creates a new PDResources wrapper on every access. Its direct
+                // font cache is per wrapper; using an indirect reference shares the document
+                // cache and avoids repeatedly parsing a ~25MB Chinese font during /AP creation.
+                val reference = com.tom_roush.pdfbox.cos.COSObject(embedded.cosObject)
+                resources.cosObject.getCOSDictionary(COSName.FONT).setItem(fontName, reference)
+                document.resourceCache.put(reference, embedded)
+            }
             var needsViewerAppearance = false
             values.forEach { (name, value) ->
                 val field = form.getField(name) ?: error("表单字段不存在：$name")

@@ -4,6 +4,9 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import com.localdoc.scanner.ui.components.WrappingOptions
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -353,7 +356,7 @@ fun DocDetailScreen(
             onDismissRequest = { manageOpen = false },
             title = { Text("管理文档") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Button(onClick = { manageOpen = false; renaming = true }, modifier = Modifier.fillMaxWidth()) { Text("重命名") }
                     Button(onClick = { manageOpen = false; organizing = true }, modifier = Modifier.fillMaxWidth()) { Text("文件夹和标签") }
                     Button(onClick = { manageOpen = false; batchOpen = true }, modifier = Modifier.fillMaxWidth()) { Text("批量增强全部页面") }
@@ -370,9 +373,9 @@ fun DocDetailScreen(
             onDismissRequest = { if (!batchRunning) batchOpen = false },
             title = { Text("批量增强 ${pages.size} 页") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     ScanFilter.entries.chunked(3).forEach { row ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        WrappingOptions {
                             row.forEach { option ->
                                 FilterChip(
                                     selected = batchFilter == option,
@@ -430,7 +433,7 @@ fun DocDetailScreen(
             onDismissRequest = { organizing = false },
             title = { Text("文件夹和标签") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedTextField(folder, { folder = it }, label = { Text("文件夹") }, singleLine = true)
                     OutlinedTextField(tags, { tags = it }, label = { Text("标签，用逗号分开") }, singleLine = true)
                     Text("首页搜索会同时查找文件夹、标签和识别文字。", style = MaterialTheme.typography.bodySmall)
@@ -451,8 +454,8 @@ fun DocDetailScreen(
             onDismissRequest = { ocrOpen = false },
             title = { Text("本地识别文字") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    WrappingOptions {
                         FilterChip(
                             selected = !ocrPrecise,
                             onClick = { ocrPrecise = false },
@@ -479,7 +482,7 @@ fun DocDetailScreen(
                         maxLines = 12,
                         enabled = !ocrRunning
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    WrappingOptions {
                         TextButton(
                             onClick = { startOcr(false) },
                             enabled = !ocrRunning && pages.isNotEmpty()
@@ -504,7 +507,7 @@ fun DocDetailScreen(
                             TextButton(onClick = { lineEditPage = page; lineEditIndex = 0; lineEditText = lines[0].text }, enabled = !ocrRunning) { Text("逐行校正文字层") }
                         }
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    WrappingOptions {
                         TextButton(onClick = { OcrJobs.cancel(context, docId) }, enabled = ocrRunning) { Text("暂停") }
                         TextButton(onClick = { startOcr(true) }, enabled = !ocrRunning && ocrWork != null) { Text("续跑 / 重试失败页") }
                     }
@@ -567,7 +570,7 @@ fun DocDetailScreen(
             onDismissRequest = { if (!busy) exportOpen = false },
             title = { Text("导出 ${pages.size} 页") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("输出预览", style = MaterialTheme.typography.titleSmall)
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(pages.size) { index ->
@@ -580,7 +583,7 @@ fun DocDetailScreen(
                         }
                     }
                     OutlinedTextField(exportName, { exportName = it }, label = { Text("文件名") }, singleLine = true)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    WrappingOptions {
                         FilterChip(exportFormat == ExportFormat.PDF, { exportFormat = ExportFormat.PDF }, label = { Text("PDF") })
                         FilterChip(exportFormat == ExportFormat.JPG, { exportFormat = ExportFormat.JPG }, label = { Text("JPG图片") })
                     }
@@ -594,12 +597,12 @@ fun DocDetailScreen(
                         if (pages.none { it.ocrText.isNotBlank() }) {
                             Text("先在“文字”中完成OCR，才能生成可搜索PDF。", style = MaterialTheme.typography.bodySmall)
                         }
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        WrappingOptions {
                             FilterChip(pageSize == PdfExporter.PageSize.A4, { pageSize = PdfExporter.PageSize.A4 }, label = { Text("A4页面") })
                             FilterChip(pageSize == PdfExporter.PageSize.LETTER, { pageSize = PdfExporter.PageSize.LETTER }, label = { Text("Letter") })
                             FilterChip(pageSize == PdfExporter.PageSize.FIT_IMAGE, { pageSize = PdfExporter.PageSize.FIT_IMAGE }, label = { Text("适合图片") })
                         }
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        WrappingOptions {
                             FilterChip(pdfMaxImageSide == 2000, { pdfMaxImageSide = 2000 }, label = { Text("标准质量") })
                             FilterChip(pdfMaxImageSide == 3200, { pdfMaxImageSide = 3200 }, label = { Text("高清") })
                         }

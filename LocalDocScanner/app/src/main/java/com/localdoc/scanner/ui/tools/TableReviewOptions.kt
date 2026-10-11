@@ -1,6 +1,7 @@
 package com.localdoc.scanner.ui.tools
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
+import com.localdoc.scanner.ui.components.WrappingOptions
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -26,7 +27,7 @@ internal fun TableReviewOptions(page: ReviewPage, onChange: (ReviewPage) -> Unit
         if (merges.isNotEmpty()) TextButton(onClick={ onChange(page.copy(merges=emptyList())) }) { Text("拆分全部合并格") }
     }
     merges.forEach { m -> TextButton(onClick={ onChange(page.copy(merges=merges-m)) }) { Text("${m.top+1}:${m.left+1}-${m.bottom+1}:${m.right+1} · 点此拆分") } }
-    Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+    WrappingOptions {
         OutlinedTextField(column,{ column=it.filter(Char::isDigit).take(3) },label={ Text("第几列") },modifier=Modifier.width(100.dp),singleLine=true)
         Box { OutlinedButton({ typesOpen=true }) { Text("设置列类型") }
             DropdownMenu(typesOpen,{ typesOpen=false }) { listOf("TEXT" to "文本/号码", "NUMBER" to "数值", "DATE" to "日期", "PERCENT" to "百分比").forEach { (type,label) ->

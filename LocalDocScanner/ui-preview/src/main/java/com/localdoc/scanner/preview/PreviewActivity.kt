@@ -47,6 +47,7 @@ class PreviewActivity : ComponentActivity() {
         }
         fun action() { Toast.makeText(this, "界面预览，不执行业务操作", Toast.LENGTH_SHORT).show() }
         setContent { LocalDocScannerTheme(darkTheme = intent.getBooleanExtra("dark", false)) {
+            AppSafeFrame {
             when (screen) {
                 "pdf" -> Scaffold(topBar={ ScannerTopBar("拾页 · 阅读测试",{ finish() },"实际PDF · 拖动 / 缩放") }) { padding ->
                     com.localdoc.scanner.ui.tools.PdfReader(pdf,Modifier.fillMaxSize().padding(padding))
@@ -75,6 +76,7 @@ class PreviewActivity : ComponentActivity() {
                 else -> HomeScreen(if (intent.getBooleanExtra("empty", false)) emptyList() else demo,
                     if (intent.getBooleanExtra("draft", false)) 3 else 0, "", ::action, ::action, ::action, ::action, ::action, ::action, ::action, ::action, ::action, ::action, ::action, ::action,
                     onToolClick = { action() }, onDocClick = { action() }, onRenameDoc = { _, _ -> action() }, onOrganizeDoc = { _, _, _ -> action() }, onTrashDoc = { action() })
+            }
             }
         } }
     }

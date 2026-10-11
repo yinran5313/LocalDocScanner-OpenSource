@@ -44,6 +44,7 @@ internal fun PdfReader(file: File, modifier: Modifier = Modifier, initialPage: I
     var searchOpen by rememberSaveable(file.absolutePath) { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
     var jumpOpen by remember { mutableStateOf(false) }
+    var jumpError by remember { mutableStateOf("") }
     var snapPages by rememberSaveable(file.absolutePath) { mutableStateOf(false) }
     fun goTo(target:Int) { page=target; scope.launch { listState.scrollToItem(target) } }
     LaunchedEffect(session, initialPage) { session?.let { listState.scrollToItem(page.coerceIn(0,(it.pageCount-1).coerceAtLeast(0))) } }
@@ -129,7 +130,7 @@ internal fun PdfReader(file: File, modifier: Modifier = Modifier, initialPage: I
             }
             val count = session!!.pageCount
             Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
-                TextButton(onClick={ pageInput=(page+1).toString(); jumpOpen=true }) { Text("${page+1} / $count 页") }
+                TextButton(onClick={ pageInput=(page+1).toString(); jumpError=""; jumpOpen=true }) { Text("${page+1} / $count 页") }
                 Spacer(Modifier.weight(1f))
                 IconButton(onClick={ searchOpen=!searchOpen }) { AppIcon(R.drawable.ic_ui_search,"文内搜索") }
                 Box {
@@ -156,7 +157,9 @@ internal fun PdfReader(file: File, modifier: Modifier = Modifier, initialPage: I
         } else Text(if (loading) "正在打开PDF…" else error)
     }
     if(jumpOpen) AlertDialog(onDismissRequest={ jumpOpen=false },title={ Text("跳转到页面") },text={
-        OutlinedTextField(pageInput,{ pageInput=it.filter(Char::isDigit).take(6) },singleLine=true,label={ Text("1 至 ${session?.pageCount ?: 0}") })
-    },confirmButton={ TextButton(onClick={ val target=pageInput.toIntOrNull(); if(target!=null && target in 1..(session?.pageCount ?: 0)) { goTo(target-1); jumpOpen=false } else error="请输入范围内的页码" }) { Text("跳转") } },dismissButton={ TextButton(onClick={ jumpOpen=false }) { Text("取消") } })
+        OutlinedTextField(pageInput,{ pageInput=it.filter(Char::isDigit).take(6); jumpError="" },singleLine=true,label={ Text("1 至 ${session?.pageCount ?: 0}") },
+            keyboardOptions=androidx.compose.foundation.text.KeyboardOptions(keyboardType=androidx.compose.ui.text.input.KeyboardType.Number),
+            isError=jumpError.isNotBlank(), supportingText={ if(jumpError.isNotBlank()) Text(jumpError) })
+    },confirmButton={ TextButton(onClick={ val target=pageInput.toIntOrNull(); if(target!=null && target in 1..(session?.pageCount ?: 0)) { goTo(target-1); jumpOpen=false } else jumpError="请输入1至${session?.pageCount ?: 0}的页码" }) { Text("跳转") } },dismissButton={ TextButton(onClick={ jumpOpen=false }) { Text("取消") } })
 
 }

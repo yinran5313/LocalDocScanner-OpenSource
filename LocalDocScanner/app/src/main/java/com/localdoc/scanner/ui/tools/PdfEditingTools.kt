@@ -315,7 +315,7 @@ internal fun PdfOfficeFlow(
             onSelectPage = { pageIndex = it.coerceIn(0, pageCount - 1) }
         )
         if (operation in 1..5 || operation == 7) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            WrappingOptions {
                 TextButton(onClick = {
                     val previous = undoPlacements.lastOrNull() ?: return@TextButton
                     redoPlacements = (redoPlacements + PdfPlacement(x, y, width, height)).takeLast(30)
@@ -330,7 +330,7 @@ internal fun PdfOfficeFlow(
                 }, enabled = redoPlacements.isNotEmpty()) { Text("重做位置") }
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        WrappingOptions {
             Button(
                 onClick = {
                     val edit = snapshotCurrent()
