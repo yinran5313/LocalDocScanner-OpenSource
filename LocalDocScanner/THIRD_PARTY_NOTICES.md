@@ -77,3 +77,10 @@ The main MIT license does not replace any MPL/other component obligations.
 ## UI字体与补充图标
 
 Noto Sans SC来自Google Fonts，OFL-1.1；字体固定版本及SHA256见ui-font.json，许可证见app/src/main/assets/third_party/NotoSansSC_OFL.txt。仅用于界面，PDF原字体保留。Google Material Design Icons（Apache-2.0）的原始path用于新增UI矢量，逐个来源见docs/UI_ICON_SOURCES.json。
+
+## V5新增
+
+- Apache POI poi/poi-scratchpad 5.4.1，Apache-2.0；用于DOC/XLS/PPT文字提取，不调用桌面渲染。原LICENSE/NOTICE已放入app/src/main/assets/third_party。
+- commons-math3 3.6.1、commons-collections4 4.4和SparseBitSet1.3，Apache-2.0；POI传递依赖，原许可及通知已保留。SparseBitSet许可依据1.3 Maven POM，Apache全文沿用上述许可文件。
+- Office zh_CN/zh_TW翻译覆盖，MPL-2.0；来源和哈希见docs/OFFICE_ZH_SOURCES.json，数据构建脚本tools/build_office_zh_data.py。
+- 拾页品牌栅格标记为imagegen生成的项目自有资源；内部Google Material矢量许可不变。

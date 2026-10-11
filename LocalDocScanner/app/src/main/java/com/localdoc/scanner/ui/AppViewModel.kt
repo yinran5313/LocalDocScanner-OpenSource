@@ -161,6 +161,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
+    suspend fun setFavorite(id: String, value: Boolean) = repo.setFavorite(id, value)
+
     fun editDocumentPage(page: PageEntity, index: Int) {
         editTarget = EditTarget(
             sourcePath = page.sourcePath.ifBlank { page.filePath },
@@ -171,7 +173,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 filter = runCatching { ScanFilter.valueOf(page.filter) }.getOrDefault(ScanFilter.ORIGINAL),
                 brightness = page.brightness,
                 contrast = page.contrast,
-                fineRotation = page.fineRotation
+                fineRotation = page.fineRotation, cropRatio = page.cropRatio
             ),
             documentPageId = page.id,
             returnTo = EditorReturn.DOCUMENT

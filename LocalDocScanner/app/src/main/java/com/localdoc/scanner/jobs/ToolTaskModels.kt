@@ -10,7 +10,8 @@ data class FlowOutcome(val summary: List<Pair<String, String>>, val files: List<
     val reviewPages: List<ReviewPage> = emptyList(), val failures: List<String> = emptyList(),
     val sensitiveRegions: List<SensitiveRegion> = emptyList())
 data class ReviewPage(val source: String, val page: Int, val raw: String,
-    val fields: Map<String, String>, val rows: List<List<String>>, val error: String = "", val reviewed: Boolean = false, val edited: Boolean = false)
+    val fields: Map<String, String>, val rows: List<List<String>>, val error: String = "", val reviewed: Boolean = false, val edited: Boolean = false,
+    val merges: List<com.localdoc.scanner.structure.CellMerge>? = null, val columnTypes: Map<Int, String>? = null)
 data class PendingPdfEdit(val operation: Int, val label: String, val pageIndex: Int,
     val text: String, val header: String, val footer: String, val watermark: String,
     val addPageNumbers: Boolean, val opacity: Float, val x: Float, val y: Float,

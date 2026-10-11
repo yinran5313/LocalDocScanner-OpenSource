@@ -14,8 +14,9 @@ object OcrJobs {
     fun name(docId: String) = "document-ocr:$docId"
     fun observe(context: Context, docId: String) = WorkManager.getInstance(context).getWorkInfosForUniqueWorkFlow(name(docId))
     fun recipe(page: PageEntity) = listOf(page.width, page.height, page.quarterTurns, page.cropPoints,
-        page.filter, page.brightness, page.contrast, page.fineRotation).joinToString("|")
-    suspend fun start(context: Context, docId: String, precise: Boolean, resume: Boolean = false): String = withContext(Dispatchers.IO) {
+        page.filter, page.brightness, page.contrast, page.fineRotation).joinToString("|") +
+        (if (page.cropRatio > 0f) "|ratio:${page.cropRatio}" else "")
+    suspend fun start(context: Context, docId: String, precise: Boolean, resume: Boolean = false, language: com.localdoc.scanner.ocr.OcrLanguage = com.localdoc.scanner.ocr.OcrLanguage.AUTO): String = withContext(Dispatchers.IO) {
         val manager = WorkManager.getInstance(context)
         val works = manager.getWorkInfosForUniqueWork(name(docId)).get()
         require(works.none { !it.state.isFinished }) { "这份文档已有OCR任务，请先暂停或等它完成" }
@@ -23,7 +24,7 @@ object OcrJobs {
         require(pages.isNotEmpty()) { "文档没有可识别页面" }
         val previousId = context.getSharedPreferences("ocr_job_receipts", Context.MODE_PRIVATE).getString(docId, null)
         val previous = if (resume && previousId != null) runCatching { OcrCheckpointStore.load(root(context), previousId) }.getOrNull() else null
-        require(!resume || previous != null && previous.precise == precise) { "没有同档位的恢复记录，请开始新任务" }
+        require(!resume || previous != null && previous.precise == precise && com.localdoc.scanner.ocr.OcrLanguage.fromCode(previous.language) == language) { "没有同档位的恢复记录，请开始新任务" }
         val id = previous?.id ?: UUID.randomUUID().toString()
         val checkpoints = pages.map { page ->
             val hash = OcrCheckpointStore.hash(File(page.filePath)); val recipe = recipe(page)
@@ -31,13 +32,13 @@ object OcrJobs {
                 OcrCheckpointStore.canReuse(it, hash, recipe, page.ocrUpdatedAt)
             } ?: OcrPageCheckpoint(page.id, hash, recipe)
         }
-        OcrCheckpointStore.save(root(context), OcrCheckpoint(id, docId, precise, checkpoints, previous?.createdAt ?: System.currentTimeMillis()))
+        OcrCheckpointStore.save(root(context), OcrCheckpoint(id, docId, precise, checkpoints, previous?.createdAt ?: System.currentTimeMillis(), language.name))
         context.getSharedPreferences("ocr_job_receipts", Context.MODE_PRIVATE).edit().putString(docId, id).commit()
         val request = OneTimeWorkRequestBuilder<DocumentOcrWorker>().setInputData(workDataOf("journal" to id))
             .setConstraints(Constraints.Builder().setRequiresStorageNotLow(true).build())
             .setBackoffCriteria(BackoffPolicy.LINEAR, 10, java.util.concurrent.TimeUnit.SECONDS).build()
         context.getSharedPreferences("ocr_job_receipts", Context.MODE_PRIVATE).edit().putString("$docId:work", request.id.toString()).commit()
-        context.getSharedPreferences("ocr_job_receipts", Context.MODE_PRIVATE).edit().putBoolean("$docId:precise", precise).commit()
+        context.getSharedPreferences("ocr_job_receipts", Context.MODE_PRIVATE).edit().putBoolean("$docId:precise", precise).putString("$docId:language", language.name).commit()
         manager.enqueueUniqueWork(name(docId), ExistingWorkPolicy.KEEP, request).result.get()
         id
     }

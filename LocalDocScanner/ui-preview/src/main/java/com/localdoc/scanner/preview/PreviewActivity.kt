@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -28,11 +30,31 @@ class PreviewActivity : ComponentActivity() {
         enableEdgeToEdge(statusBarStyle = bars, navigationBarStyle = bars)
         val cover = File(filesDir, "document.jpg")
         assets.open("searchable-pdf-page.jpg").use { source -> cover.outputStream().use { source.copyTo(it) } }
-        val demo = listOf("年度工作资料", "费用报销凭证", "合同与附件", "学习笔记与知识点整理").mapIndexed { index, title -> DocItem("demo$index", title, index + 1, System.currentTimeMillis(), 420000, null, if (index == 1) "财务" else null, if (index == 1) "待复核" else "") }
+        val demo = listOf("年度工作资料", "费用报销凭证", "合同与附件", "学习笔记与知识点整理").mapIndexed { index, title -> DocItem("demo$index", title, index + 1, System.currentTimeMillis(), 420000, cover.absolutePath, if (index == 1) "财务" else null, if (index == 1) "待复核" else "") }
         val screen = intent.getStringExtra("screen") ?: "home"
+        com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(applicationContext)
+        val pdf = File(filesDir,"reader-fixture.pdf")
+        if(!pdf.isFile) com.tom_roush.pdfbox.pdmodel.PDDocument().use { doc ->
+            repeat(6) { index ->
+                val page=com.tom_roush.pdfbox.pdmodel.PDPage(com.tom_roush.pdfbox.pdmodel.common.PDRectangle.A4)
+                doc.addPage(page)
+                com.tom_roush.pdfbox.pdmodel.PDPageContentStream(doc,page).use { stream ->
+                    stream.beginText(); stream.setFont(com.tom_roush.pdfbox.pdmodel.font.PDType1Font.HELVETICA,24f); stream.newLineAtOffset(42f,740f); stream.showText("SHIYE / PAGE ${index+1}"); stream.endText()
+                    repeat(22) { line -> stream.beginText(); stream.setFont(com.tom_roush.pdfbox.pdmodel.font.PDType1Font.HELVETICA,12f); stream.newLineAtOffset(42f,690f-line*26f); stream.showText("Continuous reading - document line ${line+1}"); stream.endText() }
+                }
+            }
+            doc.save(pdf)
+        }
         fun action() { Toast.makeText(this, "界面预览，不执行业务操作", Toast.LENGTH_SHORT).show() }
         setContent { LocalDocScannerTheme(darkTheme = intent.getBooleanExtra("dark", false)) {
             when (screen) {
+                "pdf" -> Scaffold(topBar={ ScannerTopBar("拾页 · 阅读测试",{ finish() },"实际PDF · 拖动 / 缩放") }) { padding ->
+                    com.localdoc.scanner.ui.tools.PdfReader(pdf,Modifier.fillMaxSize().padding(padding))
+                }
+                "brand" -> Scaffold(topBar={ ScannerTopBar("拾页图标",{ finish() },"Android实际自适应图标") }) { padding -> Column(Modifier.padding(padding).padding(24.dp)) {
+                    AndroidView(factory={ context -> android.widget.ImageView(context).apply { setImageDrawable(context.getDrawable(R.mipmap.ic_launcher)) } },modifier=Modifier.size(144.dp))
+                    Text("拾页",style=MaterialTheme.typography.headlineMedium)
+                } }
                 "tasks" -> Scaffold(topBar = { ScannerTopBar("工具任务", { finish() }, "进度与已完成结果") }) { padding ->
                     Column(Modifier.fillMaxSize().padding(padding).padding(20.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         Text("文字识别", style = MaterialTheme.typography.titleMedium)

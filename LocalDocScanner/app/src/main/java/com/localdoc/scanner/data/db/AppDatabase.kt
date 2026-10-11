@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [DocEntity::class, PageEntity::class], version = 6, exportSchema = false)
+@Database(entities = [DocEntity::class, PageEntity::class], version = 7, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun docDao(): DocDao
@@ -61,6 +61,11 @@ abstract class AppDatabase : RoomDatabase() {
                         db.execSQL("ALTER TABLE docs ADD COLUMN ocrCorrection TEXT NOT NULL DEFAULT ''")
                         db.execSQL("ALTER TABLE docs ADD COLUMN ocrLegacyText TEXT NOT NULL DEFAULT ''")
                         db.execSQL("UPDATE docs SET ocrLegacyText = ocrText WHERE ocrText <> ''")
+                    }
+                }, object : Migration(6, 7) {
+                    override fun migrate(db: SupportSQLiteDatabase) {
+                        db.execSQL("ALTER TABLE docs ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0")
+                        db.execSQL("ALTER TABLE pages ADD COLUMN cropRatio REAL NOT NULL DEFAULT 0")
                     }
                 }).build().also { instance = it }
             }

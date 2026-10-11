@@ -1,6 +1,9 @@
 package com.localdoc.scanner.ui.tools
 
-import android.graphics.Bitmap
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.ui.Alignment
+import com.localdoc.scanner.R
+import com.localdoc.scanner.ui.components.AppIcon
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -37,7 +40,13 @@ internal fun PdfReader(file: File, modifier: Modifier = Modifier, initialPage: I
     var query by rememberSaveable(file.absolutePath) { mutableStateOf("") }
     var hits by remember(file) { mutableStateOf<List<Int>>(emptyList()) }
     var searchStatus by remember(file) { mutableStateOf("") }
-    var bitmap by remember(file) { mutableStateOf<Bitmap?>(null) }
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = page.coerceAtLeast(0))
+    var searchOpen by rememberSaveable(file.absolutePath) { mutableStateOf(false) }
+    var menuOpen by remember { mutableStateOf(false) }
+    var jumpOpen by remember { mutableStateOf(false) }
+    var snapPages by rememberSaveable(file.absolutePath) { mutableStateOf(false) }
+    fun goTo(target:Int) { page=target; scope.launch { listState.scrollToItem(target) } }
+    LaunchedEffect(session, initialPage) { session?.let { listState.scrollToItem(page.coerceIn(0,(it.pageCount-1).coerceAtLeast(0))) } }
     var text by remember(file) { mutableStateOf("") }
     var loading by remember(file) { mutableStateOf(true) }
     LaunchedEffect(file, openAttempt) {
@@ -61,26 +70,14 @@ internal fun PdfReader(file: File, modifier: Modifier = Modifier, initialPage: I
         } finally { password = ""; opened?.close() }
     }
     val latestSession by rememberUpdatedState(session)
-    val latestBitmap by rememberUpdatedState(bitmap)
-    DisposableEffect(file) { onDispose { latestSession?.close(); latestBitmap?.recycle() } }
+    DisposableEffect(file) { onDispose { latestSession?.close() } }
     LaunchedEffect(session, page, showText) {
-        val current = session ?: return@LaunchedEffect
-        loading = true
-        var pendingBitmap: Bitmap? = null
-        try {
-        val result = withContext(Dispatchers.IO) { runCatching {
-            if (showText) null to current.pageText(page) else current.render(page).also { pendingBitmap = it } to ""
-        } }
-        result.onSuccess { (image, value) ->
-            bitmap?.takeIf { it !== image }?.recycle()
-            bitmap = image
-            pendingBitmap = null
-            text = value
-            error = ""
-        }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it; error = "页面读取失败：${it.message}" }
-        pageInput = (page + 1).toString()
-        loading = false
-        } finally { pendingBitmap?.recycle() }
+        val current=session ?: return@LaunchedEffect
+        if(!showText) return@LaunchedEffect
+        loading=true
+        try { text=withContext(Dispatchers.IO) { current.pageText(page) }; error="" }
+        catch(e:Exception) { if(e is kotlinx.coroutines.CancellationException) throw e; error="文字读取失败：${e.message}" }
+        finally { loading=false }
     }
     LaunchedEffect(session, query) {
         hits = emptyList()
@@ -131,31 +128,35 @@ internal fun PdfReader(file: File, modifier: Modifier = Modifier, initialPage: I
                 if (!session!!.canCreateWorkingCopy) Text("当前密码只允许阅读；需要有修改权限的密码。", color = MaterialTheme.colorScheme.error)
             }
             val count = session!!.pageCount
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                TextButton(onClick = { page-- }, enabled = page > 0 && !loading) { Text("上一页") }
-                OutlinedTextField(pageInput, { pageInput = it.filter(Char::isDigit).take(6) }, singleLine = true,
-                    label = { Text("页 / $count") }, modifier = Modifier.weight(1f))
-                TextButton(onClick = {
-                    val wanted = pageInput.toIntOrNull()
-                    if (wanted != null && wanted in 1..count) page = wanted - 1 else error = "页码范围为1至$count"
-                }) { Text("跳转") }
-                TextButton(onClick = { page++ }, enabled = page + 1 < count && !loading) { Text("下一页") }
+            Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+                TextButton(onClick={ pageInput=(page+1).toString(); jumpOpen=true }) { Text("${page+1} / $count 页") }
+                Spacer(Modifier.weight(1f))
+                IconButton(onClick={ searchOpen=!searchOpen }) { AppIcon(R.drawable.ic_ui_search,"文内搜索") }
+                Box {
+                    IconButton(onClick={ menuOpen=true }) { AppIcon(R.drawable.ic_ui_more,"阅读选项") }
+                    DropdownMenu(menuOpen,{ menuOpen=false }) {
+                        DropdownMenuItem(text={ Text(if(showText) "返回页面" else "文字 · 长按复制") },onClick={ showText=!showText; menuOpen=false })
+                        DropdownMenuItem(text={ Text(if(snapPages) "✓ 整页吸附" else "整页吸附") },onClick={ snapPages=!snapPages; menuOpen=false })
+                    }
+                }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(!showText, { showText = false }, label = { Text("页面") })
-                FilterChip(showText, { showText = true }, label = { Text("文字 / 长按复制") })
-            }
-            OutlinedTextField(query, { query = it }, label = { Text("文内搜索") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            if (query.isNotBlank()) Row {
-                Text(searchStatus, modifier = Modifier.weight(1f))
-                TextButton(onClick = { hits.lastOrNull { it < page }?.let { page = it } ?: hits.lastOrNull()?.let { page = it } }, enabled = hits.isNotEmpty()) { Text("上个") }
-                TextButton(onClick = { hits.firstOrNull { it > page }?.let { page = it } ?: hits.firstOrNull()?.let { page = it } }, enabled = hits.isNotEmpty()) { Text("下个") }
+            if(searchOpen) {
+                OutlinedTextField(query,{ query=it },placeholder={ Text("搜索文内文字") },singleLine=true,modifier=Modifier.fillMaxWidth(),trailingIcon={ IconButton(onClick={ query=""; searchOpen=false }) { AppIcon(R.drawable.ic_ui_close,"关闭搜索") } })
+                if(query.isNotBlank()) Row(verticalAlignment=Alignment.CenterVertically) {
+                    Text(searchStatus,modifier=Modifier.weight(1f),style=MaterialTheme.typography.bodySmall)
+                    TextButton(onClick={ (hits.lastOrNull { it<page } ?: hits.lastOrNull())?.let(::goTo) },enabled=hits.isNotEmpty()) { Text("上个") }
+                    TextButton(onClick={ (hits.firstOrNull { it>page } ?: hits.firstOrNull())?.let(::goTo) },enabled=hits.isNotEmpty()) { Text("下个") }
+                }
             }
             if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
             if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
             if (showText) SelectionContainer(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
                 Text(text.ifBlank { "此页没有文字层，可使用文字识别。" }, modifier = Modifier.padding(10.dp))
-            } else bitmap?.let { ZoomableImage(it, "${file.absolutePath}:$page", Modifier.fillMaxWidth().weight(1f)) }
+            } else PdfContinuousPages(session!!,listState,snapPages,{ page=it },Modifier.fillMaxWidth().weight(1f))
         } else Text(if (loading) "正在打开PDF…" else error)
     }
+    if(jumpOpen) AlertDialog(onDismissRequest={ jumpOpen=false },title={ Text("跳转到页面") },text={
+        OutlinedTextField(pageInput,{ pageInput=it.filter(Char::isDigit).take(6) },singleLine=true,label={ Text("1 至 ${session?.pageCount ?: 0}") })
+    },confirmButton={ TextButton(onClick={ val target=pageInput.toIntOrNull(); if(target!=null && target in 1..(session?.pageCount ?: 0)) { goTo(target-1); jumpOpen=false } else error="请输入范围内的页码" }) { Text("跳转") } },dismissButton={ TextButton(onClick={ jumpOpen=false }) { Text("取消") } })
+
 }

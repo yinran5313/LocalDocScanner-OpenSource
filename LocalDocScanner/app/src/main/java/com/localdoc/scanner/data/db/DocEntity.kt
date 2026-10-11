@@ -20,7 +20,8 @@ data class DocEntity(
     val deleted: Boolean = false,
     @ColumnInfo(defaultValue = "") val coverPath: String = "",
     @ColumnInfo(defaultValue = "''") val ocrCorrection: String = "",
-    @ColumnInfo(defaultValue = "''") val ocrLegacyText: String = ""
+    @ColumnInfo(defaultValue = "''") val ocrLegacyText: String = "",
+    @ColumnInfo(defaultValue = "0") val favorite: Boolean = false
 )
 
 @Entity(tableName = "pages", indices = [Index("docId")])
@@ -43,5 +44,6 @@ data class PageEntity(
     @ColumnInfo(defaultValue = "") val ocrMode: String = "",
     @ColumnInfo(defaultValue = "0") val ocrUpdatedAt: Long = 0L,
     @ColumnInfo(defaultValue = "0") val fineRotation: Float = 0f,
-    @ColumnInfo(defaultValue = "''") val ocrLayout: String = ""
+    @ColumnInfo(defaultValue = "''") val ocrLayout: String = "",
+    @ColumnInfo(defaultValue = "0") val cropRatio: Float = 0f
 )

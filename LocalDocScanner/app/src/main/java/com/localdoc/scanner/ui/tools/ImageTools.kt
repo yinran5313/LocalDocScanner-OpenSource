@@ -45,14 +45,16 @@ internal fun ImagesToPdfFlow(
     request: ToolRequest, vm: AppViewModel, onBack: () -> Unit, onOpenDoc: (String) -> Unit,
     modifier: Modifier
 ) {
-    var pageSize by rememberToolState(request, "pageSize") { 0 }
-    var quality by rememberToolState(request, "quality") { 1 }
+    val defaults = com.localdoc.scanner.data.AppPreferences(androidx.compose.ui.platform.LocalContext.current)
+    var paper by rememberToolState(request, "paperV5") { defaults.pageSize.name }
+
+    var quality by rememberToolState(request, "qualityV5") { if(defaults.imageSide==3200) 0 else 1 }
 
     @Composable
     fun panel() {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("页面尺寸", style = MaterialTheme.typography.titleSmall)
-            ChipRow(listOf("A4", "原尺寸"), pageSize) { pageSize = it }
+            ChipRow(listOf("A4", "Letter", "原尺寸"), com.localdoc.scanner.export.PdfExporter.PageSize.valueOf(paper).ordinal) { paper = com.localdoc.scanner.export.PdfExporter.PageSize.entries[it].name }
             Text("清晰度", style = MaterialTheme.typography.titleSmall)
             ChipRow(listOf("高", "中", "低"), quality) { quality = it }
         }

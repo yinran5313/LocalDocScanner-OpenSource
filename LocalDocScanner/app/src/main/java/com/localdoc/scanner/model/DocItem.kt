@@ -12,5 +12,6 @@ data class DocItem(
     val tags: String = "",
     val ocrText: String = "",
     val createdAt: Long = updatedAt,
-    val legacyOcrText: String = ""
+    val legacyOcrText: String = "",
+    val favorite: Boolean = false
 )

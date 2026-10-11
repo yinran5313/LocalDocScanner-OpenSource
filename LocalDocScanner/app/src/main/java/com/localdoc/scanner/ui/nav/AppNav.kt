@@ -50,9 +50,6 @@ object Route {
     fun doc(id: String) = "doc/$id"
 }
 
-private fun defaultTitle(): String =
-    SimpleDateFormat("扫描 MM-dd HH:mm", Locale.getDefault()).format(Date())
-
 private fun mimeFor(kind: FileKind): Array<String> = when (kind) {
     FileKind.IMAGE -> arrayOf("image/*")
     FileKind.PDF -> arrayOf("application/pdf")
@@ -167,7 +164,8 @@ fun AppNav(modifier: Modifier = Modifier, vm: AppViewModel = viewModel()) {
                 onOrganizeDoc = { doc, folder, tags ->
                     scope.launch { vm.setOrganization(doc.id, folder, tags) }
                 },
-                onTrashDoc = { doc -> scope.launch { vm.trash(doc.id) } }
+                onTrashDoc = { doc -> scope.launch { vm.trash(doc.id) } },
+                onFavoriteDoc = { doc -> scope.launch { vm.setFavorite(doc.id, !doc.favorite) } }
             )
         }
 
@@ -246,7 +244,7 @@ fun AppNav(modifier: Modifier = Modifier, vm: AppViewModel = viewModel()) {
         composable(Route.SESSION) {
             SessionScreen(
                 pages = session,
-                title = draftTitle.ifBlank { defaultTitle() },
+                title = draftTitle.ifBlank { com.localdoc.scanner.data.AppPreferences(context).documentName() },
                 isAppending = vm.appendDocId != null,
                 onTitleChange = vm::setDraftTitle,
                 onBackHome = { navController.navigate(Route.HOME) { popUpTo(Route.HOME) { inclusive = true } } },
@@ -257,7 +255,7 @@ fun AppNav(modifier: Modifier = Modifier, vm: AppViewModel = viewModel()) {
                 onMove = vm::moveSessionPage,
                 onSave = {
                     scope.launch {
-                        val docId = vm.commitSession(draftTitle.ifBlank { defaultTitle() })
+                        val docId = vm.commitSession(draftTitle.ifBlank { com.localdoc.scanner.data.AppPreferences(context).documentName() })
                         if (docId != null) {
                             navController.navigate(Route.doc(docId)) { popUpTo(Route.HOME) }
                         }

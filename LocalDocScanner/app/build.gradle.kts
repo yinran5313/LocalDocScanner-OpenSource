@@ -13,8 +13,8 @@ android {
         applicationId = "com.localdoc.scanner"
         minSdk = 26
         targetSdk = 35
-        versionCode = 12
-        versionName = "4.4.3-rc1"
+        versionCode = 14
+        versionName = "5.0.0"
 
         // 当前交付目标为近年的小米手机。OCR/OpenCV 原生库仅保留 ARM64，
         // 避免把 x86 模拟器和旧 32 位手机的三套二进制重复塞进安装包。
@@ -91,6 +91,9 @@ dependencies {
     implementation("com.google.zxing:core:3.5.3")
     implementation("com.google.code.gson:gson:2.10.1")
     implementation("org.dhatim:fastexcel:0.18.4")
+    // Legacy Office text only: no POI rendering or OOXML engine duplication.
+    implementation("org.apache.poi:poi:5.4.1")
+    implementation("org.apache.poi:poi-scratchpad:5.4.1")
     implementation("org.apache.commons:commons-csv:1.10.0")
     implementation("io.noties.markwon:core:4.6.2")
     implementation("org.bouncycastle:bcpkix-jdk15to18:1.86")

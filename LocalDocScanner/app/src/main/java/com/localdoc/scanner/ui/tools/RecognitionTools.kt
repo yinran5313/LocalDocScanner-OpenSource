@@ -62,6 +62,7 @@ internal fun OcrFlow(
     modifier: Modifier
 ) {
     var precise by rememberToolState(request, "precise") { 1 }
+    var language by rememberToolState(request, "ocrLanguage") { "AUTO" }
     var searchable by rememberToolState(request, "searchable") { true }
     var manual by rememberToolState(request, "manual") { "" }
     val clipboard = LocalClipboardManager.current
@@ -70,6 +71,7 @@ internal fun OcrFlow(
     @Composable
     fun panel() {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            OcrLanguagePicker(language) { language = it }
             Text("识别档位", style = MaterialTheme.typography.titleSmall)
             ChipRow(listOf("普通(tiny)", "高精度(medium)"), precise) { precise = it }
             Row { Switch(searchable, { searchable = it }); Text("同时生成可搜索PDF") }
@@ -219,7 +221,7 @@ internal fun CardFlow(
 
     fun export(kindOfExport: String) {
         val r = result ?: return
-        val merged = r.copy(fields = r.fields.map { f -> f.copy(value = edited[f.key] ?: f.value) })
+        val merged = StructureExtractor.revalidate(r, edited)
         val (name, content) = when (kindOfExport) {
             "json" -> "card_${stamp()}.json" to StructureExtractor.toJson(merged)
             "csv" -> "card_${stamp()}.csv" to StructureExtractor.toCsv(merged)
@@ -302,14 +304,14 @@ internal fun CardFlow(
                 Button(onClick = { run() }, modifier = Modifier.fillMaxWidth()) { Text("抽取字段") }
             }
 
-            val r = result
+            val r = result?.let { StructureExtractor.revalidate(it, edited) }
             if (r != null) {
                 item { Text("抽取结果（可直接修改）", style = MaterialTheme.typography.titleMedium) }
                 items(r.fields) { f ->
                     Column {
                         OutlinedTextField(
                             value = edited[f.key] ?: f.value,
-                            onValueChange = { edited = edited + (f.key to it) },
+                            onValueChange = { edited = edited + (f.key to it); exported = null },
                             label = {
                                 Text(f.label + when (f.valid) {
                                     true -> " ✓"; false -> " ✗"; null -> ""
@@ -339,6 +341,7 @@ internal fun CardFlow(
                 }
                 exported?.let { file ->
                     item { FilePreview(listOf(file), "导出结果预览") }
+                    item { com.localdoc.scanner.ui.components.SaveDefaultButton(listOf(file)) { exportStatus = it } }
                     item {
                         Text(exportStatus, color = if (exportStatus.startsWith("已保存")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

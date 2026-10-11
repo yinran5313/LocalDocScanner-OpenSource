@@ -17,6 +17,17 @@ class PdfReadSession private constructor(private val file: File, private val doc
         it.isOwnerPermission || (it.canModify() && it.canExtractContent() && it.canAssembleDocument())
     }
     private var closed = false
+    private var nativeRenderer: android.graphics.pdf.PdfRenderer? = null
+    private var triedNative = false
+    @Synchronized fun pageAspectRatios(): List<Float> {
+        check(!closed)
+        return (0 until pageCount).map { index ->
+            val page=doc.getPage(index); val box=page.cropBox
+            val rotated=page.rotation % 180 != 0
+            val ratio=if(rotated) box.height/box.width else box.width/box.height
+            if(ratio.isFinite() && ratio>0f) ratio.coerceIn(0.1f,10f) else 0.707f
+        }
+    }
     /** Never overwrite the source or an existing output; a failed save leaves no partial PDF. */
     @Synchronized fun createWorkingCopy(output: File): File {
         check(!closed)
@@ -47,13 +58,31 @@ class PdfReadSession private constructor(private val file: File, private val doc
     }
     @Synchronized fun render(index: Int, maxSide: Int = 1400): Bitmap? {
         if (closed || index !in 0 until pageCount) return null
-        if (!encrypted) PdfTools.renderPage(file, index, maxSide)?.let { return it }
+        if (!encrypted) {
+            if(!triedNative) {
+                triedNative=true
+                val fd=android.os.ParcelFileDescriptor.open(file,android.os.ParcelFileDescriptor.MODE_READ_ONLY)
+                try { nativeRenderer=android.graphics.pdf.PdfRenderer(fd) } catch(_:Exception) { fd.close() }
+            }
+            nativeRenderer?.let { renderer ->
+                var bitmap:Bitmap?=null
+                try {
+                    renderer.openPage(index).use { page ->
+                        val scale=maxSide.toFloat()/maxOf(page.width,page.height).coerceAtLeast(1)
+                        bitmap=Bitmap.createBitmap((page.width*scale).toInt().coerceAtLeast(1),(page.height*scale).toInt().coerceAtLeast(1),Bitmap.Config.ARGB_8888)
+                        bitmap!!.eraseColor(android.graphics.Color.WHITE)
+                        page.render(bitmap!!,null,null,android.graphics.pdf.PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                    }
+                    return bitmap
+                } catch(_:Exception) { bitmap?.recycle() }
+            }
+        }
         val box = doc.getPage(index).cropBox
         val scale = (maxSide / maxOf(box.width, box.height)).coerceIn(0.1f, 3f)
         return PDFRenderer(doc).apply { isSubsamplingAllowed = true }.renderImage(index, scale)
     }
     @Synchronized override fun close() {
-        if (!closed) { closed = true; doc.close() }
+        if (!closed) { closed = true; try { nativeRenderer?.close() } finally { nativeRenderer=null; doc.close() } }
     }
     companion object {
         fun open(file: File, password: String = ""): PdfReadSession = PdfReadSession(

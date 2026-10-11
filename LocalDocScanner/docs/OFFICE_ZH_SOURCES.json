@@ -1,0 +1,18 @@
+{
+  "repository": "https://github.com/CollaboraOnline/online",
+  "commit": "20a46c332c380925803a1fe538a545c6f9b8fce7",
+  "license": "MPL-2.0",
+  "files": [
+    {
+      "file": "browser/po/core-zh_CN.po",
+      "sha256": "c4c537ce81585d4e61b9dd2ca6e32607f7379edf6e4a44206d7b288f25fc5350",
+      "translated_entries": 192
+    },
+    {
+      "file": "browser/po/core-zh_TW.po",
+      "sha256": "50d9697f29ac3c7f49473bd2a49e3a6dc273f591e69f8e68172790d4c7c788b9",
+      "translated_entries": 359
+    }
+  ],
+  "generated_sha256": "a827525aff5f846319500a2840ba84d6ba5760f81f27481e831d2fa6187b19e5"
+}

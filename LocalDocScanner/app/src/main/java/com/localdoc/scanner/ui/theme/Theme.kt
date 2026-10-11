@@ -4,6 +4,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.ExperimentalTextApi
@@ -60,6 +61,8 @@ private val AppTypography = Typography(
 
 @Composable
 fun LocalDocScannerTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = if (darkTheme) DarkColors else LightColors, typography = AppTypography,
+    val mode by com.localdoc.scanner.data.rememberPreference("theme", "system")
+    val selectedDark = when (mode) { "light" -> false; "dark" -> true; else -> darkTheme }
+    MaterialTheme(colorScheme = if (selectedDark) DarkColors else LightColors, typography = AppTypography,
         shapes = Shapes(RoundedCornerShape(8.dp), RoundedCornerShape(12.dp), RoundedCornerShape(16.dp), RoundedCornerShape(24.dp), RoundedCornerShape(28.dp)), content = content)
 }

@@ -440,6 +440,7 @@ internal fun PdfOfficeFlow(
                     onSelect = { textObjectKey = it.key; replacementText = it.text }, onReplacement = { replacementText = it })
             }
         }
+        CombinedPdfPreview(source, if(pendingEdits.isEmpty()) { if(currentCanApply()) listOf(snapshotCurrent()) else emptyList() } else pendingEdits, pageIndex)
         Text("所有操作都会另存新PDF，原文件不会被覆盖。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 

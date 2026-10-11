@@ -8,7 +8,7 @@ import java.util.UUID
 data class OcrPageCheckpoint(val id: String, val hash: String, val recipe: String,
     val done: Boolean = false, val savedAt: Long = 0, val error: String = "")
 data class OcrCheckpoint(val id: String, val docId: String, val precise: Boolean,
-    val pages: List<OcrPageCheckpoint>, val createdAt: Long = System.currentTimeMillis())
+    val pages: List<OcrPageCheckpoint>, val createdAt: Long = System.currentTimeMillis(), val language: String? = "AUTO")
 
 /** Atomic journal containing input hashes and receipts, never page images. */
 object OcrCheckpointStore {

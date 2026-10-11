@@ -18,6 +18,8 @@ import androidx.camera.core.FocusMeteringAction
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -149,7 +151,7 @@ fun CaptureScreen(
         shoot(imageCapture, captureExecutor, context) { file ->
             busy = false
             if (file != null) {
-                if (allowContinuous && mode > 0) onContinuousCaptured(file, mode == 2) else onCaptured(file)
+                if (allowContinuous && mode in 1..2) onContinuousCaptured(file, mode == 2) else onCaptured(file)
             } else { captureGate.reset(); errorText = "拍照失败" }
         }
     }
@@ -256,6 +258,12 @@ fun CaptureScreen(
             drawLine(line, Offset(0f, size.height * 2f / 3f), Offset(size.width, size.height * 2f / 3f), 1.dp.toPx())
         }
 
+        if (mode >= 3) Canvas(Modifier.fillMaxSize()) {
+            val width = size.width * 0.82f
+            val height = width / (85.6f / 54f)
+            val left=(size.width-width)/2f; val top=(size.height-height)/2f
+            drawRect(Color(0xFF90F6BE), Offset(left,top), androidx.compose.ui.geometry.Size(width,height), style=Stroke(3.dp.toPx()))
+        }
         // 实时边缘框
         Canvas(modifier = Modifier.fillMaxSize()) {
             val det = detection ?: return@Canvas
@@ -349,14 +357,15 @@ fun CaptureScreen(
         }
 
         if (allowContinuous) Column(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 68.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Row {
-                listOf("逐页编辑", "连续扫描", "书籍双页").forEachIndexed { index, label ->
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                listOf("逐页编辑", "连续扫描", "书籍双页", "身份证", "银行卡").forEachIndexed { index, label ->
                     TextButton(onClick = { mode = index; captureGate.reset() }, enabled = !busy && !processing) {
                         Text(if (mode == index) "● $label" else label, color = if (mode == index) Color(0xFF31D158) else Color.White)
                     }
                 }
             }
-            if (mode > 0) Text(if (mode == 2) "拍整幅书页，自动按左→右拆分；完成后逐页检查" else "拍摄后直接加入草稿；完成后检查裁边和顺序", color = Color.White, style = MaterialTheme.typography.labelSmall)
+            if (mode >= 3) Text(if(mode == 4) "请将银行卡放入取景框，拍后检查裁切" else if(pageCount % 2 == 0) "身份证正面（人像面）· 拍后可裁切、检查和重拍" else "身份证反面（国徽面）· 完成后检查正反面", color=Color.White, style=MaterialTheme.typography.labelSmall)
+            if (mode in 1..2) Text(if (mode == 2) "拍整幅书页，自动按左→右拆分；完成后逐页检查" else "拍摄后直接加入草稿；完成后检查裁边和顺序", color = Color.White, style = MaterialTheme.typography.labelSmall)
         }
 
         // 底部：快门 + 完成

@@ -121,8 +121,10 @@ internal class ToolTaskProcessor(private val context: Context, private val spec:
 
     private suspend fun imagesToPdf(): FlowOutcome {
         total = inputs.size + 1
-        val quality = intArrayOf(2400, 1600, 1100)[parameter("quality", 1).coerceIn(0, 2)]
-        val size = if (parameter("pageSize", 0) == 0) PdfExporter.PageSize.A4 else PdfExporter.PageSize.FIT_IMAGE
+        val qualityV5 = parameter("qualityV5", -1)
+        val quality = if (qualityV5 >= 0) intArrayOf(3200, 2000, 1100)[qualityV5.coerceIn(0,2)] else intArrayOf(2400,1600,1100)[parameter("quality",1).coerceIn(0,2)]
+        val paperV5 = parameter("paperV5", "")
+        val size = if (paperV5.isNotBlank()) PdfExporter.PageSize.valueOf(paperV5) else if(parameter("pageSize",0)==1) PdfExporter.PageSize.FIT_IMAGE else PdfExporter.PageSize.A4
         val pages = inputs.mapIndexed { i, source -> pdfStep("image-pdf:$i", "第${i + 1}页.pdf") {
             it.outputStream().use { stream -> PdfExporter.exportFiles(listOf(source), stream, size, quality) }
         } }
@@ -197,27 +199,7 @@ internal class ToolTaskProcessor(private val context: Context, private val spec:
         for ((index, edit) in edits.withIndex()) {
             val previous = input
             input = pdfStep("edit:$index:${ToolCheckpoints.hash(previous)}", "编辑${index + 1}.pdf") { target ->
-                when (edit.operation) {
-                    0 -> {
-                        val image = edit.watermarkUri?.let { ImageIo.loadFromUri(context, it, 1600) }
-                        try { PdfOfficeTools.decorate(context, previous, target, edit.watermark, edit.header, edit.footer,
-                            edit.addPageNumbers, edit.opacity, image, edit.decoration ?: PdfDecorationOptions()) }
-                        finally { image?.recycle() }
-                    }
-                    1 -> edit.text.isNotBlank() && PdfOfficeTools.addText(context, previous, target, edit.pageIndex, edit.text, edit.x, edit.y, 13f)
-                    2 -> PdfOfficeTools.addMarkup(previous, target, edit.pageIndex, edit.markup, edit.x, edit.y, edit.width, edit.height)
-                    3 -> edit.text.isNotBlank() && PdfOfficeTools.addNote(previous, target, edit.pageIndex, edit.text, edit.x, edit.y)
-                    4 -> edit.strokes.any { it.size >= 2 } && PdfOfficeTools.drawInk(previous, target, edit.pageIndex, edit.strokes, edit.x, edit.y, edit.width, edit.height)
-                    5 -> {
-                        val image = edit.signatureUri?.let { ImageIo.loadFromUri(context, it, 1600) } ?: error("签名图片不可读取")
-                        try { PdfOfficeTools.addSignatureImage(previous, target, edit.pageIndex, image, edit.x, edit.y, edit.width, edit.height) }
-                        finally { image.recycle() }
-                    }
-                    6 -> edit.formValues.isNotEmpty() && PdfOfficeTools.fillForm(context, previous, target, edit.formValues)
-                    8 -> edit.annotationChange?.let { PdfAnnotationEditor.apply(previous, target, it) } ?: false
-                    9 -> edit.textChange?.let { PdfOriginalTextEditor.apply(previous, target, it) } ?: false
-                    else -> PdfTools.redactPermanent(previous, target, edit.pageIndex, edit.x, edit.y, edit.width, edit.height)
-                }
+                PdfEditPipeline.apply(context, previous, target, edit)
             }
         }
         return FlowOutcome(listOf("操作" to edits.joinToString("、") { it.label }, "结果" to "已生成编辑副本"), listOf(input))
@@ -227,7 +209,8 @@ internal class ToolTaskProcessor(private val context: Context, private val spec:
     private suspend fun recognize(): FlowOutcome {
         val structured = spec.request.tool.id in setOf("batch_extract", "table_xlsx")
         val card = spec.request.tool.id == "card"
-        val medium = if (structured) parameter("batchMedium", true) else if (card) parameter("precise", true) else parameter("precise", 1) == 1
+        val language = OcrLanguage.fromCode(parameter("ocrLanguage", "AUTO"))
+        val medium = language.medium(if (structured) parameter("batchMedium", true) else if (card) parameter("precise", true) else parameter("precise", 1) == 1)
         val searchable = !structured && !card && parameter("searchable", true)
         val counts = inputs.map { if (it.extension.equals("pdf", true)) PdfTools.pageCount(it) else 1 }
         total = counts.sum() + if (structured || card) 0 else if (searchable) 2 else 1
@@ -246,7 +229,7 @@ internal class ToolTaskProcessor(private val context: Context, private val spec:
                                 else ImageIo.loadFromFile(source, if (medium) 3600 else 2400)
                             requireNotNull(bitmap) { "无法读取图片" }
                             try {
-                                val result = engine.recognize(bitmap, medium)
+                                val result = engine.recognize(bitmap, medium, language)
                                 require(result.text.isNotBlank()) { "未识别到文字，请调整图片或录入" }
                                 val image = if (searchable) file("OCR_${fileIndex}_${index}.jpg").also { check(ImageIo.saveJpeg(bitmap, it, 94)) } else null
                                 RecognizedPage(source.absolutePath, index, image, result.text, result.boxes)
@@ -296,11 +279,12 @@ internal class ToolTaskProcessor(private val context: Context, private val spec:
                 listOf(File(page.source).name, "${page.page + 1}", if (page.reviewed) "已确认" else "待复核", page.error) + keys.map { page.fields[it].orEmpty() }
             })
         }
-        pages.forEachIndexed { i, page -> if (page.rows.isNotEmpty()) sheets += "明细${i + 1}" to page.rows }
+        val tables = pages.filter { it.rows.isNotEmpty() }.mapIndexed { i, page -> TableSheet("明细${i+1}", page.rows, page.merges.orEmpty(), page.columnTypes.orEmpty()) }
+        val tableSheets = if(parameter("combinePages", false)) listOf(TableLayout.combine(tables, parameter("skipHeaders", true))) else tables
         sheets += "原始识别" to (listOf(listOf("来源", "页", "原文分段", "错误")) + pages.flatMap { page ->
             page.raw.chunked(32000).ifEmpty { listOf("") }.map { listOf(File(page.source).name, "${page.page + 1}", it, page.error) }
         })
-        val target = file("识别汇总.xlsx"); AtomicFiles.write(target) { SpreadsheetExport.write(it, sheets) }
+        val target = file("识别汇总.xlsx"); AtomicFiles.write(target) { SpreadsheetExport.writeTables(it, sheets.map { sheet -> TableSheet(sheet.first, sheet.second) } + tableSheets) }
         FlowOutcome(listOf("结果" to "已生成XLSX，${pages.count { !it.reviewed }}页尚未确认"), listOf(target))
     }
     private suspend fun barcode(): FlowOutcome {

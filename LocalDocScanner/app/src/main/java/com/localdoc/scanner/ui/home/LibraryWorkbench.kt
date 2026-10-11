@@ -31,7 +31,7 @@ fun LibraryWorkbench(vm: AppViewModel, onBack: () -> Unit, onDoc: (String) -> Un
     val index = remember { FullTextIndex(context) }
     DisposableEffect(index) { onDispose { index.close() } }
     var query by rememberSaveable { mutableStateOf("") }
-    var status by remember { mutableStateOf("点更新索引，把扫描OCR、PDF和现代Office文字纳入全文检索。") }
+    var status by remember { mutableStateOf("扫描及导入/生成文件自动更新索引；也可手动增量核对，未变化文件会跳过。") }
     var hits by remember { mutableStateOf<List<SearchHit>>(emptyList()) }
     var busy by remember { mutableStateOf(false) }
     var unit by rememberSaveable { mutableStateOf("") }
@@ -52,7 +52,7 @@ fun LibraryWorkbench(vm: AppViewModel, onBack: () -> Unit, onDoc: (String) -> Un
                 Button(onClick = { scope.launch {
                     busy = true
                     val errors = withContext(Dispatchers.IO) {
-                        index.clear()
+                        index.prune(docs.map { it.id }.toSet())
                         docs.forEach(index::indexScan)
                         OutputHistoryStore.all(context).map { File(it.internalPath) to it.name }.filter { it.first.isFile }.distinctBy { it.first.absolutePath }.mapNotNull { (file, name) ->
                             runCatching { index.indexFile(file, name) }.exceptionOrNull()?.message
@@ -61,8 +61,9 @@ fun LibraryWorkbench(vm: AppViewModel, onBack: () -> Unit, onDoc: (String) -> Un
                     status = "索引已更新，${errors.size}个文件未纳入。" + errors.joinToString("\n")
                     busy = false
                 } }, enabled = !busy) { Text("更新全部索引") }
+                IndexImportActions(context) { status = it }
                 OutlinedTextField(query, { query = it }, label = { Text("搜索PDF、Office、识别文字") }, modifier = Modifier.fillMaxWidth())
-                Text("返回前100个匹配结果。原始图片需要先识别；旧Office格式请先用引擎另存为DOCX/XLSX/PPTX。", style = MaterialTheme.typography.bodySmall)
+                Text("返回前100个匹配结果。原始图片需要先识别；支持旧Office文字提取。密码PDF在添加时显式解锁，索引仅存在本机。", style = MaterialTheme.typography.bodySmall)
             }
             items(hits, key = { it.key }) { hit -> Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(10.dp)) {
                 Text(hit.name, style = MaterialTheme.typography.titleSmall)
