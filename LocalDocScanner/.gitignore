@@ -17,3 +17,14 @@ __pycache__/
 .cxx/
 office-engine/src/main/assets/
 office-engine/src/main/jniLibs/
+
+# Private device evidence and credentials stay outside the public source tree.
+.env
+.env.*
+!.env.example
+*.p12
+*.pfx
+device-backups/
+private-audit/
+tools/adb_audit.py
+tools/backup_phone_v501.py
