@@ -16,6 +16,8 @@ class OfficeUiLanguageTest {
     @Test fun localizationRunsAfterBundleInSourceOrder() {
         val base = "<script src=\"bundle.js\" defer></script>"
         val attached = OfficeUiLanguage.attachTranslations(base)
+        assertTrue(attached.indexOf("bundle.js") < attached.indexOf("office-ui.js"))
+        assertTrue(attached.indexOf("office-ui.js") < attached.indexOf("zh-data.js"))
         assertTrue(attached.indexOf("bundle.js") < attached.indexOf("zh-data.js"))
         assertTrue(attached.indexOf("zh-data.js") < attached.indexOf("office-zh.js"))
     }

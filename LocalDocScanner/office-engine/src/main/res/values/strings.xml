@@ -29,4 +29,5 @@
     <string name="use_odf">Use ODF Format</string>
     <string name="ask_for_convert_odf">Confirm File Format</string>
     <string name="convert_odf_message">This document may contain formatting or content that cannot be saved in the currently selected file format \"Text\".</string>
+    <string name="copy_format_unavailable">The document format could not be determined. The original file is preserved. Use Save As to choose a format.</string>
 </resources>
