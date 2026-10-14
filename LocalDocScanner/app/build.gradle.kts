@@ -13,8 +13,8 @@ android {
         applicationId = "com.localdoc.scanner"
         minSdk = 26
         targetSdk = 35
-        versionCode = 16
-        versionName = "5.0.2"
+        versionCode = 20
+        versionName = "5.1.0"
 
         // 当前交付目标为近年的小米手机。OCR/OpenCV 原生库仅保留 ARM64，
         // 避免把 x86 模拟器和旧 32 位手机的三套二进制重复塞进安装包。
@@ -74,7 +74,9 @@ android {
 dependencies {
     implementation(project(":office-engine"))
     implementation(project(":scan-native"))
+    implementation(project(":tokenizer-native"))
     implementation(project(":ppocr-sdk"))
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.21.1")
     implementation("org.opencv:opencv:4.12.0")
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
     val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
@@ -103,6 +105,7 @@ dependencies {
     implementation("org.apache.poi:poi-scratchpad:5.4.1")
     implementation("org.apache.commons:commons-csv:1.10.0")
     implementation("io.noties.markwon:core:4.6.2")
+    implementation("io.noties.markwon:ext-tables:4.6.2")
     implementation("org.bouncycastle:bcpkix-jdk15to18:1.86")
 
     implementation("androidx.compose.ui:ui")

@@ -24,7 +24,8 @@ data class ScanDraft(
     val appendDocId: String? = null,
     val pages: List<DraftPage> = emptyList(),
     val recoveryError: String = "",
-    val updatedAt: Long = System.currentTimeMillis()
+    val updatedAt: Long = System.currentTimeMillis(),
+    val captureProfile: String = "document"
 )
 
 /**
@@ -75,6 +76,7 @@ object DraftStore {
                 pages = pages,
                 recoveryError = if (missing.isEmpty()) "" else "草稿第${missing.joinToString()}页文件缺失，请先备份原始草稿，再修复或明确放弃。",
                 updatedAt = json.optLong("updatedAt", System.currentTimeMillis())
+                , captureProfile = json.optString("captureProfile", "document")
             )
         }.getOrElse { ScanDraft(recoveryError = "草稿清单无法读取：${it.message}。原文件保留，请先备份后处理。") }
     }
@@ -86,6 +88,8 @@ object DraftStore {
 
     fun setTitle(context: Context, draft: ScanDraft, title: String): ScanDraft =
         draft.copy(title = title, updatedAt = System.currentTimeMillis()).also { save(context, it) }
+    fun setProfile(context: Context, draft: ScanDraft, profile: String): ScanDraft =
+        draft.copy(captureProfile = profile, updatedAt = System.currentTimeMillis()).also { save(context, it) }
 
     fun setAppendDoc(context: Context, draft: ScanDraft, docId: String): ScanDraft =
         draft.copy(appendDocId = docId, updatedAt = System.currentTimeMillis()).also { save(context, it) }
@@ -190,6 +194,7 @@ object DraftStore {
         }
         val bytes = JSONObject().apply {
             put("title", draft.title)
+            put("captureProfile", draft.captureProfile)
             put("appendDocId", draft.appendDocId ?: "")
             put("updatedAt", draft.updatedAt)
             put("pages", pages)

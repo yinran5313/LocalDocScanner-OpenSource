@@ -7,11 +7,18 @@ import android.provider.OpenableColumns
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-data class ExternalFile(val uri: Uri, val mime: String, val name: String)
+data class ExternalFile(val uri: Uri, val mime: String, val name: String, val libraryDocId: String? = null)
 
 object ExternalOpenBus {
     private val _current = MutableStateFlow<ExternalFile?>(null)
     val current = _current.asStateFlow()
+
+    fun offerLibrary(context: android.content.Context, doc: com.localdoc.scanner.model.DocItem) {
+        val file = java.io.File(doc.filePath)
+        require(file.isFile) { "文档文件已不存在，请从原位置重新导入" }
+        val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        _current.value = ExternalFile(uri, doc.mime.takeUnless { it.isBlank() || it == "application/octet-stream" } ?: com.localdoc.scanner.output.OutputHistoryStore.mimeFor(file), doc.title, doc.id)
+    }
 
     fun offer(intent: Intent?, resolver: ContentResolver) {
         if (intent == null || intent.action !in setOf(Intent.ACTION_VIEW, Intent.ACTION_EDIT, Intent.ACTION_SEND)) return

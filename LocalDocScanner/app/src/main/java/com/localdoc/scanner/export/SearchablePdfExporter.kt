@@ -17,7 +17,8 @@ import com.localdoc.scanner.ocr.OcrTextBox
 import com.localdoc.scanner.ocr.OcrLayout
 import com.tom_roush.pdfbox.util.Matrix
 
-data class SearchablePdfPage(val image: File, val text: String, val boxes: List<OcrTextBox> = emptyList())
+data class SearchablePdfPage(val image: File, val text: String, val boxes: List<OcrTextBox> = emptyList(),
+    val widthPt: Float? = null, val heightPt: Float? = null)
 
 /** 扫描图作为可见页面，OCR文字作为不可见文字层。 */
 object SearchablePdfExporter {
@@ -44,7 +45,9 @@ object SearchablePdfExporter {
             val font = PDType0Font.load(document, fontInput, true)
             pages.forEach { item ->
                 val image = imageLoader(document, item.image)
-                val page = PDPage(when (pageSize) {
+                require((item.widthPt == null) == (item.heightPt == null)) { "页面尺寸不完整" }
+                if (item.widthPt != null) require(item.widthPt.isFinite() && item.widthPt > 0 && item.heightPt!!.isFinite() && item.heightPt > 0) { "页面尺寸无效" }
+                val page = PDPage(if (item.widthPt != null) PDRectangle(item.widthPt, item.heightPt!!) else when (pageSize) {
                     PdfExporter.PageSize.A4 -> PDRectangle.A4
                     PdfExporter.PageSize.LETTER -> PDRectangle.LETTER
                     PdfExporter.PageSize.FIT_IMAGE -> PDRectangle(image.width.toFloat(), image.height.toFloat())

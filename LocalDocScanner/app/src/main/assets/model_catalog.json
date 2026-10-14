@@ -1,0 +1,458 @@
+[
+  {
+    "id": "translate-zh-en",
+    "title": "中译英",
+    "engine": "marian",
+    "description": "中文文字翻译成英文",
+    "version": "2304721bd50d",
+    "license": "CC-BY-4.0",
+    "source": "Xenova/opus-mt-zh-en",
+    "files": [
+      {
+        "name": "encoder_model_quantized.onnx",
+        "bytes": 52899742,
+        "sha256": "84d5e171b626bc8b6b220d022ac58696e9528c25deeacca62b5cbf4364547a99",
+        "urls": [
+          "https://modelscope.cn/api/v1/models/Xenova/opus-mt-zh-en/repo?Revision=master&FilePath=onnx%2Fencoder_model_quantized.onnx",
+          "https://www.modelscope.cn/models/Xenova/opus-mt-zh-en/resolve/master/onnx/encoder_model_quantized.onnx"
+        ]
+      },
+      {
+        "name": "decoder_model_merged_quantized.onnx",
+        "bytes": 60212804,
+        "sha256": "c6b7f04ff1ba0fbd1bf6852599b4c0cad6fe512d57cd887f44ef36cf705424cb",
+        "urls": [
+          "https://modelscope.cn/api/v1/models/Xenova/opus-mt-zh-en/repo?Revision=master&FilePath=onnx%2Fdecoder_model_merged_quantized.onnx",
+          "https://www.modelscope.cn/models/Xenova/opus-mt-zh-en/resolve/master/onnx/decoder_model_merged_quantized.onnx"
+        ]
+      },
+      {
+        "name": "source.spm",
+        "bytes": 804677,
+        "sha256": "e27a3a1b539f4959ec72ea60e453f49156289f95d4e6000b29332efc45616203",
+        "urls": [
+          "https://modelscope.cn/api/v1/models/Xenova/opus-mt-zh-en/repo?Revision=master&FilePath=source.spm",
+          "https://www.modelscope.cn/models/Xenova/opus-mt-zh-en/resolve/master/source.spm"
+        ]
+      },
+      {
+        "name": "target.spm",
+        "bytes": 806530,
+        "sha256": "6a881f4717cd7265f53fea54fd3dc689c767c05338fac7a4590f3088cb2d7855",
+        "urls": [
+          "https://modelscope.cn/api/v1/models/Xenova/opus-mt-zh-en/repo?Revision=master&FilePath=target.spm",
+          "https://www.modelscope.cn/models/Xenova/opus-mt-zh-en/resolve/master/target.spm"
+        ]
+      },
+      {
+        "name": "vocab.json",
+        "bytes": 1747906,
+        "sha256": "08a119a1defd522fa047cb5e3bfe3e89633e96caa38ced0dc9cee7ef1021a011",
+        "urls": [
+          "https://modelscope.cn/api/v1/models/Xenova/opus-mt-zh-en/repo?Revision=master&FilePath=vocab.json",
+          "https://www.modelscope.cn/models/Xenova/opus-mt-zh-en/resolve/master/vocab.json"
+        ]
+      },
+      {
+        "name": "config.json",
+        "bytes": 1389,
+        "sha256": "293d318fce41dbf04114eac45037bb88a32d7c4ee21011a75e24a8b98ca45ad1",
+        "urls": [
+          "https://modelscope.cn/api/v1/models/Xenova/opus-mt-zh-en/repo?Revision=master&FilePath=config.json",
+          "https://www.modelscope.cn/models/Xenova/opus-mt-zh-en/resolve/master/config.json"
+        ]
+      },
+      {
+        "name": "generation_config.json",
+        "bytes": 293,
+        "sha256": "8dc29fef0fe82109f94ef3c2e6ea6bded3215d357b226c34cf7b4630726766c9",
+        "urls": [
+          "https://modelscope.cn/api/v1/models/Xenova/opus-mt-zh-en/repo?Revision=master&FilePath=generation_config.json",
+          "https://www.modelscope.cn/models/Xenova/opus-mt-zh-en/resolve/master/generation_config.json"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "translate-en-zh",
+    "title": "英译中",
+    "engine": "marian",
+    "description": "英文文字翻译成中文",
+    "version": "1b58a3cb631f",
+    "license": "Apache-2.0",
+    "source": "Xenova/opus-mt-en-zh",
+    "files": [
+      {
+        "name": "encoder_model_quantized.onnx",
+        "bytes": 52899742,
+        "sha256": "d3b7912bf6a9bd27e4c074c2df91d4ff3d5b4bc5f7f6c8d7cc9c805c98fbafee",
+        "urls": [
+          "https://modelscope.cn/api/v1/models/Xenova/opus-mt-en-zh/repo?Revision=master&FilePath=onnx%2Fencoder_model_quantized.onnx",
+          "https://www.modelscope.cn/models/Xenova/opus-mt-en-zh/resolve/master/onnx/encoder_model_quantized.onnx"
+        ]
+      },
+      {
+        "name": "decoder_model_merged_quantized.onnx",
+        "bytes": 60212804,
+        "sha256": "023be4f841f4c47cd65fffcbaa81c0d99d7f7e0138f7ba0e03fa220a4e688aff",
+        "urls": [
+          "https://modelscope.cn/api/v1/models/Xenova/opus-mt-en-zh/repo?Revision=master&FilePath=onnx%2Fdecoder_model_merged_quantized.onnx",
+          "https://www.modelscope.cn/models/Xenova/opus-mt-en-zh/resolve/master/onnx/decoder_model_merged_quantized.onnx"
+        ]
+      },
+      {
+        "name": "source.spm",
+        "bytes": 806435,
+        "sha256": "5775ddc9e3ff2fae91554da56468ad35ff56edaba870fea74447bc7234bfdaa8",
+        "urls": [
+          "https://modelscope.cn/api/v1/models/Xenova/opus-mt-en-zh/repo?Revision=master&FilePath=source.spm",
+          "https://www.modelscope.cn/models/Xenova/opus-mt-en-zh/resolve/master/source.spm"
+        ]
+      },
+      {
+        "name": "target.spm",
+        "bytes": 804600,
+        "sha256": "81dc94efa84e4025ef38d25d5d07429fe41e3eb29d44003f1db6fe98487b0052",
+        "urls": [
+          "https://modelscope.cn/api/v1/models/Xenova/opus-mt-en-zh/repo?Revision=master&FilePath=target.spm",
+          "https://www.modelscope.cn/models/Xenova/opus-mt-en-zh/resolve/master/target.spm"
+        ]
+      },
+      {
+        "name": "vocab.json",
+        "bytes": 1747795,
+        "sha256": "22c957348eed495ee925afc40a36da3e387c8a34a734c8486967c2dca271613e",
+        "urls": [
+          "https://modelscope.cn/api/v1/models/Xenova/opus-mt-en-zh/repo?Revision=master&FilePath=vocab.json",
+          "https://www.modelscope.cn/models/Xenova/opus-mt-en-zh/resolve/master/vocab.json"
+        ]
+      },
+      {
+        "name": "config.json",
+        "bytes": 1503,
+        "sha256": "4727d1229a04f95bf6f39abf949d8080615433d99d6ebd85f81c09edd247d5fa",
+        "urls": [
+          "https://modelscope.cn/api/v1/models/Xenova/opus-mt-en-zh/repo?Revision=master&FilePath=config.json",
+          "https://www.modelscope.cn/models/Xenova/opus-mt-en-zh/resolve/master/config.json"
+        ]
+      },
+      {
+        "name": "generation_config.json",
+        "bytes": 293,
+        "sha256": "b743baabb7da4c1a2f19fe558bd6b4c0c7c3b0762fcb5ca7a48fe5a2c2219803",
+        "urls": [
+          "https://modelscope.cn/api/v1/models/Xenova/opus-mt-en-zh/repo?Revision=master&FilePath=generation_config.json",
+          "https://www.modelscope.cn/models/Xenova/opus-mt-en-zh/resolve/master/generation_config.json"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "portrait",
+    "title": "人像抠图",
+    "engine": "modnet",
+    "description": "证件照换底与透明人像",
+    "version": "54829e3ecd2d",
+    "license": "Apache-2.0",
+    "source": "Xenova/modnet",
+    "files": [
+      {
+        "name": "model.onnx",
+        "bytes": 25888640,
+        "sha256": "07c308cf0fc7e6e8b2065a12ed7fc07e1de8febb7dc7839d7b7f15dd66584df9",
+        "urls": [
+          "https://modelscope.cn/api/v1/models/Xenova/modnet/repo?Revision=master&FilePath=onnx%2Fmodel.onnx",
+          "https://www.modelscope.cn/models/Xenova/modnet/resolve/master/onnx/model.onnx"
+        ]
+      },
+      {
+        "name": "preprocessor_config.json",
+        "bytes": 365,
+        "sha256": "07d83634b1fdd20142ca6e3fe55ab92b558f56d1b0f005ff3a7926f1c9e1165d",
+        "urls": [
+          "https://modelscope.cn/api/v1/models/Xenova/modnet/repo?Revision=master&FilePath=preprocessor_config.json",
+          "https://www.modelscope.cn/models/Xenova/modnet/resolve/master/preprocessor_config.json"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "semantic",
+    "title": "语义搜索",
+    "engine": "bge",
+    "description": "按内容含义查找本机文档",
+    "version": "aae63d670f38",
+    "license": "MIT",
+    "source": "Xenova/bge-small-zh-v1.5",
+    "files": [
+      {
+        "name": "model_quantized.onnx",
+        "bytes": 24010842,
+        "sha256": "15b717c382bcb518ba457b93ea6850ede7f4f1cd8937454aa06972366cd19bcc",
+        "urls": [
+          "https://modelscope.cn/api/v1/models/Xenova/bge-small-zh-v1.5/repo?Revision=master&FilePath=onnx%2Fmodel_quantized.onnx",
+          "https://www.modelscope.cn/models/Xenova/bge-small-zh-v1.5/resolve/master/onnx/model_quantized.onnx"
+        ]
+      },
+      {
+        "name": "vocab.txt",
+        "bytes": 109540,
+        "sha256": "45bbac6b341c319adc98a532532882e91a9cefc0329aa57bac9ae761c27b291c",
+        "urls": [
+          "https://modelscope.cn/api/v1/models/Xenova/bge-small-zh-v1.5/repo?Revision=master&FilePath=vocab.txt",
+          "https://www.modelscope.cn/models/Xenova/bge-small-zh-v1.5/resolve/master/vocab.txt"
+        ]
+      },
+      {
+        "name": "tokenizer_config.json",
+        "bytes": 367,
+        "sha256": "e6f3b96db926a37d4039995fbf5ad17de158dfb8f6343d607e4dbaad18d75f5a",
+        "urls": [
+          "https://modelscope.cn/api/v1/models/Xenova/bge-small-zh-v1.5/repo?Revision=master&FilePath=tokenizer_config.json",
+          "https://www.modelscope.cn/models/Xenova/bge-small-zh-v1.5/resolve/master/tokenizer_config.json"
+        ]
+      },
+      {
+        "name": "config.json",
+        "bytes": 716,
+        "sha256": "d4193ead3a810fd694fa8a31d7fc72fbaebc0668b603e398734bf2f6538ff42f",
+        "urls": [
+          "https://modelscope.cn/api/v1/models/Xenova/bge-small-zh-v1.5/repo?Revision=master&FilePath=config.json",
+          "https://www.modelscope.cn/models/Xenova/bge-small-zh-v1.5/resolve/master/config.json"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "table",
+    "title": "表格结构",
+    "engine": "slan",
+    "description": "识别表格行列和合并单元格",
+    "version": "7fef42125107",
+    "license": "Apache-2.0",
+    "source": "PaddlePaddle/SLANet_plus_onnx",
+    "files": [
+      {
+        "name": "inference.onnx",
+        "bytes": 7782138,
+        "sha256": "7790c0c13ce064782c9d22ebeb16b4da8216f83d3ba576da962c106ef58386da",
+        "urls": [
+          "https://modelscope.cn/api/v1/models/PaddlePaddle/SLANet_plus_onnx/repo?Revision=master&FilePath=inference.onnx",
+          "https://www.modelscope.cn/models/PaddlePaddle/SLANet_plus_onnx/resolve/master/inference.onnx"
+        ]
+      },
+      {
+        "name": "inference.yml",
+        "bytes": 2035,
+        "sha256": "8a6372d3269a6f112fe13a2da7952a84da6e112c10a3146cbb43de5bd01d19fa",
+        "urls": [
+          "https://modelscope.cn/api/v1/models/PaddlePaddle/SLANet_plus_onnx/repo?Revision=master&FilePath=inference.yml",
+          "https://www.modelscope.cn/models/PaddlePaddle/SLANet_plus_onnx/resolve/master/inference.yml"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "unwarp",
+    "title": "书籍展平",
+    "engine": "uvdoc",
+    "description": "弯曲页面展平后复核",
+    "version": "c40275abb4fb",
+    "license": "MIT / Apache-2.0",
+    "source": "PaddlePaddle/UVDoc_onnx",
+    "files": [
+      {
+        "name": "inference.onnx",
+        "bytes": 31684150,
+        "sha256": "54cab30dc2cf347b4f3d6971c833b1c3d84f5ef17280f1f6d15796bff20e63d6",
+        "urls": [
+          "https://modelscope.cn/api/v1/models/PaddlePaddle/UVDoc_onnx/repo?Revision=master&FilePath=inference.onnx",
+          "https://www.modelscope.cn/models/PaddlePaddle/UVDoc_onnx/resolve/master/inference.onnx"
+        ]
+      },
+      {
+        "name": "inference.yml",
+        "bytes": 330,
+        "sha256": "be83d537b358f3ff87740e77e14a83ee9e9a7bb215c33d091b69e8bd5904fe39",
+        "urls": [
+          "https://modelscope.cn/api/v1/models/PaddlePaddle/UVDoc_onnx/repo?Revision=master&FilePath=inference.yml",
+          "https://www.modelscope.cn/models/PaddlePaddle/UVDoc_onnx/resolve/master/inference.yml"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "objects",
+    "title": "物体计数",
+    "engine": "yolos",
+    "description": "识别人、汽车、瓶、杯、书等有限类别；结果可对照和修正",
+    "version": "65cac4b60863",
+    "license": "Apache-2.0",
+    "source": "https://huggingface.co/Xenova/yolos-tiny",
+    "files": [
+      {
+        "name": "model_quantized.onnx",
+        "bytes": 9661148,
+        "sha256": "82b5c1de8aaaffd763c67d67b09b742a1c53628acfee3077af3fa59233e86b6b",
+        "urls": [
+          "https://www.modelscope.cn/api/v1/models/Xenova/yolos-tiny/repo?Revision=master&FilePath=onnx/model_quantized.onnx",
+          "https://www.modelscope.cn/models/Xenova/yolos-tiny/resolve/master/onnx/model_quantized.onnx"
+        ]
+      },
+      {
+        "name": "config.json",
+        "bytes": 4145,
+        "sha256": "ce8640ba6bd97a7b36ccf2d0dba9a6ac233211e2dc0c5dc4c63d922e80338c08",
+        "urls": [
+          "https://www.modelscope.cn/api/v1/models/Xenova/yolos-tiny/repo?Revision=master&FilePath=config.json",
+          "https://www.modelscope.cn/models/Xenova/yolos-tiny/resolve/master/config.json"
+        ]
+      },
+      {
+        "name": "preprocessor_config.json",
+        "bytes": 457,
+        "sha256": "b010730968cdbccf8767b61b0a8e903396d831fd97f3c44cc9f0c0437deb7b7f",
+        "urls": [
+          "https://www.modelscope.cn/api/v1/models/Xenova/yolos-tiny/repo?Revision=master&FilePath=preprocessor_config.json",
+          "https://www.modelscope.cn/models/Xenova/yolos-tiny/resolve/master/preprocessor_config.json"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "restore",
+    "title": "照片高清修复",
+    "engine": "realesrgan",
+    "description": "Real-ESRGAN本地分块增强，2倍/4倍输出",
+    "version": "332b737dbeea",
+    "license": "BSD-3-Clause",
+    "source": "xinntao/Real-ESRGAN; cix/ai_model_hub_25_Q3 ONNX",
+    "files": [
+      {
+        "name": "LICENSE.txt",
+        "bytes": 1519,
+        "sha256": "4a699ec4863d96a91fc265948a0c90033f7e8735d515524dcf3444736406e0c2",
+        "urls": [
+          "https://modelscope.cn/api/v1/models/cix/ai_model_hub_25_Q3/repo?Revision=master&FilePath=models%2FComputeVision%2FSuper_Resolution%2Fonnx_real_esrgan%2Fmodel%2FLICENSE.txt",
+          "https://www.modelscope.cn/models/cix/ai_model_hub_25_Q3/resolve/master/models/ComputeVision/Super_Resolution/onnx_real_esrgan/model/LICENSE.txt"
+        ]
+      },
+      {
+        "name": "realesrgan-x4.onnx",
+        "bytes": 67051789,
+        "sha256": "e9e36c559304d0df3bd2bbccc563d7b86b8acc8078b1e26c900765496fc07502",
+        "urls": [
+          "https://modelscope.cn/api/v1/models/cix/ai_model_hub_25_Q3/repo?Revision=master&FilePath=models%2FComputeVision%2FSuper_Resolution%2Fonnx_real_esrgan%2Fmodel%2Frealesrgan-x4.onnx",
+          "https://www.modelscope.cn/models/cix/ai_model_hub_25_Q3/resolve/master/models/ComputeVision/Super_Resolution/onnx_real_esrgan/model/realesrgan-x4.onnx"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "formula",
+    "title": "公式识别",
+    "engine": "rapid-latex",
+    "description": "单条数学公式转LaTeX；当前使用离线模型包导入",
+    "version": "6c53f5417dec",
+    "license": "MIT",
+    "source": "RapidAI/RapidLaTeXOCR v0.0.0; lukas-blecher/LaTeX-OCR",
+    "files": [
+      {
+        "name": "encoder.onnx",
+        "bytes": 89008136,
+        "sha256": "01bf5dc25539ca0cd5b1bd29296ea495977a6ba5f629dc4178277809d26e5e7d",
+        "urls": []
+      },
+      {
+        "name": "decoder.onnx",
+        "bytes": 50952726,
+        "sha256": "bd695497bf1b22279b7626f5916c79226e1e244c84355f8da7edfd2d921d0072",
+        "urls": []
+      },
+      {
+        "name": "image_resizer.onnx",
+        "bytes": 38967751,
+        "sha256": "e0b075c39700f64d50400f39c8fc186bbb3b5d84d31864008313f376603aca9d",
+        "urls": []
+      },
+      {
+        "name": "tokenizer.json",
+        "bytes": 24174,
+        "sha256": "1dc27b18d6a518d0d5ff3f4bb7bd98521fe80ad39e5b2a246d4109f1bb9d5019",
+        "urls": []
+      },
+      {
+        "name": "LICENSE.txt",
+        "bytes": 1064,
+        "sha256": "5c844da901c7c5a9d629d762e599f08613798feb04051bdc85fdd4d1ab8d7c93",
+        "urls": []
+      }
+    ]
+  },
+  {
+    "id": "inpaint",
+    "title": "背景修补模型",
+    "engine": "onnx-lama",
+    "description": "区域擦除的学习式背景修补。固定512模型对选区周围背景推断，选区外保持原像素；不能恢复遮挡文字。目前仅导入离线包。",
+    "version": "4fc34ad4a04d",
+    "license": "Apache-2.0",
+    "source": "Carve/LaMa-ONNX; Carve-Photos/lama; advimman/lama",
+    "files": [
+      {
+        "name": "lama_fp32.onnx",
+        "bytes": 208044816,
+        "sha256": "1faef5301d78db7dda502fe59966957ec4b79dd64e16f03ed96913c7a4eb68d6",
+        "urls": []
+      },
+      {
+        "name": "LICENSE.txt",
+        "bytes": 11348,
+        "sha256": "4ceeeac5a802e86c413c22b16cce8e9a22027b0250c97e6f8ac97c14cf0542c0",
+        "urls": []
+      }
+    ]
+  },
+  {
+    "id": "deblur",
+    "title": "照片去模糊",
+    "engine": "onnxruntime",
+    "description": "独立NAFNet模型，分块处理轻中度模糊；支持强度调整和续跑",
+    "version": "2e59e06c1c63",
+    "license": "MIT",
+    "source": "opencv/opencv_zoo · models/deblurring_nafnet",
+    "files": [
+      {
+        "name": "nafnet.onnx",
+        "bytes": 91736251,
+        "sha256": "07263f416febecce10193dd648e950b22e397cf521eedab1a114ef77b2bc9587",
+        "urls": []
+      },
+      {
+        "name": "LICENSE.txt",
+        "bytes": 12693,
+        "sha256": "08a241b2eff4859da6a56987710d29d246fb28818b3d1ef9aa520b84ec6891b7",
+        "urls": []
+      }
+    ]
+  },
+  {
+    "id": "layout",
+    "title": "图文版面",
+    "engine": "onnxruntime",
+    "description": "区分标题、正文、表格、插图和公式区域，保留多栏阅读顺序和区域原图",
+    "version": "c99bdb6966d6",
+    "license": "Apache-2.0",
+    "source": "RapidAI/RapidLayout · PP_LAYOUT_CDLA",
+    "files": [
+      {
+        "name": "layout_cdla.onnx",
+        "bytes": 7423528,
+        "sha256": "25b1f27ec56aa932a48f30cbd6293c358a156280f4b20b0a973bab210c39f62c",
+        "urls": [
+          "https://modelscope.cn/api/v1/models/RapidAI/RapidLayout/repo?Revision=master&FilePath=onnx%2Fpp_layout%2Flayout_cdla.onnx",
+          "https://www.modelscope.cn/models/RapidAI/RapidLayout/resolve/master/onnx/pp_layout/layout_cdla.onnx"
+        ]
+      }
+    ]
+  }
+]

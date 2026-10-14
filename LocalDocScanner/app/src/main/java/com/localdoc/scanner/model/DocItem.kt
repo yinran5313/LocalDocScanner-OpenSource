@@ -13,5 +13,8 @@ data class DocItem(
     val ocrText: String = "",
     val createdAt: Long = updatedAt,
     val legacyOcrText: String = "",
-    val favorite: Boolean = false
+    val favorite: Boolean = false,
+    val kind: String = "SCAN",
+    val filePath: String = "",
+    val mime: String = ""
 )

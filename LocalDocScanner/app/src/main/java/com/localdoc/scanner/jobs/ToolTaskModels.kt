@@ -8,10 +8,17 @@ import java.io.File
 data class FlowOutcome(val summary: List<Pair<String, String>>, val files: List<File>,
     val docFiles: List<File> = emptyList(), val copyText: String? = null,
     val reviewPages: List<ReviewPage> = emptyList(), val failures: List<String> = emptyList(),
-    val sensitiveRegions: List<SensitiveRegion> = emptyList())
+    val sensitiveRegions: List<SensitiveRegion> = emptyList(),
+    val fileFolders: Map<String,String> = emptyMap(), val fileLabels: Map<String,String> = emptyMap(),
+    val primaryFiles: List<File>? = null, val libraryFiles: List<File>? = null) {
+    val deliverables get() = primaryFiles.orEmpty().ifEmpty { files }
+    val libraryOutputs get() = libraryFiles.orEmpty().ifEmpty { files }
+}
 data class ReviewPage(val source: String, val page: Int, val raw: String,
     val fields: Map<String, String>, val rows: List<List<String>>, val error: String = "", val reviewed: Boolean = false, val edited: Boolean = false,
-    val merges: List<com.localdoc.scanner.structure.CellMerge>? = null, val columnTypes: Map<Int, String>? = null)
+    val merges: List<com.localdoc.scanner.structure.CellMerge>? = null, val columnTypes: Map<Int, String>? = null,
+    val sourceBoxes: List<com.localdoc.scanner.ocr.OcrTextBox>? = null, val modelCells: List<com.localdoc.scanner.models.TableCell>? = null,
+    val layoutNote: String? = null)
 data class PendingPdfEdit(val operation: Int, val label: String, val pageIndex: Int,
     val text: String, val header: String, val footer: String, val watermark: String,
     val addPageNumbers: Boolean, val opacity: Float, val x: Float, val y: Float,

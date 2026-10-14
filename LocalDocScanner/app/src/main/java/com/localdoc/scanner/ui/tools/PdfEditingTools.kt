@@ -38,6 +38,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.layout.onSizeChanged
 import com.localdoc.scanner.jobs.*
 import com.localdoc.scanner.data.ToolDrafts
 import androidx.compose.runtime.collectAsState
@@ -161,6 +162,8 @@ internal fun PdfOfficeFlow(
     var markup by rememberToolState(request, "markup") { 0 }
     var strokes by rememberToolState<List<List<PdfInkPoint>>>(request, "strokes") { emptyList() }
     var signatureUri by rememberToolState<Uri?>(request, "signatureUri") { null }
+    var signatureLibraryOpen by remember { mutableStateOf(false) }
+    if (signatureLibraryOpen) { SignatureLibraryScreen({ signatureLibraryOpen = false }) { signatureUri = it; signatureLibraryOpen = false }; return }
     var watermarkUri by rememberToolState<Uri?>(request, "watermarkUri") { null }
     var pendingEdits by rememberToolState<List<PendingPdfEdit>>(request, "pendingEdits") { emptyList() }
     var annotations by remember(source) { mutableStateOf<List<com.localdoc.scanner.pdf.PdfAnnotationEntry>>(emptyList()) }
@@ -393,6 +396,7 @@ internal fun PdfOfficeFlow(
                 positionControls()
             }
             5 -> {
+                TextButton({ signatureLibraryOpen = true }) { Text("从签名库选择 / 新建签名") }
                 Button(onClick = { signaturePicker.launch(arrayOf("image/*")) }) { Text(if (signatureUri == null) "选择签名图片" else "重新选择签名图片") }
                 Text(signatureUri?.lastPathSegment ?: "尚未选择", style = MaterialTheme.typography.bodySmall)
                 positionControls(showSize = true)
@@ -459,13 +463,14 @@ internal fun PdfOfficeFlow(
 
 
 @Composable
-private fun SignaturePad(
+internal fun SignaturePad(
     strokes: List<List<PdfInkPoint>>,
-    onStrokesChange: (List<List<PdfInkPoint>>) -> Unit
+    onStrokesChange: (List<List<PdfInkPoint>>) -> Unit,
+    onAspect: (Float) -> Unit = {}
 ) {
     val currentStrokes by rememberUpdatedState(strokes)
     Canvas(
-        modifier = Modifier.fillMaxWidth().height(150.dp).background(Color.White)
+        modifier = Modifier.fillMaxWidth().height(150.dp).background(Color.White).onSizeChanged { onAspect(it.width.toFloat() / it.height.coerceAtLeast(1)) }
             .pointerInput(Unit) {
                 var base = emptyList<List<PdfInkPoint>>()
                 val active = mutableListOf<PdfInkPoint>()

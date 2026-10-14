@@ -25,5 +25,6 @@ include(":app")
 include(":ppocr-sdk")
 include(":office-engine")
 include(":scan-native")
+include(":tokenizer-native")
 
 if (providers.gradleProperty("uiPreview").orNull == "true") include(":ui-preview")

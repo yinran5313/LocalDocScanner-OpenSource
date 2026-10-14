@@ -9,6 +9,7 @@ val syncPreviewSources by tasks.registering(Sync::class) {
         include("com/localdoc/scanner/data/ToolDrafts.kt", "com/localdoc/scanner/ui/ToolRequest.kt", "com/localdoc/scanner/data/AppPreferences.kt", "com/localdoc/scanner/data/FileStore.kt", "com/localdoc/scanner/export/PdfExporter.kt", "com/localdoc/scanner/util/ImageIo.kt", "com/localdoc/scanner/util/BitmapOwnership.kt", "com/localdoc/scanner/util/AtomicFiles.kt")
         include("com/localdoc/scanner/pdf/PdfReadSession.kt", "com/localdoc/scanner/pdf/PdfViewportMath.kt", "com/localdoc/scanner/ui/tools/PdfReader.kt", "com/localdoc/scanner/ui/tools/PdfContinuousPages.kt", "com/localdoc/scanner/office/LegacyOfficeText.kt")
         include("com/localdoc/scanner/ui/settings/DefaultSettings.kt")
+        include("com/localdoc/scanner/data/LibraryFolders.kt")
         exclude("com/localdoc/scanner/ui/components/SaveDefaultButton.kt")
     }
     into(layout.buildDirectory.dir("generated/previewKotlin"))

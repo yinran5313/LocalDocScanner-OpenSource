@@ -3,6 +3,10 @@ package com.localdoc.scanner.ui.home
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.Surface
 import com.localdoc.scanner.ui.components.AppIcon
@@ -44,62 +48,44 @@ private val toolsById = TOOL_ENTRIES.associateBy { it.id }
 private data class ToolGroup(val id: String, val title: String, val toolIds: List<String>)
 
 private val TOOL_GROUPS = listOf(
-    ToolGroup("image", "图片处理", listOf("image_edit", "long_image", "images_to_pdf")),
+    ToolGroup("capture", "拍摄", listOf("scan_ppt", "scan_whiteboard", "scan_handwriting", "watermark_camera")),
+    ToolGroup("image", "图片与书籍", listOf("image_edit", "photo_restore", "region_erase", "portrait", "book_unwarp", "count_objects", "long_image", "images_to_pdf", "image_ppt")),
     ToolGroup(
         "pdf",
         "PDF 处理",
-        listOf("pdf_office", "pdf_sign", "pdf_merge", "pdf_split", "pdf_compress", "pdf_to_images", "pdf_text", "pdf_encrypt", "pdf_compare")
+        listOf("pdf_office", "pdf_pages", "sign_library", "pdf_sign", "pdf_merge", "pdf_split", "pdf_compress", "pdf_to_images", "pdf_long", "pdf_enhance", "pdf_text", "pdf_encrypt", "pdf_compare")
     ),
-    ToolGroup("recognize", "识别与提取", listOf("ocr", "card", "barcode")),
-    ToolGroup("structure", "票据与表格", listOf("batch_extract", "table_xlsx"))
+    ToolGroup("recognize", "识别与提取", listOf("ocr", "formula", "translate", "structured_markdown", "card", "card_wallet", "barcode_live", "barcode", "qr_create")),
+    ToolGroup("structure", "票据与表格", listOf("batch_extract", "table_xlsx")),
+    ToolGroup("files", "文件管理", listOf("zip_import", "semantic_search"))
 )
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ToolGrid(onToolClick: (ToolEntry) -> Unit, modifier: Modifier = Modifier) {
-    var expandedGroup by rememberSaveable { mutableStateOf<String?>(null) }
+    var collapsedGroups by rememberSaveable { mutableStateOf(emptyList<String>()) }
     val byId = toolsById
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         TOOL_GROUPS.forEach { group ->
             val tools = group.toolIds.mapNotNull(byId::get)
-            val expanded = expandedGroup == group.id
-            Card(
-                onClick = { expandedGroup = if (expanded) null else group.id },
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.large,
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Surface(shape = MaterialTheme.shapes.medium, color = if (group.id == "pdf") MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.primaryContainer) {
-                        Box(Modifier.size(42.dp), contentAlignment = Alignment.Center) { AppIcon(toolIcon(tools.first().id)) }
-                    }
-                    Spacer(Modifier.size(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(group.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                        Text(group.toolIds.take(2).mapNotNull(byId::get).joinToString(" · ") { it.label } + "  /  ${tools.size}项", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Icon(
-                        painter = painterResource(if (expanded) R.drawable.ic_expand_more else R.drawable.ic_chevron_right),
-                        contentDescription = if (expanded) "收起${group.title}" else "展开${group.title}",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+            val expanded = group.id !in collapsedGroups
+            Row(Modifier.fillMaxWidth().combinedClickable(onClick = { collapsedGroups = if (expanded) collapsedGroups + group.id else collapsedGroups - group.id }), verticalAlignment = Alignment.CenterVertically) {
+                Text(group.title, Modifier.weight(1f).padding(vertical = 12.dp), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Icon(painterResource(if (expanded) R.drawable.ic_expand_more else R.drawable.ic_chevron_right), if (expanded) "收起" else "展开", Modifier.size(24.dp))
             }
             AnimatedVisibility(visible = expanded) {
-                ToolRows(tools = tools, onToolClick = onToolClick)
+                CompactToolRows(tools = tools, onToolClick = onToolClick)
             }
         }
     }
 }
 
 @Composable
-private fun ToolRows(tools: List<ToolEntry>, onToolClick: (ToolEntry) -> Unit) {
+internal fun CompactToolRows(tools: List<ToolEntry>, onToolClick: (ToolEntry) -> Unit) {
     val fontScale = LocalDensity.current.fontScale
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-    val columns = (maxWidth.value / (104f * fontScale.coerceAtLeast(1f))).toInt().coerceIn(1, 5)
+    val columns = (maxWidth.value / (78f * fontScale.coerceIn(1f, 1.5f))).toInt().coerceIn(1, 4)
     Column(
         modifier = Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 4.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -116,35 +102,40 @@ private fun ToolRows(tools: List<ToolEntry>, onToolClick: (ToolEntry) -> Unit) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ToolCard(tool: ToolEntry, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Card(
-        onClick = onClick,
-        modifier = modifier,
-        shape = MaterialTheme.shapes.medium,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-    ) {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 13.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Box(
-                modifier = Modifier.size(42.dp).clip(RoundedCornerShape(13.dp))
-                    .background(MaterialTheme.colorScheme.primaryContainer),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    painter = painterResource(toolIcon(tool.id)),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier.size(25.dp)
-                )
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(tool.label, modifier = Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
-        }
+    var help by androidx.compose.runtime.remember { mutableStateOf(false) }
+    val color = when {
+        tool.id.startsWith("pdf") -> androidx.compose.ui.graphics.Color(0xFF357DE8)
+        tool.id in listOf("batch_extract", "table_xlsx", "card") -> androidx.compose.ui.graphics.Color(0xFF009E88)
+        else -> MaterialTheme.colorScheme.primary
     }
+    Column(modifier.combinedClickable(onClick = onClick, onLongClick = { help = true }).padding(horizontal = 3.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(painterResource(toolIcon(tool.id)), null, Modifier.size(32.dp), tint = color)
+        Spacer(Modifier.height(8.dp))
+        Text(shortToolLabel(tool), style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+    }
+    if (help) AlertDialog(onDismissRequest = { help = false }, title = { Text(tool.label) },
+        text = { Text(toolHelp(tool)) }, confirmButton = { TextButton({ help = false; onClick() }) { Text("开始") } },
+        dismissButton = { TextButton({ help = false }) { Text("关闭") } })
+}
+
+internal fun shortToolLabel(tool: ToolEntry) = when (tool.id) {
+    "batch_extract" -> "票据汇总"
+    "table_xlsx" -> "转表格"
+    "pdf_sign" -> "证书签名"
+    "pdf_text" -> "提取文字"
+    "pdf_encrypt" -> "加密码"
+    else -> tool.label
+}
+
+internal fun toolHelp(tool: ToolEntry) = when (tool.id) {
+    "pdf_sign" -> "选择 PDF → 导入自己的 P12/PFX 证书 → 输入证书密码 → 核对证书信息 → 生成并保存签名副本。证书数字签名与手写签名不同。"
+    "batch_extract" -> "一次选择多张票据图片或多份 PDF → 核对字段与金额 → 修正失败项 → 导出汇总表。原图保留，点击字段可对照来源。"
+    "table_xlsx" -> "选择表格图片或 PDF → 核对行列、合并格与数值格式 → 导出 XLSX。图片中不存在的公式无法恢复。"
+    else -> if (tool.accept == com.localdoc.scanner.model.FileKind.NONE) "打开工具 → 按页面提示拍摄或输入内容 → 核对结果 → 保存或分享。"
+        else "选择${if (tool.allowMultiple) "一份或多份" else "一份"}${when(tool.accept) { com.localdoc.scanner.model.FileKind.IMAGE -> "图片"; com.localdoc.scanner.model.FileKind.PDF -> "PDF"; else -> "文件" }} → 调整选项并查看预览 → 保存或分享处理后的副本。"
 }
 
 @DrawableRes
@@ -157,9 +148,27 @@ internal fun toolIcon(id: String): Int = when (id) {
     "pdf_text" -> R.drawable.ic_tool_text_snippet
     "pdf_encrypt" -> R.drawable.ic_tool_lock
     "pdf_office" -> R.drawable.ic_tool_tune
-    "pdf_sign" -> R.drawable.ic_tool_tune
+    "pdf_sign" -> R.drawable.ic_tool_verified_user
+    "portrait" -> R.drawable.ic_tool_badge
+    "count_objects" -> R.drawable.ic_tool_imagesmode
+    "watermark_camera", "scan_ppt", "scan_whiteboard", "scan_handwriting" -> R.drawable.ic_ui_camera
+    "book_unwarp" -> R.drawable.ic_tool_auto_stories
+    "structured_markdown" -> R.drawable.ic_tool_text_snippet
+    "translate" -> R.drawable.ic_tool_text_snippet
+    "qr_create" -> R.drawable.ic_tool_qr_code_scanner
+    "barcode_live" -> R.drawable.ic_tool_qr_code_scanner
+    "pdf_long" -> R.drawable.ic_tool_view_day
+    "pdf_pages" -> R.drawable.ic_tool_imagesmode
+    "zip_import" -> R.drawable.ic_ui_folder
+    "home_import" -> R.drawable.ic_ui_folder
+    "home_new" -> R.drawable.ic_tool_text_snippet
+    "semantic_search" -> R.drawable.ic_ui_search
     "ocr" -> R.drawable.ic_tool_document_scanner
     "card" -> R.drawable.ic_tool_badge
+    "card_wallet" -> R.drawable.ic_tool_wallet
+    "formula" -> R.drawable.ic_tool_functions
+    "sign_library" -> R.drawable.ic_tool_draw
+    "photo_restore", "region_erase" -> R.drawable.ic_tool_auto_fix_high
     "barcode" -> R.drawable.ic_tool_qr_code_scanner
     "long_image" -> R.drawable.ic_tool_view_day
     else -> R.drawable.ic_tool_tune

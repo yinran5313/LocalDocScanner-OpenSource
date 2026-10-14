@@ -18,7 +18,8 @@ object StructureExtractor {
         BUSINESS_LICENSE("营业执照"),
         PASSPORT("护照"),
         DRIVER_LICENSE("驾驶证"),
-        VEHICLE_LICENSE("行驶证")
+        VEHICLE_LICENSE("行驶证"),
+        STUDENT_CARD("学生证"), SOCIAL_CARD("社保卡"), MEMBERSHIP("会员/其它卡")
     }
 
     /** 一个抽取出来的字段。valid 为 null 表示这类字段没有校验位可言 */
@@ -43,6 +44,7 @@ object StructureExtractor {
         Kind.PASSPORT -> passport(raw)
         Kind.DRIVER_LICENSE -> driverLicense(raw)
         Kind.VEHICLE_LICENSE -> vehicleLicense(raw)
+        Kind.STUDENT_CARD, Kind.SOCIAL_CARD, Kind.MEMBERSHIP -> CardTemplates.extract(kind, raw)
     }
 
     /** Re-evaluate the displayed values, including dependent values, before every export. */
@@ -90,6 +92,7 @@ object StructureExtractor {
                 check("plate") { it.matches(Regex("[$PLATE_PROVINCES][A-Z][A-Z0-9]{4,6}")) }
                 check("vin") { it.uppercase().matches(Regex("[A-HJ-NPR-Z0-9]{17}")) }
             }
+            Kind.STUDENT_CARD, Kind.SOCIAL_CARD, Kind.MEMBERSHIP -> Unit
             Kind.PASSPORT -> original.fields.filter { it.valid != null }.forEach { field ->
                 checks[field.key] = if (values[field.key] == field.value) field.valid else null
                 if (values[field.key] != field.value) notes += "${field.label}已修改，需重新核对机读区校验位"
@@ -240,7 +243,7 @@ object StructureExtractor {
         val number = pat("发票号码\\s*[:：]?\\s*(\\d{8,20})")
         val date = Regex("(\\d{4})\\s*年\\s*(\\d{1,2})\\s*月\\s*(\\d{1,2})\\s*日").find(flat)
             ?.let { "${it.groupValues[1]}-${pad(it.groupValues[2])}-${pad(it.groupValues[3])}" } ?: ""
-        val amount = Regex("(?:合计金额|金额|小写|价税合计)[^0-9\\-]{0,6}(-?\\d+(?:\\.\\d{1,2})?)")
+        val amount = Regex("(?:合计金额|不含税金额|(?<![\\p{IsHan}])金额)[^0-9\\-]{0,6}(-?\\d+(?:\\.\\d{1,2})?)")
             .find(flat)?.groupValues?.getOrNull(1)
         val tax = Regex("(?:税额)[^0-9\\-]{0,6}(-?\\d+(?:\\.\\d{1,2})?)")
             .find(flat)?.groupValues?.getOrNull(1)

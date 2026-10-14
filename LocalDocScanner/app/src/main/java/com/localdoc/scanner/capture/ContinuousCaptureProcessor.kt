@@ -14,7 +14,7 @@ internal class PreparedCapture(val pages: List<EditResult>, val notes: List<Stri
 
 /** Produces durable draft-ready pages one shot at a time, without leaving the camera screen. */
 internal object ContinuousCaptureProcessor {
-    fun prepare(context: Context, shot: File, book: Boolean): PreparedCapture {
+    fun prepare(context: Context, shot: File, book: Boolean, profile: String = "document"): PreparedCapture {
         val directory = File(context.cacheDir, "continuous-${java.util.UUID.randomUUID()}").apply { mkdirs() }
         val owned = mutableListOf<Bitmap>()
         try {
@@ -33,7 +33,7 @@ internal object ContinuousCaptureProcessor {
                 } ?: defaultCropCorners(0f).also { notes.add("未可靠识别四角，已保留整页，请检查裁边") }
                 val raw = File(directory, "source_$index.jpg")
                 check(ImageIo.saveJpeg(page, raw, 96)) { "无法保留拍摄原页" }
-                val recipe = EditRecipe(corners = corners, filter = ScanFilter.AUTO)
+                val recipe = EditRecipe(corners = corners, filter = when(profile) { "ppt" -> ScanFilter.PROJECTOR; "handwriting" -> ScanFilter.GRAY; else -> ScanFilter.AUTO })
                 val rendered = renderProcessed(page, corners, recipe.filter, 0f, 1f, 3200).also { owned.add(it) }
                 val file = File(directory, "rendered_$index.jpg")
                 check(ImageIo.saveJpeg(rendered, file, 94)) { "无法保存扫描页" }

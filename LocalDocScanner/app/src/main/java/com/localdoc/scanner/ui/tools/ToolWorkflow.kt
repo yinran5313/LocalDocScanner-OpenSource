@@ -1,5 +1,9 @@
 package com.localdoc.scanner.ui.tools
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+
 import android.content.Context
 import android.content.Intent
 import android.widget.Toast
@@ -80,6 +84,7 @@ internal fun ToolFlow(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    var importedOutputs by rememberToolState<Map<String,String>>(request,"importedOutputs") { emptyMap() }
     var stage by rememberToolState(request, "stage") { 0 }
     var outcome by remember(request) { mutableStateOf<FlowOutcome?>(null) }
     var busy by remember { mutableStateOf(false) }
@@ -201,6 +206,11 @@ internal fun ToolFlow(
     }
 
     fun toast(t: String) = Toast.makeText(context, t, Toast.LENGTH_SHORT).show()
+    fun openHere(file: File) {
+        com.localdoc.scanner.external.ExternalOpenBus.offer(Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file), guessMime(file))
+        }, context.contentResolver)
+    }
 
     Scaffold(
         modifier = modifier,
@@ -220,13 +230,13 @@ internal fun ToolFlow(
                     }
                     else -> {
                         val o = outcome
-                        Button(onClick = { saveToPhone(o?.files.orEmpty()) }, enabled = !busy && !o?.files.isNullOrEmpty(), modifier = Modifier.weight(1f).heightIn(min = 52.dp), shape = MaterialTheme.shapes.medium) {
+                        Button(onClick = { saveToPhone(o?.deliverables.orEmpty()) }, enabled = !busy && !o?.files.isNullOrEmpty(), modifier = Modifier.weight(1f).heightIn(min = 52.dp), shape = MaterialTheme.shapes.medium) {
                             Text(if (busy) "保存中…" else "保存到手机")
                         }
                         FilledTonalIconButton(
                             onClick = {
                                 if (o != null && o.files.isNotEmpty()) {
-                                    Share.files(context, o.files, guessMime(o.files.first()))
+                                    Share.files(context, o.deliverables, guessMime(o.deliverables.first()))
                                 } else {
                                     toast("没有可分享的文件")
                                 }
@@ -235,10 +245,10 @@ internal fun ToolFlow(
                         ) { AppIcon(R.drawable.ic_ui_share, "分享结果") }
                         OutlinedIconButton(
                             onClick = {
-                                val file = o?.files?.singleOrNull()
-                                if (file == null || !Share.open(context, file, guessMime(file))) toast("当前结果无法打开")
+                                val file = o?.deliverables?.singleOrNull()
+                                if (file == null) toast("当前结果无法打开") else openHere(file)
                             },
-                            enabled = o?.files?.size == 1
+                            enabled = o?.deliverables?.size == 1
                         ) { AppIcon(R.drawable.ic_ui_folder, "打开结果文件") }
                     }
                 }
@@ -296,7 +306,7 @@ internal fun ToolFlow(
                 }, style = MaterialTheme.typography.titleMedium)
                 if (o != null) {
                     if (o.files.isNotEmpty()) {
-                        if(com.localdoc.scanner.data.AppPreferences(context).text("destination").isNotBlank()) TextButton(onClick={ saveToPhone(o.files, false) },enabled=!busy) { Text("另选保存位置") }
+                        if(com.localdoc.scanner.data.AppPreferences(context).text("destination").isNotBlank()) TextButton(onClick={ saveToPhone(o.deliverables, false) },enabled=!busy) { Text("另选保存位置") }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             FilterChip(!showInputAfterProcessing, { showInputAfterProcessing = false }, label = { Text("处理结果") })
                             FilterChip(showInputAfterProcessing, { showInputAfterProcessing = true }, label = { Text("原文件") })
@@ -304,10 +314,7 @@ internal fun ToolFlow(
                         FilePreview(if (showInputAfterProcessing) request.files else o.files, if (showInputAfterProcessing) "原文件预览" else "真实结果预览")
                     }
                     o.summary.forEach { (k, v) ->
-                        Row(modifier = Modifier.fillMaxWidth()) {
-                            Text("$k：", style = MaterialTheme.typography.bodyMedium)
-                            Text(v, style = MaterialTheme.typography.bodyMedium)
-                        }
+                        Text("$k：$v",modifier=Modifier.fillMaxWidth(),style=MaterialTheme.typography.bodyMedium)
                     }
                     if (o.files.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(6.dp))
@@ -315,7 +322,15 @@ internal fun ToolFlow(
                         o.files.forEach { f ->
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                 Text("${f.name} · ${fmtSize(f.length())}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-                                TextButton(onClick = { if (!Share.open(context, f, guessMime(f))) toast("无法打开 ${f.name}") }) { Text("打开") }
+                                var menu by remember(f) { mutableStateOf(false) }
+                                Box {
+                                    TextButton(onClick={ menu=true }) { Text("操作") }
+                                    DropdownMenu(menu,{ menu=false }) {
+                                        DropdownMenuItem(text={ Text("打开 / 预览") },onClick={ menu=false; openHere(f) })
+                                        DropdownMenuItem(text={ Text("保存此文件") },onClick={ menu=false; saveToPhone(listOf(f)) })
+                                        DropdownMenuItem(text={ Text("分享此文件") },onClick={ menu=false; Share.files(context,listOf(f),guessMime(f)) })
+                                    }
+                                }
                             }
                         }
                         Text(
@@ -331,6 +346,27 @@ internal fun ToolFlow(
                             }
                         }) { Text("存入文档库") }
                     }
+                    if (o.files.isNotEmpty()) {
+                        OutlinedButton(onClick = {
+                            scope.launch {
+                                busy = true
+                                var imported = 0
+                                try { o.libraryOutputs.forEach { file ->
+                                    val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+                                    val key="${file.absolutePath}:${file.length()}:${file.lastModified()}"
+                                    val previous=importedOutputs[key]
+                                    if (previous==null || vm.docs.value.none { it.id==previous }) {
+                                        val doc=vm.importLibraryFile(uri,o.fileLabels.orEmpty()[file.absolutePath])
+                                        o.fileFolders.orEmpty()[file.absolutePath]?.let { folder -> vm.setOrganization(doc.id,folder,"ZIP导入"); com.localdoc.scanner.data.LibraryFolders.add(context,folder) }
+                                        importedOutputs=importedOutputs+(key to doc.id)
+                                    }
+                                    imported++
+                                }; saveStatus = "已将${imported}份文件导入文档库，可以从文档页重开" }
+                                catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; saveStatus = "已导入${imported}份，其余失败：${e.message}" }
+                                finally { busy = false }
+                            }
+                        }, enabled = !busy) { Text("将输出文件加入文档库") }
+                    }
                     resultExtra(o)
                 }
                 Spacer(modifier = Modifier.height(10.dp))
@@ -343,9 +379,4 @@ internal fun ToolFlow(
     }
 }
 
-private fun guessMime(file: File): String = when (file.extension.lowercase(Locale.getDefault())) {
-    "pdf" -> "application/pdf"
-    "jpg", "jpeg" -> "image/jpeg"
-    "png" -> "image/png"
-    else -> "*/*"
-}
+private fun guessMime(file: File): String = OutputHistoryStore.mimeFor(file)

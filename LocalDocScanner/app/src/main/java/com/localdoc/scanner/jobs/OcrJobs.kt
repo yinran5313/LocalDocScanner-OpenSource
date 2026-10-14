@@ -24,7 +24,7 @@ object OcrJobs {
         require(pages.isNotEmpty()) { "文档没有可识别页面" }
         val previousId = context.getSharedPreferences("ocr_job_receipts", Context.MODE_PRIVATE).getString(docId, null)
         val previous = if (resume && previousId != null) runCatching { OcrCheckpointStore.load(root(context), previousId) }.getOrNull() else null
-        require(!resume || previous != null && previous.precise == precise && com.localdoc.scanner.ocr.OcrLanguage.fromCode(previous.language) == language) { "没有同档位的恢复记录，请开始新任务" }
+        require(!resume || previous != null && com.localdoc.scanner.ocr.OcrLanguage.fromCode(previous.language) == language) { "没有同语言的恢复记录，请开始新任务" }
         val id = previous?.id ?: UUID.randomUUID().toString()
         val checkpoints = pages.map { page ->
             val hash = OcrCheckpointStore.hash(File(page.filePath)); val recipe = recipe(page)
@@ -32,13 +32,13 @@ object OcrJobs {
                 OcrCheckpointStore.canReuse(it, hash, recipe, page.ocrUpdatedAt)
             } ?: OcrPageCheckpoint(page.id, hash, recipe)
         }
-        OcrCheckpointStore.save(root(context), OcrCheckpoint(id, docId, precise, checkpoints, previous?.createdAt ?: System.currentTimeMillis(), language.name))
+        OcrCheckpointStore.save(root(context), OcrCheckpoint(id, docId, true, checkpoints, previous?.createdAt ?: System.currentTimeMillis(), language.name))
         context.getSharedPreferences("ocr_job_receipts", Context.MODE_PRIVATE).edit().putString(docId, id).commit()
         val request = OneTimeWorkRequestBuilder<DocumentOcrWorker>().setInputData(workDataOf("journal" to id))
             .setConstraints(Constraints.Builder().setRequiresStorageNotLow(true).build())
             .setBackoffCriteria(BackoffPolicy.LINEAR, 10, java.util.concurrent.TimeUnit.SECONDS).build()
         context.getSharedPreferences("ocr_job_receipts", Context.MODE_PRIVATE).edit().putString("$docId:work", request.id.toString()).commit()
-        context.getSharedPreferences("ocr_job_receipts", Context.MODE_PRIVATE).edit().putBoolean("$docId:precise", precise).putString("$docId:language", language.name).commit()
+        context.getSharedPreferences("ocr_job_receipts", Context.MODE_PRIVATE).edit().putBoolean("$docId:precise", true).putString("$docId:language", language.name).commit()
         manager.enqueueUniqueWork(name(docId), ExistingWorkPolicy.KEEP, request).result.get()
         id
     }

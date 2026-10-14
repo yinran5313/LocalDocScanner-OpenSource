@@ -40,7 +40,8 @@ object ToolTasks {
             val receipt = gson.fromJson(file.readText(), ToolUnitReceipt::class.java)
             checkpoints.load(receipt.key)
         }.getOrNull() }
-        val files = receipts.flatMap { it.files }.map { File(it.path) }.distinctBy { it.absolutePath }.toMutableList()
+        // SR tiles are processing checkpoints, not independently useful user exports.
+        val files = receipts.filterNot { it.key.startsWith("sr-tile:") || it.key.startsWith("deblur-tile:") }.flatMap { it.files }.map { File(it.path) }.distinctBy { it.absolutePath }.toMutableList()
         val text = receipts.filter { it.key.startsWith("ocr:") }.sortedWith(compareBy(
             { it.key.substringAfter(':').substringBefore(':').toIntOrNull() ?: 0 },
             { it.key.substringAfterLast(':').toIntOrNull() ?: 0 }

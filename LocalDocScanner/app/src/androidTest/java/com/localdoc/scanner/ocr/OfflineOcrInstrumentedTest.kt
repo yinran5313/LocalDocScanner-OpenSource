@@ -14,7 +14,7 @@ import java.io.File
 import java.util.UUID
 
 class OfflineOcrInstrumentedTest {
-    @Test fun bothModelsLoadOfflineAndMediumExportsSearchablePdf() = runBlocking<Unit> {
+    @Test fun mediumHandlesLegacyFlagOfflineAndExportsSearchablePdf() = runBlocking<Unit> {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(context)
         val bitmap = Bitmap.createBitmap(1200, 600, Bitmap.Config.ARGB_8888)
@@ -28,8 +28,8 @@ class OfflineOcrInstrumentedTest {
         val engine = PaddleOcrEngine(context)
         val root = File(context.cacheDir, "ocr-audit-${UUID.randomUUID()}").apply { mkdirs() }
         try {
-            val tiny = engine.recognize(bitmap, false)
-            assertTrue("Tiny must load and recognize fixture: ${tiny.text}", tiny.text.contains("501"))
+            val legacy = engine.recognize(bitmap, false)
+            assertTrue("Legacy flag must recognize with bundled medium: ${legacy.text}", legacy.text.contains("501"))
             val medium = engine.recognize(bitmap, true)
             assertTrue("Medium must recognize fixture: ${medium.text}", medium.text.contains("501"))
             assertTrue("Medium must provide valid text positions", medium.boxes.isNotEmpty() && medium.boxes.all(OcrLayout::valid))

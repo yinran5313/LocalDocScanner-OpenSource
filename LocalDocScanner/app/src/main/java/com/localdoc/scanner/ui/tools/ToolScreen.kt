@@ -84,6 +84,7 @@ fun ToolScreen(
         when (request.tool.id) {
             "images_to_pdf" -> ImagesToPdfFlow(request, vm, onBack, onOpenDoc, modifier)
             "pdf_merge" -> PdfMergeFlow(request, vm, onBack, onOpenDoc, modifier)
+            "image_ppt" -> PdfMergeFlow(request, vm, onBack, onOpenDoc, modifier)
             "pdf_split" -> PdfSplitFlow(request, vm, onBack, onOpenDoc, modifier)
             "pdf_compress" -> PdfCompressFlow(request, vm, onBack, onOpenDoc, modifier)
             "pdf_to_images" -> PdfToImagesFlow(request, vm, onBack, onOpenDoc, modifier)
@@ -92,12 +93,17 @@ fun ToolScreen(
             "pdf_office" -> PdfOfficeFlow(request, vm, onBack, onOpenDoc, modifier)
             "pdf_sign" -> PdfSignFlow(request, vm, onBack, onOpenDoc, modifier)
             "pdf_compare" -> PdfCompareFlow(request, vm, onBack, onOpenDoc, modifier)
+            "pdf_pages" -> PdfPagesFlow(request, vm, onBack, onOpenDoc, modifier)
             "ocr" -> OcrFlow(request, vm, onBack, onOpenDoc, modifier)
             "batch_extract", "table_xlsx" -> StructuredWorkbench(request, vm, onBack, modifier)
             "card" -> CardFlow(request, vm, onBack, onOpenDoc, modifier)
             "barcode" -> BarcodeFlow(request, vm, onBack, onOpenDoc, modifier)
             "long_image" -> LongImageFlow(request, vm, onBack, onOpenDoc, modifier)
             "image_edit" -> ImageEditFlow(request, vm, onBack, onOpenDoc, modifier)
+            "formula" -> FormulaFlow(request, vm, onBack, modifier)
+            "region_erase" -> RegionEraseFlow(request, vm, onBack, onOpenDoc, modifier)
+            "photo_restore", "portrait", "book_unwarp", "translate", "structured_markdown", "pdf_long", "pdf_enhance", "zip_import", "qr_create", "watermark_photo", "count_objects" ->
+                AdvancedToolsFlow(request, vm, onBack, onOpenDoc, modifier)
             else -> UnknownFlow(request, vm, onBack, onOpenDoc, modifier)
         }
     }

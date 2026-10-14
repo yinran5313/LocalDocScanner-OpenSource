@@ -72,13 +72,13 @@ internal fun PdfMergeFlow(
                     }) { Text("↓") }
                 }
             }
-            Text("合并会保留原页面尺寸和可选文字层。", style = MaterialTheme.typography.bodySmall)
+            Text(if (request.tool.id == "image_ppt") "一张图片生成一页PPT，文字和图表作为整张图片保存。" else "合并会保留原页面尺寸和可选文字层。", style = MaterialTheme.typography.bodySmall)
         }
     }
 
     ToolFlow(
         request = request, vm = vm, onBack = onBack, onOpenDoc = onOpenDoc,
-        runLabel = "合并", modifier = modifier, config = { panel() }
+        runLabel = if (request.tool.id == "image_ppt") "生成PPT" else "合并", modifier = modifier, config = { panel() }
     )
 }
 
@@ -157,12 +157,14 @@ internal fun PdfToImagesFlow(
 ) {
     val src = request.files.first()
     var dpi by rememberToolState(request, "dpi") { 1 }
+    var selectedPages by rememberToolState(request, "selectedPages") { "" }
 
     @Composable
     fun panel() {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("导出清晰度", style = MaterialTheme.typography.titleSmall)
             ChipRow(listOf("高(200dpi)", "中(150dpi)", "低(110dpi)"), dpi) { dpi = it }
+            OutlinedTextField(selectedPages, { selectedPages = it }, label = { Text("页码，如1-3,5；留空导出全部") }, modifier = Modifier.fillMaxWidth())
         }
     }
 

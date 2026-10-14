@@ -66,16 +66,21 @@ fun ExternalFileScreen(
     external: ExternalFile,
     onClose: () -> Unit,
     onEditPdf: suspend (File, String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onExtractZip: (suspend (File,String) -> Unit)? = null
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
     val officeFormat = remember(external) { OfficeFormats.detect(external.name, external.mime) }
-    val displayName = remember(external, officeFormat) { OfficeFormats.ensureExtension(external.name, officeFormat) }
+    val displayName = remember(external, officeFormat) {
+        val name=OfficeFormats.ensureExtension(external.name,officeFormat)
+        if(officeFormat==null) com.localdoc.scanner.util.DisplayNames.withMimeExtension(name,external.mime) else name
+    }
     val resolvedMime = remember(external, officeFormat) {
         officeFormat?.mime ?: external.mime.ifBlank { "application/octet-stream" }
     }
     val extension = displayName.substringAfterLast('.', "").lowercase()
+    var archiveIsModel by remember(external) { mutableStateOf(false) }
     val isOffice = officeFormat != null
     val isPdf = external.mime == "application/pdf" || extension == "pdf"
     val isImage = external.mime.startsWith("image/") || extension in setOf("jpg", "jpeg", "png", "webp", "bmp")
@@ -108,7 +113,9 @@ fun ExternalFileScreen(
         if (localFile?.isFile == true) { busy = false; return@LaunchedEffect }
         val loaded = withContext(Dispatchers.IO) {
             runCatching {
-                val safeName = displayName.replace(Regex("[\\/:*?\"<>|]"), "_")
+                val libraryFile = external.libraryDocId?.let { com.localdoc.scanner.data.DocRepository(context).ownedFile(it) }
+                if (libraryFile != null) libraryFile else {
+                val safeName = com.localdoc.scanner.util.FileNames.safe(displayName,140)
                 val root = if (isOffice) File(context.filesDir, "office-work") else File(context.filesDir, "external-open")
                 val dir = File(root, "${System.currentTimeMillis()}-${System.nanoTime()}")
                 dir.mkdirs()
@@ -116,7 +123,9 @@ fun ExternalFileScreen(
                 context.contentResolver.openInputStream(external.uri)?.use { input ->
                     target.outputStream().buffered().use { output -> input.copyTo(output) }
                 } ?: error("无法读取外部文件")
+                com.localdoc.scanner.export.MarkdownLocalAssets.copyAdjacent(com.localdoc.scanner.export.MarkdownLocalAssets.ownedSource(context,external.uri),target)
                 target
+                }
             }
         }
         loaded.onSuccess { file ->
@@ -161,6 +170,7 @@ fun ExternalFileScreen(
                     val parsed = if (officeFormat?.quickEditSupported == true) runCatching { OpenXmlEditor.read(file) }.getOrNull() else null
                     hash to parsed
                 }
+                if (!failed) external.libraryDocId?.let { com.localdoc.scanner.data.DocRepository(context).refreshFile(it) }
                 office = refreshed.second ?: office
                 edits = emptyMap()
                 retainWorkCopy = true
@@ -190,19 +200,21 @@ fun ExternalFileScreen(
         val textSnapshot = textContent
         val result = withContext(Dispatchers.IO) {
             runCatching {
-                val output = officeResultFile(context.filesDir, displayName, "快速修改")
+                val output = officeResultFile(context.filesDir, displayName, "快速修改", source.extension)
                 if (writeOffice) OpenXmlEditor.save(source, output, snapshot)
-                else output.writeText(textSnapshot.orEmpty(), Charsets.UTF_8)
-                OutputHistoryStore.recordGenerated(context, output, resolvedMime)
-                output to if (writeOffice) OpenXmlEditor.read(output) else null
+                else com.localdoc.scanner.util.AtomicFiles.text(output, textSnapshot.orEmpty())
+                com.localdoc.scanner.export.MarkdownLocalAssets.copyAdjacent(source,output)
+                val saved = external.libraryDocId?.let { com.localdoc.scanner.data.DocRepository(context).updateOwnedFile(it, output) } ?: output
+                OutputHistoryStore.recordGenerated(context, saved, resolvedMime)
+                saved to if (writeOffice) OpenXmlEditor.read(saved) else null
             }
         }
         return result.fold(
             onSuccess = { (output, parsed) ->
                 localFile = output
                 office = parsed ?: office
-                edits = emptyMap()
-                textDirty = false
+                edits = edits.filter { snapshot[it.key] != it.value }
+                textDirty = textContent != textSnapshot
                 retainWorkCopy = true
                 output
             },
@@ -266,46 +278,19 @@ fun ExternalFileScreen(
     val saveCopy = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(resolvedMime)) { uri ->
         if (uri != null && localFile != null) scope.launch {
             busy = true
-            val quickEdits = edits.toMap()
-            val currentText = textContent
-            val source = localFile!!
-            val result = withContext(Dispatchers.IO) {
-                runCatching {
-                    val output = when {
-                        officeFormat?.quickEditSupported == true && quickEdits.isNotEmpty() -> {
-                            officeResultFile(context.filesDir, displayName, "修改").also {
-                                OpenXmlEditor.save(source, it, quickEdits)
-                            }
-                        }
-                        isText && currentText != null -> {
-                            officeResultFile(context.filesDir, displayName, "修改").also {
-                                it.writeText(currentText, Charsets.UTF_8)
-                            }
-                        }
-                        else -> source
-                    }
-                    context.contentResolver.openOutputStream(uri, "w")?.use { stream ->
-                        output.inputStream().buffered().use { input -> input.copyTo(stream) }
-                    } ?: error("无法创建目标文件")
-                    runCatching {
-                        context.contentResolver.takePersistableUriPermission(
-                            uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                        )
-                    }
-                    val label = OutputHistoryStore.describeDestination(context, uri)
-                    OutputHistoryStore.markSaved(context, output, uri, label)
-                    val parsed = if (officeFormat?.quickEditSupported == true) runCatching { OpenXmlEditor.read(output) }.getOrNull() else null
-                    Triple(output, parsed, label)
-                }
-            }
-            result.onSuccess { (output, parsed, label) ->
-                localFile = output
-                office = parsed ?: office
-                edits = emptyMap()
-                textDirty = false
-                retainWorkCopy = true
-                status = "已保存：$label"
-            }.onFailure { status = "保存失败：${it.message}" }
+            val source = materializeQuickEdits()
+            if (source == null) { busy = false; return@launch }
+            val result = withContext(Dispatchers.IO) { runCatching {
+                context.contentResolver.openOutputStream(uri, "w")?.use { stream ->
+                    source.inputStream().buffered().use { input -> input.copyTo(stream) }
+                } ?: error("无法创建目标文件")
+                runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
+                val label = OutputHistoryStore.describeDestination(context, uri)
+                OutputHistoryStore.markSaved(context, source, uri, label)
+                label
+            } }
+            result.onSuccess { label -> retainWorkCopy = true; status = "已保存：$label" }
+                .onFailure { status = "保存失败：${it.message}" }
             busy = false
         }
     }
@@ -317,7 +302,7 @@ fun ExternalFileScreen(
                 title = {
                     Column {
                         Text(displayName, maxLines = 1, style = MaterialTheme.typography.titleMedium, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                        Text("外部文件 · 原件不会被覆盖", style = MaterialTheme.typography.labelSmall)
+                        Text(if (external.libraryDocId == null) "外部文件 · 原件不会被覆盖" else "文档库 · 修改保存在本机", style = MaterialTheme.typography.labelSmall)
                     }
                 },
                 navigationIcon = {
@@ -353,13 +338,23 @@ fun ExternalFileScreen(
                         add(DockAction("编辑副本", {
                                 val file = localFile
                                 if (file != null)
-                                scope.launch { com.localdoc.scanner.data.ToolDrafts.forget(context, externalDraft); onEditPdf(file, displayName) }
+                                scope.launch { try { onEditPdf(file,displayName); com.localdoc.scanner.data.ToolDrafts.forget(context,externalDraft) } catch(e: Exception) { if(e is kotlinx.coroutines.CancellationException)throw e;status="无法进入编辑：${e.message}" } }
                             }, enabled = !busy))
                     }
                     if (textContent == null) add(DockAction("保存到手机", { saveCopy.launch(displayName) }, style = ActionStyle.OUTLINED, enabled = !busy && localFile != null))
                     }
                     AdaptiveActions(mainActions)
                     WrappingOptions {
+                        if (external.libraryDocId != null && isText) TextButton(onClick = { scope.launch { busy = true
+                            try { if (materializeQuickEdits() != null) status = "修改已保存到文档库" } finally { busy = false }
+                        } }, enabled = !busy) { Text("保存到文档库") }
+                        if (extension in setOf("md", "markdown")) TextButton(onClick = { scope.launch { busy = true
+                            try { val file = withContext(Dispatchers.IO) {
+                                File(context.filesDir, "markdown-output/${System.currentTimeMillis()}.pdf").also { com.localdoc.scanner.export.MarkdownPdf.write(context, textContent.orEmpty(), it,localFile?.parentFile) }
+                            }; OutputHistoryStore.recordGenerated(context, file, "application/pdf")
+                                ExternalOpenBus.offer(Intent(Intent.ACTION_VIEW).apply { setDataAndType(androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file), "application/pdf") }, context.contentResolver)
+                            } catch(e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; status = "导出失败：${e.message}" } finally { busy = false }
+                        } }, enabled = !busy) { Text("导出PDF") }
                         TextButton(onClick = ::shareCurrent, enabled = !busy && localFile != null) { AppIcon(com.localdoc.scanner.R.drawable.ic_ui_share); Text("分享副本") }
                         if (isPdf && localFile != null) TextButton(onClick = { printPdf(context,localFile!!,displayName) }, enabled = !busy) { Text("打印") }
                         localFile?.let { SaveDefaultButton(listOf(it)) { status = it } }
@@ -386,7 +381,7 @@ fun ExternalFileScreen(
                 onTextChange = { textContent = it; textDirty = true },
                 extension = extension,
                 status = status,
-                modifier = Modifier.padding(padding)
+                modifier = Modifier.padding(padding), sourceDirectory=localFile?.parentFile
             )
             isPdf && localFile != null -> PdfViewerBody(localFile!!, Modifier.padding(padding))
             isImage && localFile != null -> AsyncImage(
@@ -395,6 +390,11 @@ fun ExternalFileScreen(
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize().padding(padding)
             )
+            extension=="zip" && localFile!=null -> Column(Modifier.fillMaxSize().padding(padding)) {
+                if(onExtractZip!=null && !archiveIsModel) Button(onClick={ scope.launch { try { onExtractZip(localFile!!,displayName) } catch(e: Exception) { if(e is kotlinx.coroutines.CancellationException)throw e;status="无法解压：${e.message}" } } },modifier=Modifier.fillMaxWidth().padding(16.dp)) { Text("解压导入") }
+                if(status.isNotBlank())Text(status,modifier=Modifier.padding(horizontal=16.dp))
+                ArchivePreview(localFile!!,Modifier.fillMaxWidth().weight(1f)) { archiveIsModel=it }
+            }
             else -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 Text("当前格式还没有内部阅读器")
             }
@@ -501,11 +501,11 @@ private fun PdfViewerBody(file: File, modifier: Modifier = Modifier) {
     com.localdoc.scanner.ui.tools.PdfReader(file, modifier.fillMaxSize().padding(8.dp))
 }
 
-private fun officeResultFile(filesDir: File, displayName: String, suffix: String): File {
-    val extension = displayName.substringAfterLast('.', "")
+private fun officeResultFile(filesDir: File, displayName: String, suffix: String, fallback: String = ""): File {
+    val extension = displayName.substringAfterLast('.', "").ifBlank { fallback }
     val base = displayName.substringBeforeLast('.', displayName).replace(Regex("[\\/:*?\"<>|]"), "_")
     val dir = File(File(filesDir, "office-results"), "${System.currentTimeMillis()}-${System.nanoTime()}").apply { mkdirs() }
-    return File(dir, "${base}_${suffix}${if (extension.isBlank()) "" else ".$extension"}")
+    return File(dir, com.localdoc.scanner.util.FileNames.safe("${base}_${suffix}${if (extension.isBlank()) "" else ".$extension"}"))
 }
 
 private fun formatOfficeSize(bytes: Long): String = when {

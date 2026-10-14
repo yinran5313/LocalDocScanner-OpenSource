@@ -75,9 +75,10 @@ internal fun FilePreview(
         )
         when (file.extension.lowercase()) {
             "pdf" -> PdfReader(file, Modifier.fillMaxWidth().height(560.dp), initialPage = pdfInitialPage)
-            "jpg", "jpeg", "png", "webp", "bmp" -> ZoomableImage(model = file, key = file.absolutePath)
+            "jpg", "jpeg", "png", "webp", "bmp", "gif", "heic", "heif" -> ZoomableImage(model = file, key = file.absolutePath)
             "txt", "csv", "json", "md", "markdown", "xml" -> TextFilePreview(file)
             "docx", "xlsx", "pptx" -> OpenXmlFilePreview(file)
+            "zip" -> com.localdoc.scanner.external.ArchivePreview(file,Modifier.fillMaxWidth().height(360.dp))
             else -> Box(
                 Modifier.fillMaxWidth().height(120.dp).background(MaterialTheme.colorScheme.surfaceVariant),
                 contentAlignment = Alignment.Center
@@ -143,6 +144,10 @@ private fun TextFilePreview(file: File) {
     Box(
         Modifier.fillMaxWidth().height(260.dp).background(MaterialTheme.colorScheme.surfaceVariant).padding(12.dp)
     ) {
+        if(file.extension.lowercase() in setOf("md","markdown")) {
+            com.localdoc.scanner.external.MarkdownPreview(text,Modifier.fillMaxSize().verticalScroll(rememberScrollState()),file.parentFile)
+            return@Box
+        }
         androidx.compose.foundation.text.selection.SelectionContainer {
             Text(text.ifBlank { "文件没有文字" }, modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()))
         }

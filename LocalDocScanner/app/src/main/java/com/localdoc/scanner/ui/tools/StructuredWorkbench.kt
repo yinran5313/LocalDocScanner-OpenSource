@@ -36,16 +36,19 @@ internal fun StructuredWorkbench(request: ToolRequest, vm: AppViewModel, onBack:
     val context = LocalContext.current
     val tableOnly = request.tool.id == "table_xlsx"
     var combinePages by rememberToolState(request, "combinePages") { false }
+    var useTableModel by rememberToolState(request, "useTableModel") { false }
+    var openModels by remember { mutableStateOf(false) }
+    if (openModels) { com.localdoc.scanner.models.ModelsScreen(onBack = { openModels = false }); return }
     var skipHeaders by rememberToolState(request, "skipHeaders") { true }
     var kind by rememberToolState(request, "batchKind") { 0 }
     var template by rememberToolState(request, "template") { "编号=(?:号码|编号)[：:\\s]*(\\S+)" }
     var pages by rememberToolState<List<ReviewPage>>(request, "reviewPages") { emptyList() }
+    var focus by remember { mutableStateOf<SourceFocus?>(null) }
     var selected by rememberToolState(request, "selectedPage") { 0 }
     var rowPage by rememberToolState(request, "rowPage") { 0 }
     var status by rememberToolState(request, "batchStatus") { "" }
     var exported by rememberToolState<File?>(request, "batchExport") { null }
     var language by rememberToolState(request, "ocrLanguage") { "AUTO" }
-    var precise by rememberToolState(request, "batchMedium") { true }
     var submitting by remember { mutableStateOf(false) }
     var recognizeId by remember(request) { mutableStateOf(ToolTasks.latest(context, request)) }
     var exportId by remember(request) { mutableStateOf(ToolTasks.latest(context, request, "export")) }
@@ -75,11 +78,11 @@ internal fun StructuredWorkbench(request: ToolRequest, vm: AppViewModel, onBack:
         }
     }
     fun extract(raw: String): Map<String, String> = when (kind) {
-        0 -> StructureExtractor.extract(StructureExtractor.Kind.INVOICE, raw).fields.associate { it.label to it.value }
+        0 -> InvoiceReview.fields(raw)
         1 -> ReceiptExtractor.fields(raw)
         else -> ReceiptExtractor.custom(raw, template)
     }
-    fun replace(page: ReviewPage) { pages = pages.mapIndexed { i, old -> if (i == selected) page.copy(reviewed = false, edited = true, merges = if (page.rows.size != old.rows.size || page.rows.maxOfOrNull { it.size } != old.rows.maxOfOrNull { it.size }) emptyList() else page.merges) else old }; exported = null }
+    fun replace(page: ReviewPage) { pages = pages.mapIndexed { i, old -> if (i == selected) page.copy(reviewed = false, edited = true, modelCells = if (page.rows.size != old.rows.size || page.rows.maxOfOrNull { it.size } != old.rows.maxOfOrNull { it.size }) null else page.modelCells, merges = if (page.rows.size != old.rows.size || page.rows.maxOfOrNull { it.size } != old.rows.maxOfOrNull { it.size }) emptyList() else page.merges) else old }; exported = null }
     val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")) { uri ->
         val file = exported
         if (uri != null && file != null) scope.launch {
@@ -120,7 +123,11 @@ internal fun StructuredWorkbench(request: ToolRequest, vm: AppViewModel, onBack:
             }
             if (kind == 2 && !tableOnly) OutlinedTextField(template, { template = it }, label = { Text("一行一个字段名=正则，第一捕获组为值") }, modifier = Modifier.fillMaxWidth())
             OcrLanguagePicker(language) { language = it }
-            Row { Switch(precise, { precise = it }); Text("高精度 medium") }
+            Text("统一使用内置高精度 medium 模型。", style = MaterialTheme.typography.bodySmall)
+            if (tableOnly || kind == 0) {
+                Row { Switch(useTableModel, { useTableModel = it }); Text("使用表格结构模型恢复合并格") }
+                TextButton({ openModels = true }) { Text("下载或管理表格模型") }
+            }
             Button(onClick = ::recognize, enabled = !busy) { Text(if (pages.isEmpty()) "识别全部文件" else "重新识别全部") }
             listOfNotNull(recognition, exportTask).forEach { task ->
                 ToolTaskPanel(task, onPause = { scope.launch { ToolTasks.pause(context, task.id) } }, onResume = { scope.launch {
@@ -129,30 +136,44 @@ internal fun StructuredWorkbench(request: ToolRequest, vm: AppViewModel, onBack:
                 } })
             }
             if (status.isNotBlank()) Text(status)
+            val unfinished = pages.count { it.error.isNotBlank() || !it.reviewed }
+            if (pages.isNotEmpty()) {
+                Text("${pages.count { it.reviewed }}/${pages.size}份已复核 · $unfinished 份待处理")
+                TextButton({ val next = ((selected + 1 until pages.size) + (0..selected)).firstOrNull { pages[it].error.isNotBlank() || !pages[it].reviewed }; if (next != null) { selected = next; rowPage = 0; focus = null } }) { Text("跳到下一份待复核") }
+            }
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             if (pages.isNotEmpty()) {
                 selected = selected.coerceIn(0, pages.lastIndex)
                 val current = pages[selected]
-                Row {
-                    TextButton(onClick = { selected--; rowPage = 0 }, enabled = selected > 0) { Text("上一份") }
+                focus?.let { SourceLocatorDialog(current, it) { focus = null } }
+                com.localdoc.scanner.ui.components.WrappingOptions {
+                    TextButton(onClick = { selected--; rowPage = 0; focus = null }, enabled = selected > 0) { Text("上一份") }
                     Text("${selected + 1}/${pages.size} · 第${current.page + 1}页")
-                    TextButton(onClick = { selected++; rowPage = 0 }, enabled = selected < pages.lastIndex) { Text("下一份") }
+                    TextButton(onClick = { selected++; rowPage = 0; focus = null }, enabled = selected < pages.lastIndex) { Text("下一份") }
                 }
                 FilePreview(listOf(File(current.source)), "原文件 ${File(current.source).name} · 第${current.page + 1}页", pdfInitialPage = current.page)
                 if (current.error.isNotBlank()) Text(current.error, color = MaterialTheme.colorScheme.error)
+                current.layoutNote?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                 OutlinedTextField(current.raw, { replace(current.copy(raw = it, error = "")) }, label = { Text("识别原文，可修正后重新提取") }, minLines = 3, maxLines = 6, modifier = Modifier.fillMaxWidth())
                 if (!tableOnly) {
                     TextButton(onClick = { runCatching { extract(current.raw) }.onSuccess { replace(current.copy(fields = it)) }.onFailure { status = "模板错误：${it.message}" } }) { Text("按当前类型重新提取字段") }
-                    current.fields.forEach { (key, value) -> OutlinedTextField(value, { replace(current.copy(fields = current.fields + (key to it))) }, label = { Text(key) }, modifier = Modifier.fillMaxWidth()) }
+                    current.fields.filterKeys { it != "勾稽校验" }.forEach { (key, value) ->
+                        OutlinedTextField(value, { replace(current.copy(fields = current.fields + (key to it))) }, label = { Text(key) }, modifier = Modifier.fillMaxWidth())
+                        TextButton({ focus = SourceFocus(key, value) }) { Text("对照原图 · $key") }
+                    }
+                    if (kind == 0) { Text(InvoiceReview.revalidated(current.fields,current.rows)["勾稽校验"].orEmpty()); InvoiceReview.issues(current.fields, current.rows).forEach { Text(it, color = MaterialTheme.colorScheme.error) } }
                 }
+                Text("横向滑动可查看其它列；点定位原图核对单元格。",style = MaterialTheme.typography.bodySmall)
                 Text("表格/商品明细 · ${current.rows.size}行，可直接改格子")
                 val rowStart = rowPage.coerceAtMost((current.rows.size - 1).coerceAtLeast(0) / 10) * 10
                 Column(Modifier.horizontalScroll(rememberScrollState())) {
                     current.rows.drop(rowStart).take(10).forEachIndexed { offset, row -> Row {
-                        row.forEachIndexed { column, cell -> OutlinedTextField(cell, { value ->
+                        row.forEachIndexed { column, cell -> Column { OutlinedTextField(cell, { value ->
                             val rows = current.rows.mapIndexed { r, old -> if (r == rowStart + offset) old.mapIndexed { c, oldCell -> if (c == column) value else oldCell } else old }
                             replace(current.copy(rows = rows))
-                        }, label = { Text("${rowStart + offset + 1}:${column + 1}") }, modifier = Modifier.width(130.dp)) }
+                        }, label = { Text("${rowStart + offset + 1}:${column + 1}") }, modifier = Modifier.width(130.dp))
+                            TextButton({ focus = SourceFocus("第${rowStart + offset + 1}行第${column + 1}列", cell, rowStart + offset, column) }) { Text("定位原图") }
+                        } }
                         TextButton(onClick = { replace(current.copy(rows = current.rows.filterIndexed { r, _ -> r != rowStart + offset })) }) { Text("删行") }
                     } }
                 }
@@ -162,6 +183,7 @@ internal fun StructuredWorkbench(request: ToolRequest, vm: AppViewModel, onBack:
                     TextButton(onClick = { replace(current.copy(rows = current.rows + listOf(List(current.rows.maxOfOrNull { it.size }?.coerceAtLeast(1) ?: 1) { "" }))) }) { Text("加行") }
                     TextButton(onClick = { replace(current.copy(rows = current.rows.ifEmpty { listOf(emptyList()) }.map { it + "" })) }) { Text("加列") }
                 }
+                TextButton({ replace(current.copy(columnTypes = ColumnInference.suggest(current.rows))) }) { Text("重新建议列类型（号码保留文本）") }
                 TableReviewOptions(current) { replace(it) }
                 Row { Switch(combinePages, { combinePages = it; exported = null }); Text("将同列数的跨页表格合并为一张表") }
                 if(combinePages) Row { Switch(skipHeaders, { skipHeaders = it; exported = null }); Text("移除完全相同的重复表头") }

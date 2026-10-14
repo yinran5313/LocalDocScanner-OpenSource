@@ -82,4 +82,12 @@ class FullTextIndex(context: Context) : SQLiteOpenHelper(context.applicationCont
             } }
         }
     }
+    fun allContent(): List<Pair<SearchHit, String>> = readableDatabase.rawQuery("SELECT item_key,name,path,substr(body,1,100000) FROM content_index LIMIT 2000", null).use { cursor ->
+        var budget = 8_000_000
+        buildList { while (budget > 0 && cursor.moveToNext()) {
+            val path = cursor.getString(2).orEmpty()
+            val body = cursor.getString(3).orEmpty().take(budget); budget -= body.length
+            if (path.isBlank() || File(path).isFile) add(SearchHit(cursor.getString(0), cursor.getString(1), path, "") to body)
+        } }
+    }
 }

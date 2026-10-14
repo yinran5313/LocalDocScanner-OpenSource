@@ -7,6 +7,10 @@
         android:required="false" />
 
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
 
     <queries>
@@ -74,6 +78,8 @@
                 <data android:mimeType="text/csv" />
                 <data android:mimeType="text/tab-separated-values" />
                 <data android:mimeType="text/markdown" />
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="application/x-zip-compressed" />
             </intent-filter>
 
             <intent-filter>
@@ -110,6 +116,8 @@
                 <data android:mimeType="text/plain" />
                 <data android:mimeType="text/csv" />
                 <data android:mimeType="text/markdown" />
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="application/x-zip-compressed" />
             </intent-filter>
 
         </activity>

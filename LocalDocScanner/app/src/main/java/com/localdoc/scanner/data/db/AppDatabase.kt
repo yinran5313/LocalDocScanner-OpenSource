@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [DocEntity::class, PageEntity::class], version = 7, exportSchema = false)
+@Database(entities = [DocEntity::class, PageEntity::class], version = 8, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun docDao(): DocDao
@@ -43,6 +43,15 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        internal val MIGRATION_7_8 = object : Migration(7, 8) {
+                    override fun migrate(db: SupportSQLiteDatabase) {
+                        db.execSQL("ALTER TABLE docs ADD COLUMN kind TEXT NOT NULL DEFAULT 'SCAN'")
+                        db.execSQL("ALTER TABLE docs ADD COLUMN filePath TEXT NOT NULL DEFAULT ''")
+                        db.execSQL("ALTER TABLE docs ADD COLUMN mime TEXT NOT NULL DEFAULT ''")
+                        db.execSQL("ALTER TABLE docs ADD COLUMN sourceUri TEXT NOT NULL DEFAULT ''")
+                    }
+        }
+
         @Volatile
         private var instance: AppDatabase? = null
 
@@ -67,7 +76,7 @@ abstract class AppDatabase : RoomDatabase() {
                         db.execSQL("ALTER TABLE docs ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0")
                         db.execSQL("ALTER TABLE pages ADD COLUMN cropRatio REAL NOT NULL DEFAULT 0")
                     }
-                }).build().also { instance = it }
+                }, MIGRATION_7_8).build().also { instance = it }
             }
     }
 }

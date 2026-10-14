@@ -116,7 +116,7 @@ fun DocDetailScreen(
     var lineEditIndex by remember { mutableIntStateOf(0) }
     var lineEditText by remember { mutableStateOf("") }
     var ocrOpen by remember { mutableStateOf(false) }
-    var ocrPrecise by remember { mutableStateOf(context.getSharedPreferences("ocr_job_receipts", android.content.Context.MODE_PRIVATE).getBoolean("$docId:precise", true)) }
+    val ocrPrecise = true
     var ocrLanguage by remember { mutableStateOf(context.getSharedPreferences("ocr_job_receipts", android.content.Context.MODE_PRIVATE).getString("$docId:language", "AUTO") ?: "AUTO") }
     var ocrRunning by remember { mutableStateOf(false) }
     var ocrText by remember(doc?.ocrText) { mutableStateOf(doc?.ocrText.orEmpty()) }
@@ -455,22 +455,9 @@ fun DocDetailScreen(
             title = { Text("本地识别文字") },
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    WrappingOptions {
-                        FilterChip(
-                            selected = !ocrPrecise,
-                            onClick = { ocrPrecise = false },
-                            label = { Text("普通·更快") },
-                            enabled = !ocrRunning
-                        )
-                        FilterChip(
-                            selected = ocrPrecise,
-                            onClick = { ocrPrecise = true },
-                            label = { Text("高精度 · medium") },
-                            enabled = !ocrRunning
-                        )
-                    }
+                    Text("高精度 OCR · medium 已内置", style = MaterialTheme.typography.titleSmall)
                     com.localdoc.scanner.ui.tools.OcrLanguagePicker(ocrLanguage) { ocrLanguage = it }
-                    Text("识别在手机本地完成；高精度会更慢、占用更多内存。", style = MaterialTheme.typography.bodySmall)
+                    Text("识别在手机本地完成，不需要额外下载 OCR 模型。", style = MaterialTheme.typography.bodySmall)
                     if (ocrRunning) Text("可关闭此页；系统重启后会从已保存的页面继续。强制停止应用后需重新打开。", color = MaterialTheme.colorScheme.primary)
                     if (ocrStats.isNotBlank()) Text(ocrStats, style = MaterialTheme.typography.bodySmall)
                     OutlinedTextField(
@@ -586,7 +573,20 @@ fun DocDetailScreen(
                     WrappingOptions {
                         FilterChip(exportFormat == ExportFormat.PDF, { exportFormat = ExportFormat.PDF }, label = { Text("PDF") })
                         FilterChip(exportFormat == ExportFormat.JPG, { exportFormat = ExportFormat.JPG }, label = { Text("JPG图片") })
+                        TextButton(onClick = { scope.launch {
+                            try { val files = vm.renderedFiles(docId)
+                                require(files.size == pages.size) { "页面文件缺失，请先修复" }
+                                val tool = com.localdoc.scanner.model.TOOL_ENTRIES.first { it.id == "image_ppt" }
+                                exportOpen = false; vm.openSavedTool(com.localdoc.scanner.ui.ToolRequest(tool, files, files.indices.map { "第${it + 1}页" }))
+                            } catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; vm.notify(e.message.orEmpty()) }
+                        } }) { Text("图片型PPT") }
                     }
+                    TextButton(onClick = { scope.launch {
+                        try { val files = vm.renderedFiles(docId); require(files.size == pages.size) { "页面文件缺失" }
+                            val tool = com.localdoc.scanner.model.TOOL_ENTRIES.first { it.id == "book_unwarp" }
+                            exportOpen = false; vm.openSavedTool(com.localdoc.scanner.ui.ToolRequest(tool,files,files.indices.map { "第${it+1}页" }))
+                        } catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; vm.notify(e.message.orEmpty()) }
+                    } }) { Text("整本书页展平（保留原文档）") }
                     if (exportFormat == ExportFormat.PDF) {
                         FilterChip(
                             selected = searchablePdf,

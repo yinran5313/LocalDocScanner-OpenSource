@@ -26,7 +26,7 @@ import org.junit.Test
 /** Test real production layouts at different logical sizes without changing device settings. */
 class AdaptiveLayoutAndroidTest {
     @get:Rule val compose = createComposeRule()
-    private val widths = listOf(320, 360, 384, 412, 600)
+    private val widths = listOf(280, 320, 360, 384, 412, 600)
     private val scales = listOf(1f, 1.3f, 1.5f, 2f)
     private var width by mutableIntStateOf(384)
     private var scale by mutableFloatStateOf(1f)
@@ -69,8 +69,9 @@ class AdaptiveLayoutAndroidTest {
         content()
         for (w in widths) for (s in scales) {
             compose.runOnIdle { width = w; scale = s }
-            verifyText("拍照扫描"); verifyText("导入 / 打开"); verifyText("文件留在本机")
-            compose.onNodeWithText("导入 / 打开").performClick()
+            for (label in listOf("首页", "文档", "扫描", "工具", "我的")) verifyText(label)
+            compose.onNodeWithText("导入文件").performScrollTo(); verifyText("导入文件")
+            compose.onNodeWithText("导入文件").performClick()
             compose.onNodeWithText("打开Office、PDF或文本").assertExists()
             androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
         }
@@ -79,14 +80,15 @@ class AdaptiveLayoutAndroidTest {
         content()
         for ((w, s) in listOf(320 to 1.5f, 384 to 2f, 600 to 1f)) {
             compose.runOnIdle { width = w; scale = s }
-            for (group in listOf("图片处理", "PDF 处理", "识别与提取", "票据与表格")) {
+            compose.onNodeWithText("工具", useUnmergedTree = true).performClick()
+            for ((group, entry) in listOf("拍摄" to "水印相机", "图片与书籍" to "图片编辑", "PDF 处理" to "证书签名", "识别与提取" to "文字识别", "票据与表格" to "票据汇总", "文件管理" to "语义检索")) {
                 compose.onNode(hasScrollAction()).performScrollToNode(hasText(group))
-                compose.onNodeWithText(group).performScrollTo().performClick()
+                compose.onNodeWithText(entry).performScrollTo(); verifyText(entry)
                 val nodes = compose.onAllNodes(hasText("" , substring = true), useUnmergedTree = true).fetchSemanticsNodes()
                 for (n in nodes) {
                     val labels = n.config.getOrElse(SemanticsProperties.Text) { emptyList() }
                     val text = labels.joinToString("") { it.text }
-                    if (text in listOf("图片编辑", "长图拼接", "图片转PDF", "PDF编辑", "证书数字签名", "文字识别", "表格转Excel")) {
+                    if (text in listOf("图片编辑", "长图拼接", "图片转PDF", "PDF编辑", "证书签名", "文字识别", "转表格")) {
                         val layouts = mutableListOf<TextLayoutResult>()
                         if (n.config.contains(SemanticsActions.GetTextLayoutResult)) n.config[SemanticsActions.GetTextLayoutResult].action?.invoke(layouts)
                         assertFalse("Grid clips '$text' at $w/$s: " + layouts.joinToString { "size=${it.size}, right=${it.getLineRight(it.lineCount-1)}, bottom=${it.getLineBottom(it.lineCount-1)}, left=${it.getLineLeft(0)}" }, layouts.any(::clipsText))
@@ -112,7 +114,7 @@ class AdaptiveLayoutAndroidTest {
             verifyText("暂停并保留进度"); verifyText("返回，后台继续")
         }
         compose.runOnIdle { width = 800; scale = 1.5f; landscape = true; screen = "home"; dark = true }
-        verifyText("拍照扫描"); verifyText("导入 / 打开")
+        verifyText("扫描"); verifyText("工具")
     }
 
     // Compose floors its integer size while paragraph edges remain fractional. A <1px

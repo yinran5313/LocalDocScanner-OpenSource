@@ -1,5 +1,8 @@
 package com.localdoc.scanner.ui.tools
 
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.OutlinedButton
+
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
@@ -61,7 +64,6 @@ internal fun OcrFlow(
     request: ToolRequest, vm: AppViewModel, onBack: () -> Unit, onOpenDoc: (String) -> Unit,
     modifier: Modifier
 ) {
-    var precise by rememberToolState(request, "precise") { 1 }
     var language by rememberToolState(request, "ocrLanguage") { "AUTO" }
     var searchable by rememberToolState(request, "searchable") { true }
     var manual by rememberToolState(request, "manual") { "" }
@@ -72,8 +74,7 @@ internal fun OcrFlow(
     fun panel() {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             OcrLanguagePicker(language) { language = it }
-            Text("识别档位", style = MaterialTheme.typography.titleSmall)
-            ChipRow(listOf("普通(tiny)", "高精度(medium)"), precise) { precise = it }
+            Text("高精度 OCR · medium 已内置", style = MaterialTheme.typography.titleSmall)
             Row { Switch(searchable, { searchable = it }); Text("同时生成可搜索PDF") }
             if (engineAvailable) {
                 Text("模型已内置，直接点下方按钮识别。", style = MaterialTheme.typography.bodySmall)
@@ -157,7 +158,6 @@ internal fun CardFlow(
     val kinds = StructureExtractor.Kind.entries
     var kind by rememberToolState(request, "kind") { StructureExtractor.Kind.ID_CARD }
     var text by rememberToolState(request, "text") { "" }
-    var precise by rememberToolState(request, "precise") { true }
     var submitting by remember { mutableStateOf(false) }
     var taskId by remember(request) { mutableStateOf(ToolTasks.latest(context, request)) }
     val tasks by remember { ToolTasks.watch(context) }.collectAsState(emptyList())
@@ -168,6 +168,21 @@ internal fun CardFlow(
     var edited by rememberToolState<Map<String, String>>(request, "edited") { emptyMap() }
     var exported by rememberToolState<File?>(request, "exported") { null }
     var exportStatus by rememberToolState(request, "exportStatus") { "" }
+    var templateIndex by rememberToolState(request, "cardTemplate") { 0 }
+    var frontIndex by rememberToolState(request, "cardFront") { 0 }
+    var backIndex by rememberToolState(request, "cardBack") { 1 }
+    var includeBack by rememberToolState(request, "cardIncludeBack") { request.files.size > 1 }
+    var confirmed by rememberToolState(request, "cardConfirmed") { false }
+    var savingCard by remember { mutableStateOf(false) }
+    val template = com.localdoc.scanner.structure.CardTemplates.templates[templateIndex.coerceIn(0, com.localdoc.scanner.structure.CardTemplates.templates.lastIndex)]
+    fun cardImages(): List<File> {
+        require(request.files.isNotEmpty()) { "请选择裁好边的正面图片" }
+        val front = request.files[frontIndex.coerceIn(request.files.indices)]
+        if (!includeBack || !template.twoSides) return listOf(front)
+        require(backIndex in request.files.indices && backIndex != frontIndex) { "反面必须选择另一张图片" }
+        return listOf(front, request.files[backIndex])
+    }
+
 
     LaunchedEffect(task?.updatedAt) {
         if (task?.state in setOf(ToolTaskState.SUCCEEDED, ToolTaskState.PARTIAL)) {
@@ -181,7 +196,7 @@ internal fun CardFlow(
     }
     fun recognize() {
         if (ocrBusy) return
-        val parameters = mapOf("precise" to ToolDrafts.gson.toJson(precise))
+        val parameters = mapOf("precise" to ToolDrafts.gson.toJson(true))
         submitting = true
         scope.launch {
             try { taskId = ToolTasks.submit(context, request, parameters) }
@@ -216,7 +231,7 @@ internal fun CardFlow(
         }
         val r = StructureExtractor.extract(kind, text)
         result = r
-        edited = r.fields.associate { it.key to it.value }
+        edited = r.fields.associate { it.key to it.value }; confirmed = false
     }
 
     fun export(kindOfExport: String) {
@@ -253,7 +268,18 @@ internal fun CardFlow(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            item { Text("① 选证件类型与尺寸 → ② 按正反面顺序核对图片 → ③ 识别并校正字段 → ④ 存入卡包或生成A4拼版。图片请先裁到证件边缘，原图保留。") }
             item { FilePreview(request.files, "输入预览") }
+            item {
+                Text("尺寸模板（用于A4实际大小打印）")
+                com.localdoc.scanner.ui.tools.ChipRow(com.localdoc.scanner.structure.CardTemplates.templates.map { it.label }, templateIndex) { templateIndex = it; exported = null }
+                Text("正面图片")
+                com.localdoc.scanner.ui.tools.ChipRow(request.files.indices.map { "第${it+1}张" }, frontIndex) { frontIndex = it; confirmed = false; exported = null }
+                if (template.twoSides) {
+                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) { Checkbox(includeBack, { includeBack = it; confirmed = false; exported = null }); Text("包含反面（没有反面可取消）") }
+                    if (includeBack) com.localdoc.scanner.ui.tools.ChipRow(request.files.indices.map { "反面第${it+1}张" }, backIndex) { backIndex = it; confirmed = false; exported = null }
+                }
+            }
             item {
                 Text("证件类型", style = MaterialTheme.typography.titleSmall)
             }
@@ -265,7 +291,7 @@ internal fun CardFlow(
                     row.forEach { k ->
                         FilterChip(
                             selected = kind == k,
-                            onClick = { kind = k; result = null },
+                            onClick = { kind = k; result = null; confirmed = false; exported = null },
                             label = { Text(k.label) },
                             modifier = Modifier.weight(1f)
                         )
@@ -278,10 +304,7 @@ internal fun CardFlow(
                     try { ToolTasks.resume(context, it.id) }
                     catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; exportStatus = e.message.orEmpty() }
                 } }) }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(selected = !precise, onClick = { precise = false }, label = { Text("普通OCR") })
-                    FilterChip(selected = precise, onClick = { precise = true }, label = { Text("高精度OCR") })
-                }
+                Text("统一使用内置高精度 medium 模型。", style = MaterialTheme.typography.bodySmall)
                 Button(
                     onClick = ::recognize,
                     enabled = !ocrBusy,
@@ -311,7 +334,7 @@ internal fun CardFlow(
                     Column {
                         OutlinedTextField(
                             value = edited[f.key] ?: f.value,
-                            onValueChange = { edited = edited + (f.key to it); exported = null },
+                            onValueChange = { edited = edited + (f.key to it); exported = null; confirmed = false },
                             label = {
                                 Text(f.label + when (f.valid) {
                                     true -> " ✓"; false -> " ✗"; null -> ""
@@ -333,7 +356,40 @@ internal fun CardFlow(
                     }
                 }
                 item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) { Checkbox(confirmed, { confirmed = it }); Text("已对照正反面图片逐项复核") }
+                    Button(onClick = {
+                        if (!confirmed || savingCard) return@Button
+                        savingCard = true
+                        scope.launch {
+                            var created: String? = null
+                            try {
+                                val images = cardImages()
+                                val title = "${kind.label} · ${edited["name"].orEmpty().ifBlank { "未命名" }}"
+                                val id = requireNotNull(vm.saveFilesAsDoc(title, images)); created = id
+                                vm.setOrganization(id, "证件卡包", "证件,${kind.label}")
+                                vm.updateDocumentOcrText(id, r.fields.joinToString("\n") { "${it.label}：${edited[it.key] ?: it.value}" })
+                                com.localdoc.scanner.data.LibraryFolders.add(context, "证件卡包")
+                                exportStatus = "已存入证件卡包"; onOpenDoc(id)
+                            } catch (e: Exception) {
+                                created?.let { withContext(kotlinx.coroutines.NonCancellable) { vm.trash(it) } }
+                                if (e is kotlinx.coroutines.CancellationException) throw e
+                                exportStatus = "保存失败：${e.message}"
+                            } finally { savingCard = false }
+                        }
+                    }, enabled = confirmed && !savingCard, modifier = Modifier.fillMaxWidth()) { Text(if (savingCard) "正在保存…" else "存入证件卡包") }
+                    OutlinedButton(onClick = {
+                        scope.launch { try {
+                            val images = cardImages()
+                            exported = withContext(Dispatchers.IO) { File(FileStore.exportDir(context), "证件拼版_${stamp()}.pdf").also {
+                                com.localdoc.scanner.export.CardSheet.write(images, template, it)
+                                OutputHistoryStore.recordGenerated(context, it, "application/pdf")
+                            } }; exportStatus = "已生成A4拼版，保存时选择手机位置"
+                        } catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; exportStatus = "拼版失败：${e.message}" } }
+                    }, enabled = confirmed && !savingCard, modifier = Modifier.fillMaxWidth()) { Text("生成正反面A4拼版") }
+                    if (exportStatus.isNotBlank()) Text(exportStatus)
+                }
+                item {
+                    com.localdoc.scanner.ui.components.WrappingOptions {
                         TextButton(onClick = { export("json") }) { Text("导出 JSON") }
                         TextButton(onClick = { export("csv") }) { Text("导出 CSV") }
                         TextButton(onClick = { export("txt") }) { Text("导出文本") }
@@ -344,7 +400,7 @@ internal fun CardFlow(
                     item { com.localdoc.scanner.ui.components.SaveDefaultButton(listOf(file)) { exportStatus = it } }
                     item {
                         Text(exportStatus, color = if (exportStatus.startsWith("已保存")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        com.localdoc.scanner.ui.components.WrappingOptions {
                             Button(onClick = { saveExport.launch(file.name) }) { Text("保存到手机") }
                             TextButton(onClick = { Share.file(context, file, OutputHistoryStore.mimeFor(file)) }) { Text("分享") }
                             TextButton(onClick = { Share.open(context, file, OutputHistoryStore.mimeFor(file)) }) { Text("打开") }
@@ -363,7 +419,7 @@ internal fun CardFlow(
                 }
                 item {
                     Text(
-                        "只做字段抽取与校验位自验，不做真伪核验（那需要联网接口，本应用零联网）。",
+                        "只做字段抽取与校验位自验，不做真伪核验（需要独立的核验服务）。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

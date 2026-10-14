@@ -52,7 +52,7 @@ class OcrResumeInstrumentedTest {
             assertEquals(1, resumedCalls)
             assertEquals(firstSavedAt, repo.pages(docId)[0].ocrUpdatedAt)
             val dao = AppDatabase.get(context).docDao()
-            assertEquals(0, dao.setOcrIfUnchanged(pages[0].id, -1, 1, "旧任务", "", "tiny"))
+            assertEquals(0, dao.setOcrIfUnchanged(pages[0].id, -1, 1, "旧任务", "", "historical-model"))
             assertEquals("第一张完成", dao.getPage(pages[0].id)?.ocrText)
             dao.renameDoc(docId, "新名称", 1)
             dao.organizeDoc(docId, "新文件夹", "新标签", 2)

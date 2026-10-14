@@ -144,7 +144,7 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit, modifier: Modifier = Mo
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("完整文档库备份", style = MaterialTheme.typography.titleMedium)
-                    Text("备份包含原图、处理图、裁边参数、页序、文件夹、标签和OCR文字。恢复时生成新文档，不覆盖现有内容。")
+                    Text("备份包含原图、处理图、裁边参数、页序、文件夹、标签、OCR文字、导入来源记录和手写签名库。签名图片也会导出，请妥善保管；可选密码加密。恢复生成新文档，重复签名会跳过。")
                     Button(
                         onClick = {
                             val name = SimpleDateFormat("yyyyMMdd_HHmm", Locale.getDefault()).format(Date())

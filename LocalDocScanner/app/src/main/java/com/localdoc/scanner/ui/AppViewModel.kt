@@ -79,8 +79,25 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val isRetaking: Boolean get() = retakeTemplate != null
     var captureProcessing by mutableStateOf(false)
         private set
+    fun openToolWithoutInput(tool: ToolEntry) {
+        require(tool.accept == FileKind.NONE)
+        toolRequest = ToolRequest(tool, emptyList(), emptyList())
+        com.localdoc.scanner.data.ToolDrafts.saveRequest(app, toolRequest)
+    }
     fun notify(text: String) {
         viewModelScope.launch { _messages.emit(text) }
+    }
+
+    suspend fun importLibraryFile(uri: Uri, titleOverride: String? = null): DocItem = withContext(Dispatchers.IO) {
+        val name = app.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+            if (it.moveToFirst()) it.getString(0) else null
+        } ?: "文档"
+        val id = repo.importFile(uri, titleOverride ?: name, app.contentResolver.getType(uri).orEmpty())
+        repo.getItem(id) ?: error("导入未完成")
+    }
+    suspend fun newOffice(extension: String, title: String): DocItem {
+        val id = repo.createOffice(extension, title)
+        return repo.getItem(id) ?: error("新建未完成")
     }
 
     fun startNewScan(force: Boolean = false) {
@@ -121,6 +138,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
         retakeTemplate = null
     }
+    val captureProfile: String get() = draft.captureProfile
+    fun startProfile(profile: String): Boolean {
+        if (session.value.isNotEmpty() || draftProblem.isNotBlank() || captureProcessing) { notify("请先完成当前草稿，再开始其它拍摄模式"); return false }
+        require(profile in setOf("ppt", "whiteboard", "handwriting"))
+        startNewScan(); draft = DraftStore.setProfile(app, draft, profile)
+        draft = DraftStore.setTitle(app, draft, when(profile) { "ppt" -> "PPT采集"; "whiteboard" -> "白板笔记"; else -> "手写笔记" })
+        syncDraft(); return true
+    }
 
     fun appendContinuousShot(file: File, book: Boolean) {
         if (captureProcessing) { notify("上一张仍在处理，请稍候"); return }
@@ -128,7 +153,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             try {
                 val notes = withContext(Dispatchers.IO) {
-                    com.localdoc.scanner.capture.ContinuousCaptureProcessor.prepare(app, file, book).use {
+                    com.localdoc.scanner.capture.ContinuousCaptureProcessor.prepare(app, file, book, draft.captureProfile).use {
                         draft = DraftStore.addBatch(app, draft, it.pages)
                         it.notes
                     }
@@ -297,28 +322,22 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             val files = mutableListOf<File>()
             val names = mutableListOf<String>()
-            uris.forEachIndexed { index, uri ->
-                val name = com.localdoc.scanner.output.OutputHistoryStore.displayName(app, uri).ifBlank { uri.lastPathSegment ?: "file_$index" }
-                val stamp = System.currentTimeMillis()
-                val dir = FileStore.importDir(app)
-                val asImage = tool.accept == FileKind.IMAGE ||
-                    (tool.accept == FileKind.ANY && (app.contentResolver.getType(uri) ?: "").startsWith("image/"))
-                val extension = when {
-                    asImage -> "jpg"
-                    tool.accept == FileKind.PDF -> "pdf"
-                    else -> name.substringAfterLast('.', "bin").lowercase().takeIf { it.matches(Regex("[a-z0-9]{1,12}")) } ?: "bin"
-                }
-                val dest = File(dir, "imp_${stamp}_$index.$extension")
-                val ok = if (asImage) {
-                    val bmp = ImageIo.loadFromUri(app, uri, 3200)
-                    if (bmp == null) false else ImageIo.saveJpeg(bmp, dest, 94).also { bmp.recycle() }
-                } else {
-                    ImageIo.copyBytes(app, uri, dest)
-                }
-                if (ok && dest.exists()) { files.add(dest); names.add(name) }
+            val failures=mutableListOf<String>()
+            uris.forEachIndexed { index,uri ->
+                try {
+                    val name=com.localdoc.scanner.output.OutputHistoryStore.displayName(app,uri).ifBlank { "file_$index" }
+                    val mime=app.contentResolver.getType(uri).orEmpty()
+                    val asImage=tool.accept==FileKind.IMAGE || tool.accept==FileKind.ANY && mime.startsWith("image/")
+                    val dir=FileStore.importDir(app)
+                    val dest=if(asImage) ImageIo.stageImage(app,uri,dir) else {
+                        val extension=if(tool.accept==FileKind.PDF) "pdf" else name.substringAfterLast('.',"bin").lowercase().takeIf { it.matches(Regex("[a-z0-9]{1,12}")) } ?: "bin"
+                        File(dir,"imp_${java.util.UUID.randomUUID()}.$extension").also { require(ImageIo.copyBytes(app,uri,it)) { "无法读取文件" } }
+                    }
+                    files+=dest;names+=name
+                } catch(e: Exception) { if(e is kotlinx.coroutines.CancellationException)throw e;failures+="第${index+1}个文件：${e.message}" }
             }
             withContext(Dispatchers.Main) {
-                if (files.isEmpty()) notify("没有读到可用的文件") else { toolRequest = ToolRequest(tool, files, names); com.localdoc.scanner.data.ToolDrafts.saveRequest(app, toolRequest) }
+                if (files.isEmpty()) notify(failures.firstOrNull() ?: "没有读到可用的文件") else { toolRequest = ToolRequest(tool, files, names); com.localdoc.scanner.data.ToolDrafts.saveRequest(app, toolRequest); if(failures.isNotEmpty())notify("已读入${files.size}份；${failures.joinToString("；")}") }
             }
         }
     }
@@ -342,14 +361,18 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     suspend fun openExternalPdfForEditing(source: File, displayName: String) {
+        openExternalTool(source,displayName,ToolEntry("pdf_office","PDF编辑",FileKind.PDF))
+    }
+    suspend fun openExternalTool(source: File, displayName: String, tool: ToolEntry) {
         val target = withContext(Dispatchers.IO) {
-            val safe = displayName.replace(Regex("[\\/:*?\"<>|]"), "_").ifBlank { "外部PDF.pdf" }
-            File(FileStore.importDir(app), "external_${System.currentTimeMillis()}_$safe").also {
-                source.copyTo(it, overwrite = true)
+            require(source.isFile && source.length() in 1..2L*1024*1024*1024 && FileStore.importDir(app).usableSpace>source.length()+16L*1024*1024) { "输入文件无效、过大或空间不足" }
+            val extension=source.extension.takeIf { it.matches(Regex("[a-zA-Z0-9]{1,12}")) } ?: "bin"
+            File(FileStore.importDir(app), "external_${java.util.UUID.randomUUID()}.$extension").also {
+                com.localdoc.scanner.util.AtomicFiles.copy(source,it)
             }
         }
         toolRequest = ToolRequest(
-            ToolEntry("pdf_office", "PDF编辑", FileKind.PDF),
+            tool,
             listOf(target),
             listOf(displayName)
         )
@@ -364,6 +387,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     suspend fun rename(docId: String, title: String) = repo.rename(docId, title)
+    suspend fun batchDocuments(ids: List<String>, action: String, value: String) = repo.batchDocuments(ids,action,value)
+    suspend fun changeFolder(oldName: String, newName: String?) = repo.changeFolder(oldName,newName)
+    suspend fun sourceInfo(id: String) = repo.sourceInfo(id)
     suspend fun setOrganization(docId: String, folder: String?, tags: String) = repo.setOrganization(docId, folder, tags)
     suspend fun updateDocumentOcrText(docId: String, text: String) = repo.setOcrText(docId, text)
     suspend fun trash(docId: String) = repo.trash(docId)

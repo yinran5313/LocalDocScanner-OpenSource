@@ -38,7 +38,7 @@ internal class ToolTaskProcessor(private val context: Context, private val spec:
     private fun propagate(e: Exception) { if (e is CancellationException || e is ToolSliceEnded) throw e }
 
     private suspend inline fun <reified T> step(key: String, label: String,
-        crossinline files: (T) -> List<File> = { emptyList() }, crossinline run: suspend () -> T): T {
+        crossinline files: (T) -> List<File> = { emptyList() }, countUnit: Boolean = true, crossinline run: suspend () -> T): T {
         coroutineContext.ensureActive()
         if (android.os.SystemClock.elapsedRealtime() - started > 240_000) throw ToolSliceEnded()
         progress(completed, total, label)
@@ -51,7 +51,7 @@ internal class ToolTaskProcessor(private val context: Context, private val spec:
             withContext(NonCancellable) { journal.save(key, gson.toJson(generated), files(generated)) }
             generated
         }
-        completed++
+        if(countUnit) completed++
         progress(completed, total, label)
         return value
     }
@@ -68,6 +68,23 @@ internal class ToolTaskProcessor(private val context: Context, private val spec:
         FlowOutcome(listOf("结果" to "找到${found.size}个候选，请人工确认"), emptyList(), sensitiveRegions = found)
     } else when (spec.request.tool.id) {
         "images_to_pdf" -> imagesToPdf()
+        "image_ppt" -> {
+            val order = parameter("order", inputs)
+            require(order.isNotEmpty() && order.size <= 100 && order.size == inputs.size && order.toSet() == inputs.toSet()) { "图片顺序无效或超过100张" }
+            total = order.size+1
+            val pictures = order.mapIndexed { index, image -> step("ppt-image:$index", "准备幻灯片${index+1}", { listOfNotNull(it.file) }) {
+                val bitmap = ImageIo.loadFromFile(image, 1600) ?: error("无法读取${image.name}")
+                try { val target = file("幻灯图片${index + 1}.png")
+                    AtomicFiles.write(target) { it.outputStream().use { out -> check(bitmap.compress(Bitmap.CompressFormat.PNG,100,out)) } }
+                    com.localdoc.scanner.office.PptPicture(byteArrayOf(),bitmap.width,bitmap.height,target)
+                } finally { bitmap.recycle() }
+            } }
+            require(pictures.sumOf { it.file!!.length() } <= 200L*1024*1024) { "图片总量超过200MB，请分组生成" }
+            val target = step("image-ppt", "打包图片型PPT", { listOf(it) }) {
+                file("照片演示文稿.pptx").also { out -> AtomicFiles.write(out) { com.localdoc.scanner.office.ImagePptWriter.write(context.assets.open("templates/untitled.pptx"),pictures,it) } }
+            }
+            FlowOutcome(listOf("页数" to "${pictures.size}", "内容" to "每页一张图片"),listOf(target))
+        }
         "pdf_merge" -> {
             val order = parameter("order", inputs)
             require(order.size == inputs.size && order.toSet() == inputs.toSet()) { "合并顺序无效，请重新选择文件" }
@@ -75,6 +92,21 @@ internal class ToolTaskProcessor(private val context: Context, private val spec:
             FlowOutcome(listOf("输入" to "${order.size}份"), listOf(result))
         }
         "pdf_split" -> split()
+        "pdf_pages" -> {
+            val count = PdfTools.pageCount(first)
+            val order = parameter("pdfPageOrder", emptyList<Int>())
+            require(order.isNotEmpty() && order.distinct().size == order.size && order.all { it in 0 until count }) { "请保留至少一页，页面顺序必须有效" }
+            val selected = PageSelection.parse(parameter("pageExportRange", ""), count).toSet()
+            val export = order.filter { it in selected }; require(export.isNotEmpty()) { "选页中没有已保留的页面" }
+            val turns = parameter("pdfPageTurns", emptyMap<Int, Int>())
+            val result = pdfStep("page-manager", "页面整理.pdf") { target ->
+                PDDocument.load(first).use { source ->
+                    require(source.currentAccessPermission.canAssembleDocument()) { "此PDF不允许整理页面" }
+                    PDDocument().use { document -> export.forEach { page -> val imported = document.importPage(source.getPage(page)); imported.rotation = (imported.rotation + (turns[page] ?: 0).coerceIn(0, 3) * 90) % 360 }; document.save(target) }
+                }; true
+            }
+            FlowOutcome(listOf("页数" to "${export.size}", "顺序（原页码）" to export.joinToString { "${it + 1}" }), listOf(result))
+        }
         "pdf_compress" -> {
             val tier = parameter("tier", 1).coerceIn(0, 3)
             val result = pdfStep("compress", "压缩.pdf") {
@@ -104,6 +136,41 @@ internal class ToolTaskProcessor(private val context: Context, private val spec:
             FlowOutcome(listOf("拼接页数" to "${inputs.size}"), listOf(image), listOf(image))
         }
         "image_edit" -> editImages()
+        "portrait", "book_unwarp" -> modelImages()
+        "translate" -> translateImage()
+        "formula" -> recognizeFormula()
+        "photo_restore" -> restorePhoto()
+        "region_erase" -> eraseRegion()
+        "structured_markdown" -> structuredMarkdown()
+        "pdf_long", "pdf_enhance" -> batchPdfImage()
+        "zip_import" -> extractZip()
+        "qr_create" -> qrCreate()
+        "count_objects" -> step("object-count", "识别并标记物体", { it.files }) {
+            val category = parameter("category", 0).coerceIn(0, com.localdoc.scanner.models.ObjectCounting.labels.lastIndex)
+            val source = ImageIo.loadFromFile(first, 2200) ?: error("无法读取图片")
+            try {
+                val boxes = com.localdoc.scanner.models.ObjectCounting.detect(context, source, category)
+                val marked = source.copy(Bitmap.Config.ARGB_8888, true)
+                try { val canvas = android.graphics.Canvas(marked); val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF00A98D.toInt(); strokeWidth = source.width / 250f; textSize = source.width / 35f }
+                    boxes.forEachIndexed { i, box -> paint.style = android.graphics.Paint.Style.STROKE; canvas.drawRect(box.left * source.width, box.top * source.height, box.right * source.width, box.bottom * source.height, paint)
+                        paint.style = android.graphics.Paint.Style.FILL; canvas.drawText("${i + 1}", box.left * source.width, (box.top * source.height + paint.textSize).coerceAtMost(source.height.toFloat()), paint) }
+                    val image = file("计数标记.jpg"); AtomicFiles.write(image) { check(ImageIo.saveJpeg(marked, it, 94)) }
+                    val detail = file("计数位置.json"); AtomicFiles.text(detail, gson.toJson(boxes))
+                    val report = file("计数复核.csv"); val label = com.localdoc.scanner.models.ObjectCounting.labels[category]
+                    AtomicFiles.text(report, "类别,识别建议数量,人工复核数量,说明\n$label,${boxes.size},,请对照标记图核对遗漏与重复\n")
+                    FlowOutcome(listOf("类别" to label, "识别建议数量" to "${boxes.size}"), listOf(image, report, detail), listOf(image))
+                } finally { marked.recycle() }
+            } finally { source.recycle() }
+        }
+        "watermark_photo" -> step("watermark-photo", "生成水印照片", { it.files }) {
+            val text = listOf(parameter("watermarkTime", ""), parameter("watermarkLocation", ""), parameter("watermarkText", "")).filter(String::isNotBlank).joinToString("\n")
+            val bitmap = ImageIo.loadFromFile(first, 3200) ?: error("无法读取照片")
+            try { val result = ImageWatermark.render(bitmap, text)
+                try { val target = file("水印照片.jpg"); AtomicFiles.write(target) { check(ImageIo.saveJpeg(result, it, 94)) }
+                    FlowOutcome(listOf("结果" to "已生成水印副本"), listOf(target), listOf(target))
+                } finally { result.recycle() }
+            } finally { bitmap.recycle() }
+        }
         "pdf_compare" -> step("compare", "逐页对比PDF", { it.files }) {
             require(inputs.size == 2) { "请选择恰好两份PDF" }
             val target = file("PDF差异.pdf")
@@ -152,17 +219,308 @@ internal class ToolTaskProcessor(private val context: Context, private val spec:
     }
     private suspend fun pdfImages(): FlowOutcome {
         val count = PdfTools.pageCount(first); require(count > 0) { "PDF无法读取，请先解锁" }
-        total = count
+        val selected = PageSelection.parse(parameter("selectedPages", ""), count)
+        total = selected.size
         val dpi = intArrayOf(200, 150, 110)[parameter("dpi", 1).coerceIn(0, 2)]
         val failures = mutableListOf<String>()
         val images = mutableListOf<File>()
-        for (index in 0 until count) try {
+        for (index in selected) try {
             images += step("render:$index", "导出第${index + 1}/$count 页", { listOf(it) }) {
                 val bitmap = PdfTools.renderPageAtDpi(first, index, dpi) ?: error("无法读取页面")
                 try { file("第${index + 1}页.jpg").also { check(ImageIo.saveJpeg(bitmap, it, 94)) } } finally { bitmap.recycle() }
             }
         } catch (e: Exception) { propagate(e); failures += "第${index + 1}页：${e.message}" }
-        return FlowOutcome(listOf("导出页数" to "${images.size}/$count") + failureSummary(failures), images, images, failures = failures)
+        return FlowOutcome(listOf("导出页数" to "${images.size}/${selected.size}") + failureSummary(failures), images, images, failures = failures)
+    }
+
+    private suspend fun modelImages(): FlowOutcome {
+        total = inputs.size
+        val split = spec.request.tool.id == "book_unwarp" && parameter("splitSpread",false)
+        total = inputs.size * if (split) 2 else 1
+        val images = inputs.flatMapIndexed { index, source -> (0 until if (split) 2 else 1).map { side -> step("model-image:$index:$side", "处理第${index+1}张${if (split) if (side==0) "左页" else "右页" else ""}", { listOf(it) }) {
+            val portrait = spec.request.tool.id == "portrait"
+            val bitmap = ImageIo.loadFromFile(source,if (portrait) 2400 else 1400) ?: error("无法读取图片")
+            var page = bitmap
+            try {
+                if (split) {
+                    val splitX = (bitmap.width*parameter("splitRatio",.5f).coerceIn(.3f,.7f)).toInt().coerceIn(1,bitmap.width-1)
+                    page = if (side==0) Bitmap.createBitmap(bitmap,0,0,splitX,bitmap.height) else Bitmap.createBitmap(bitmap,splitX,0,bitmap.width-splitX,bitmap.height)
+                }
+                val result = if (portrait) com.localdoc.scanner.models.ModelInference.portrait(context,page,listOf(null,android.graphics.Color.WHITE,0xFF438EDB.toInt(),0xFFD94343.toInt())[parameter("background",0).coerceIn(0,3)])
+                    else com.localdoc.scanner.models.ModelInference.unwarp(context,page)
+                try {
+                    val format = com.localdoc.scanner.cv.PortraitSizes.sizes[parameter("photoSize",0).coerceIn(com.localdoc.scanner.cv.PortraitSizes.sizes.indices)]
+                    var cropped = result
+                    try {
+                        if (portrait && format.width>0) {
+                            val region = com.localdoc.scanner.cv.PortraitSizes.crop(result.width,result.height,format,parameter("photoCropX",.5f),parameter("photoCropY",.5f))
+                            val part = Bitmap.createBitmap(result,region.left,region.top,region.width,region.height)
+                            cropped = Bitmap.createScaledBitmap(part,format.width,format.height,true)
+                            if (part !== result && part !== cropped) part.recycle()
+                        }
+                        file("${if (portrait) "人像" else "展平"}${index+1}${if (split) "-${side+1}" else ""}.png").also { target -> AtomicFiles.write(target) { it.outputStream().use { out -> check(cropped.compress(Bitmap.CompressFormat.PNG,100,out)) } } }
+                    } finally { if (cropped !== result) cropped.recycle() }
+                } finally { result.recycle() }
+            } finally { if (page !== bitmap) page.recycle(); bitmap.recycle() }
+        } } }
+        val outputs = images.toMutableList()
+        val format = com.localdoc.scanner.cv.PortraitSizes.sizes[parameter("photoSize", 0).coerceIn(com.localdoc.scanner.cv.PortraitSizes.sizes.indices)]
+        if (spec.request.tool.id == "portrait" && format.width > 0) outputs += file("证件照实际尺寸.pdf").also {
+            com.localdoc.scanner.export.CardSheet.write(images.take(1), com.localdoc.scanner.structure.CardTemplates.Template(format.label,format.widthMm,format.heightMm,false),it)
+        }
+        return FlowOutcome(listOf("结果" to "${images.size}张，请对照原图复核"), outputs, images)
+    }
+
+    private suspend fun recognizeFormula(): FlowOutcome {
+        total = 1
+        val latex = step("formula", "识别单条数学公式") {
+            val source = ImageIo.loadFromFile(first,1600) ?: error("图片无法读取")
+            try { com.localdoc.scanner.models.FormulaRecognition.recognize(context,source) } finally { source.recycle() }
+        }
+        return FlowOutcome(listOf("结果" to "请校订LaTeX并检查公式预览"),emptyList(),copyText = latex)
+    }
+
+    private suspend fun restoredTiles(source: Bitmap, scale: Int, scope: String, countTiles: Boolean = true): Bitmap {
+        val geometry = com.localdoc.scanner.models.RestorationGeometry
+        val pack = com.localdoc.scanner.models.ModelCatalog.get(context, "restore")
+        val count = geometry.tileCount(source.width,source.height)
+        require(root.usableSpace > source.width.toLong()*source.height*scale*scale*8 + 32L*1024*1024) { "空间不足，请至少留出图块与输出文件所需空间" }
+        if(countTiles) total += count
+        return com.localdoc.scanner.models.PhotoRestoration.restore(context,source,scale) { tile,infer ->
+            val key="sr-tile:$scope:${pack.version}:$scale:${source.width}x${source.height}:${tile.x}:${tile.y}"
+            val index=tile.y/geometry.CORE*((source.width+geometry.CORE-1)/geometry.CORE)+tile.x/geometry.CORE+1
+            val label=(if(scope.startsWith("pdf:")) "第${scope.substringAfter(':').toInt()+1}页 · " else "")+"高清图块 $index/$count"
+            val cached=step(key,label,{ listOf(it) },countUnit=countTiles) {
+                val bitmap=infer()
+                try { File(root,"tiles/${ToolCheckpoints.digest(key.toByteArray())}.png").also { target ->
+                    AtomicFiles.write(target) { staged -> staged.outputStream().use { out -> check(bitmap.compress(Bitmap.CompressFormat.PNG,100,out)) } }
+                } } finally { bitmap.recycle() }
+            }
+            requireNotNull(android.graphics.BitmapFactory.decodeFile(cached.absolutePath)) { "已完成图块无法读取，请重新提交" }
+        }
+    }
+
+    private suspend fun restorePhoto(): FlowOutcome {
+        total = 1
+        val mode=parameter("restoreMode","SUPER")
+        require(mode in listOf("SUPER","DEBLUR","DENOISE")) { "图像处理模式无效" }
+        val scale=parameter("restoreScale",2)
+        val strength=parameter("restoreStrength",.7f)
+        require(strength.isFinite() && strength in 0f..1f)
+        val label=when(mode) { "DEBLUR" -> "去模糊"; "DENOISE" -> "降噪"; else -> "高清修复" }
+        val output=step("restore:$mode","本地$label",{ listOf(it) }) {
+            val source=ImageIo.loadExactFromFile(first,when(mode) { "DEBLUR" -> 1600; "DENOISE" -> 2200; else -> com.localdoc.scanner.models.RestorationGeometry.inputSide(scale) }) ?: error("图片读取失败")
+            try {
+                val fixed=when(mode) { "DEBLUR" -> deblurTiles(source,strength); "DENOISE" -> com.localdoc.scanner.cv.PhotoDenoise.run(source,strength); else -> restoredTiles(source,scale,"photo") }
+                try { file("$label.png").also { target -> AtomicFiles.write(target) { it.outputStream().use { out -> check(fixed.compress(Bitmap.CompressFormat.PNG,100,out)) } } } } finally { fixed.recycle() }
+            } finally { source.recycle() }
+        }
+        val bounds=android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds=true }
+        android.graphics.BitmapFactory.decodeFile(output.absolutePath,bounds)
+        return FlowOutcome(listOf("处理" to when(mode) { "DEBLUR" -> "NAFNet分块去模糊；已完成图块可续跑"; "DENOISE" -> "OpenCV非局部均值降噪"; else -> "Real-ESRGAN分块增强；已完成图块可续跑" }, "输出尺寸" to "${bounds.outWidth} × ${bounds.outHeight} 像素", "复核" to "请对照原图检查文字与细节"),listOf(output),listOf(output))
+    }
+
+    private suspend fun deblurTiles(source: Bitmap,strength: Float): Bitmap {
+        val core=com.localdoc.scanner.models.PhotoDeblur.CORE
+        val count=((source.width+core-1)/core)*((source.height+core-1)/core)
+        val pack=com.localdoc.scanner.models.ModelCatalog.get(context,"deblur")
+        require(root.usableSpace>source.width.toLong()*source.height*12+32L*1024*1024) { "去模糊图块与结果所需空间不足" }
+        total+=count
+        return com.localdoc.scanner.models.PhotoDeblur.restore(context,source,strength) { tile,infer ->
+            val key="deblur-tile:${pack.version}:$strength:${source.width}x${source.height}:${tile.x}:${tile.y}"
+            val index=tile.y/core*((source.width+core-1)/core)+tile.x/core+1
+            val cached=step(key,"去模糊图块 $index/$count",{ listOf(it) }) {
+                val bitmap=infer()
+                try { File(root,"tiles/${ToolCheckpoints.digest(key.toByteArray())}.png").also { target ->
+                    AtomicFiles.write(target) { staged -> staged.outputStream().use { out -> check(bitmap.compress(Bitmap.CompressFormat.PNG,100,out)) } }
+                } } finally { bitmap.recycle() }
+            }
+            requireNotNull(android.graphics.BitmapFactory.decodeFile(cached.absolutePath)) { "去模糊图块缓存无效，请重新提交" }
+        }
+    }
+
+    private suspend fun eraseRegion(): FlowOutcome {
+        total = 1
+        val output = step("erase", "修补选中区域", { listOf(it) }) {
+            val source = ImageIo.loadFromFile(first, 2200) ?: error("图片读取失败")
+            try {
+                val strokes = parameter<List<List<com.localdoc.scanner.pdf.PdfInkPoint>>>("eraseStrokes",emptyList())
+                val fixed = if(parameter("eraseLearned",false)) com.localdoc.scanner.models.LearnedRegionRepair.repair(context,source,strokes,parameter("eraseBrush",0.035f)) else com.localdoc.scanner.cv.RegionRepair.repair(source,strokes,parameter("eraseBrush",0.035f))
+                try { file("区域修补.png").also { target -> AtomicFiles.write(target) { it.outputStream().use { out -> check(fixed.compress(Bitmap.CompressFormat.PNG,100,out)) } } } } finally { fixed.recycle() }
+            } finally { source.recycle() }
+        }
+        return FlowOutcome(listOf("处理" to if(parameter("eraseLearned",false)) "LaMa背景修补；请核对选区边缘与细节" else "本地邻域修补；请核对选区边缘与文字"),listOf(output),listOf(output))
+    }
+
+    private suspend fun translateImage(): FlowOutcome {
+        total = 2
+        val sourceText = step("translate-ocr", "medium识别原文") {
+            val bitmap = ImageIo.loadFromFile(first, 3600) ?: error("无法读取图片")
+            val engine = PaddleOcrEngine(context)
+            try { engine.recognize(bitmap, true).text.also { require(it.isNotBlank()) { "没有识别到文字" } } }
+            finally { bitmap.recycle(); engine.close() }
+        }
+        val translated = step("translate", "本地翻译") {
+            com.localdoc.scanner.models.LocalTranslation.translate(context, sourceText, parameter("chineseToEnglish", true))
+        }
+        val text = "原文\n$sourceText\n\n译文\n$translated"
+        val target = file("翻译结果.txt"); AtomicFiles.text(target, text)
+        return FlowOutcome(listOf("结果" to "译文请核对姓名、数字和专有名词"), listOf(target), copyText = text)
+    }
+
+    private suspend fun structuredMarkdown(): FlowOutcome {
+        val counts = inputs.map { if (it.extension.equals("pdf", true)) PdfTools.pageCount(it) else 1 }
+        val withImages=parameter("mdSourceImages",true)
+        val layout=parameter("mdLayout",false)
+        total = counts.sum() * ((if (layout || parameter("mdTable",false)) 2 else 1) + (if(withImages) 1 else 0)) + 1
+        val failures = mutableListOf<String>()
+        val parts = mutableListOf<String>(); val attachments = mutableListOf<File>(); val engine = recognizerForTest ?: PaddleOcrEngine(context)
+        try { for ((fileIndex, source) in inputs.withIndex()) {
+            require(counts[fileIndex] > 0) { "PDF无法读取，请先解锁" }
+            for (page in 0 until counts[fileIndex]) {
+                val boxes = step("md-ocr:$fileIndex:$page", "识别 ${source.name} 第${page + 1}页") {
+                    val bitmap = if (source.extension.equals("pdf", true)) PdfTools.renderPage(source, page, 3000) else ImageIo.loadFromFile(source, 3600)
+                    requireNotNull(bitmap) { "无法读取图像" }
+                    try { engine.recognize(bitmap, true).boxes } finally { bitmap.recycle() }
+                }
+                var modelTable: com.localdoc.scanner.models.ModelTable? = null
+                var layoutPage: MarkdownPageOutput?=null
+                val content = if(layout) {
+                    layoutPage=step("md-layout:$fileIndex:$page","区分图文区域并恢复阅读顺序",{ it.files }) {
+                        val bitmap=if(source.extension.equals("pdf",true)) PdfTools.renderPage(source,page,2600) else ImageIo.loadExactFromFile(source,2600)
+                        requireNotNull(bitmap)
+                        try { val regions=com.localdoc.scanner.models.DocumentLayoutModel.detect(context,bitmap)
+                            StructuredMarkdownPage.render(context,bitmap,boxes,regions,parameter("mdTable",false),parameter("mdColumns","AUTO"),output,"${fileIndex+1}-${page+1}")
+                        } finally { bitmap.recycle() }
+                    }
+                    attachments+=layoutPage.files
+                    failures+=layoutPage.warnings.map { "${source.name} 第${page+1}页：$it" }
+                    layoutPage.markdown
+                } else if (parameter("mdTable",false)) {
+                    try { modelTable = step("md-table:$fileIndex:$page", "恢复本页表格结构") {
+                        val bitmap = if (source.extension.equals("pdf",true)) PdfTools.renderPage(source,page,2600) else ImageIo.loadFromFile(source,3200)
+                        requireNotNull(bitmap)
+                        try { com.localdoc.scanner.models.TableModel.recover(context,bitmap,boxes) } finally { bitmap.recycle() }
+                    }
+                    val remaining=boxes.filter { word -> modelTable.cells.none { c -> word.left<c.right && word.right>c.left && word.top<c.bottom && word.bottom>c.top } }
+                    com.localdoc.scanner.structure.LayoutMarkdown.modelTable(modelTable)+if(remaining.isNotEmpty()) "\n\n"+com.localdoc.scanner.structure.LayoutMarkdown.render(remaining,parameter("mdColumns","AUTO")) else ""
+                    } catch (e: Exception) { propagate(e); failures += "${source.name} 第${page+1}页：表格未恢复，已保留文字；${e.message}"; com.localdoc.scanner.structure.LayoutMarkdown.render(boxes,parameter("mdColumns","AUTO")) }
+                } else com.localdoc.scanner.structure.LayoutMarkdown.render(boxes,parameter("mdColumns","AUTO"))
+                val sourceImage=if(withImages) step("md-source:$fileIndex:$page","保存第${page+1}页原图附件",{ listOf(it) }) {
+                    val bitmap=if(source.extension.equals("pdf",true)) PdfTools.renderPage(source,page,1600) else ImageIo.loadExactFromFile(source,1600)
+                    requireNotNull(bitmap) { "原页图像无法读取" }
+                    try { file("source-${fileIndex+1}-${page+1}.jpg").also { check(ImageIo.saveJpeg(bitmap,it,92)) } } finally { bitmap.recycle() }
+                } else null
+                sourceImage?.let { attachments+=it }
+                val sourceName=(spec.request.names.getOrNull(fileIndex) ?: source.name).replace("\n"," ").replace("\r"," ")
+                parts += "## $sourceName · 第${page+1}页\n\n" + content + (sourceImage?.let { "\n\n[查看第${page+1}页原图](${it.name})\n\n![第${page+1}页原图](${it.name})" } ?: "")
+                val locations = file("来源${fileIndex + 1}-${page + 1}.json")
+                AtomicFiles.text(locations, gson.toJson(mapOf("source" to (spec.request.names.getOrNull(fileIndex) ?: source.name), "page" to page + 1, "boxes" to boxes, "tableCells" to modelTable?.cells, "merges" to modelTable?.merges, "regions" to layoutPage?.regions)))
+                attachments += locations
+            }
+        } } finally { engine.close() }
+        val text = parts.joinToString("\n\n---\n\n"); val target = file("识别整理.md"); AtomicFiles.text(target, text)
+        val bundle=step("md-bundle","打包Markdown与原页附件",{ listOf(it) }) {
+            file("Markdown与原图.zip").also { MarkdownBundle.write(listOf(target)+attachments,it) }
+        }
+        return FlowOutcome(listOf("结果" to "结构需复核；文字/表格位置见JSON", "分享" to "底部保存/分享默认使用完整ZIP；单个文件可从输出菜单操作"), listOf(target,bundle)+attachments, copyText=text, failures=failures,primaryFiles=listOf(bundle),libraryFiles=listOf(target,bundle))
+    }
+
+    private suspend fun batchPdfImage(): FlowOutcome {
+        val selected=PageSelection.parse(parameter("selectedPages",""),PdfTools.pageCount(first))
+        val enhance=spec.request.tool.id=="pdf_enhance"
+        val sr=enhance && parameter("pdfSuperResolution",false)
+        val searchable=enhance && parameter("pdfEnhanceSearchable",false)
+        val srSide=parameter("pdfEnhanceSide",1200)
+        require(!sr || srSide in listOf(800,1200,2000)) { "高清档尺寸无效" }
+        total=selected.size*(if(searchable) 2 else 1)+1
+        val images=selected.map { page -> step("batch-render:$page","处理第${page+1}页",{ listOf(it) }) {
+            val bitmap=PdfTools.renderPage(first,page,if(sr) srSide else if(enhance) 2600 else 1440) ?: error("页面无法读取")
+            var result=bitmap
+            try {
+                if(enhance) result=applyFilter(bitmap,ScanFilter.AUTO)
+                if(sr) {
+                    val restored=restoredTiles(result,2,"pdf:$page",countTiles=false)
+                    if(result!==bitmap) result.recycle()
+                    result=restored
+                }
+                file("选页${page+1}.jpg").also { check(ImageIo.saveJpeg(result,it,94)) }
+            } finally { if(result!==bitmap) result.recycle(); bitmap.recycle() }
+        } }
+        if(enhance) {
+            val ocr=if(searchable) {
+                val engine=recognizerForTest ?: PaddleOcrEngine(context)
+                try { images.mapIndexed { index,image -> step("pdf-enhance-ocr:${selected[index]}","medium识别第${selected[index]+1}页") {
+                    val bitmap=ImageIo.loadExactFromFile(image,3600) ?: error("增强图片无法读取")
+                    try { engine.recognize(bitmap,true) } finally { bitmap.recycle() }
+                } } } finally { engine.close() }
+            } else emptyList()
+            val pages=PDDocument.load(first).use { original -> selected.mapIndexed { index,page ->
+                val geometry=PdfPageGeometry(original.getPage(page))
+                SearchablePdfPage(images[index],ocr.getOrNull(index)?.text.orEmpty(),ocr.getOrNull(index)?.boxes.orEmpty(),geometry.width,geometry.height)
+            } }
+            val pdf=pdfStep("enhanced-pdf","增强副本.pdf") { target -> target.outputStream().use { out ->
+                SearchablePdfExporter.export(context,pages,out,PdfExporter.PageSize.FIT_IMAGE,if(sr) 4000 else 2600)
+            } }
+            return FlowOutcome(listOf("页数" to "${images.size}", "增强" to if(sr) "基础增强 + 2倍高清修复" else "基础增强", "结果" to if(searchable) "图片型副本 + 新medium文字层；保持原可见页面尺寸" else "图片型副本；保持原可见页面尺寸", "原稿" to "原PDF保留；原表单、批注与文字层不迁移"),listOf(pdf))
+        }
+        val files=step("long-tiles","拼接分块长图",{ it }) { com.localdoc.scanner.cv.LongImageTiles.create(images,output) }
+        return FlowOutcome(listOf("页数" to "${images.size}","长图分块" to "${files.size}张"),files,files)
+    }
+
+    private suspend fun extractZip(): FlowOutcome {
+        require(first.extension.equals("zip",true)) { "请选择ZIP格式压缩包" }
+        val files=mutableListOf<File>(); val failures=mutableListOf<String>(); val folders=mutableMapOf<String,String>(); val labels=mutableMapOf<String,String>(); val origins=mutableMapOf<String,String>()
+        var totalBytes=0L
+        val group=("解压 · "+first.nameWithoutExtension.take(30)).take(45)
+        val archive=try { java.util.zip.ZipFile(first) } catch(e: java.util.zip.ZipException) { throw IllegalArgumentException("压缩包格式损坏或含不安全路径，请选择有效ZIP",e) }
+        archive.use { zip ->
+            val entries=zip.entries().asSequence().toList(); require(entries.size<=2000) { "压缩包条目超过2000，请分包处理" }
+            total=entries.count { !it.isDirectory }+1
+            for ((index,entry) in entries.withIndex()) {
+                if (entry.isDirectory) continue
+                try {
+                    val name=entry.name.replace('\\','/'); val segments=name.split('/')
+                    require(name.length<=1024 && !name.startsWith('/') && !name.contains(':') && segments.none { it in setOf("..",".") || it.any(Char::isISOControl) }) { "路径无效，已跳过此条目" }
+                    val label=com.localdoc.scanner.util.FileNames.safe(segments.last())
+                    require(label.isNotBlank() && label !in setOf(".","..")) { "文件名称无效" }
+                    require(entry.size in 0..120L*1024*1024 && totalBytes+entry.size<=512L*1024*1024) { "解压大小超出限制" }
+                    val target=step("zip-entry:$index", "解压 ${label.take(40)}", { listOf(it) }) {
+                        file("${index+1}_$label").also { dest -> AtomicFiles.write(dest) { part ->
+                            var bytes=0L; val checksum=java.util.zip.CRC32()
+                            zip.getInputStream(entry).use { input -> part.outputStream().buffered().use { out ->
+                                val buffer=ByteArray(64*1024)
+                                while(true) { coroutineContext.ensureActive(); val n=input.read(buffer); if(n<0)break
+                                    bytes+=n; require(bytes<=120L*1024*1024 && totalBytes+bytes<=512L*1024*1024 && output.usableSpace>16L*1024*1024) { "解压大小超过限制或空间不足" }; checksum.update(buffer,0,n); out.write(buffer,0,n)
+                                }
+                            } }
+                            require(bytes==entry.size && checksum.value==entry.crc) { "文件长度或CRC与ZIP目录不一致" }
+                        } }
+                    }
+                    totalBytes+=target.length(); files+=target
+                    labels[target.absolutePath]=label
+                    folders[target.absolutePath]=(group+segments.dropLast(1).filter(String::isNotBlank).joinToString("/",prefix=if(segments.size>1) "/" else "")).take(80)
+                    origins[target.name]=name
+                } catch(e: Exception) { propagate(e); failures+="条目${index+1} ${entry.name.take(80)}：${e.message}" }
+            }
+        }
+        val mapping=step("zip-directory", "保存原目录与失败清单", { listOf(it) }) {
+            file("解压目录.json").also { AtomicFiles.text(it,gson.toJson(mapOf("archive" to first.name,"paths" to origins,"failures" to failures))) }
+        }
+        files+=mapping; folders[mapping.absolutePath]=group
+        return FlowOutcome(listOf("文件" to "${files.size-1}个", "大小" to "$totalBytes 字节", "目录" to "导入文档库后按原目录分组；过长目录名截断，完整目录见JSON"),files,failures=failures,fileFolders=folders,fileLabels=labels)
+    }
+
+    private suspend fun qrCreate(): FlowOutcome = step("qr-create", "生成二维码", { it.files }) {
+        val text = parameter("qrText", ""); require(text.isNotBlank() && text.length <= 1800) { "请输入1至1800字符" }
+        val matrix = com.google.zxing.qrcode.QRCodeWriter().encode(text, com.google.zxing.BarcodeFormat.QR_CODE, 900, 900,
+            mapOf(com.google.zxing.EncodeHintType.CHARACTER_SET to "UTF-8", com.google.zxing.EncodeHintType.MARGIN to 2))
+        val bitmap = Bitmap.createBitmap(900, 900, Bitmap.Config.ARGB_8888)
+        val target = file("二维码.png")
+        try { bitmap.setPixels(IntArray(900 * 900) { i -> if (matrix[i % 900, i / 900]) android.graphics.Color.BLACK else android.graphics.Color.WHITE }, 0, 900, 0, 0, 900, 900)
+            AtomicFiles.write(target) { it.outputStream().use { out -> check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)) } }
+        } finally { bitmap.recycle() }
+        FlowOutcome(listOf("结果" to "二维码已生成"), listOf(target), listOf(target), copyText = text)
     }
     private suspend fun pdfText(): FlowOutcome {
         PDDocument.load(first).use { document ->
@@ -210,7 +568,7 @@ internal class ToolTaskProcessor(private val context: Context, private val spec:
         val structured = spec.request.tool.id in setOf("batch_extract", "table_xlsx")
         val card = spec.request.tool.id == "card"
         val language = OcrLanguage.fromCode(parameter("ocrLanguage", "AUTO"))
-        val medium = language.medium(if (structured) parameter("batchMedium", true) else if (card) parameter("precise", true) else parameter("precise", 1) == 1)
+        val medium = true // All new and legacy tool requests use the bundled medium model.
         val searchable = !structured && !card && parameter("searchable", true)
         val counts = inputs.map { if (it.extension.equals("pdf", true)) PdfTools.pageCount(it) else 1 }
         total = counts.sum() + if (structured || card) 0 else if (searchable) 2 else 1
@@ -236,9 +594,22 @@ internal class ToolTaskProcessor(private val context: Context, private val spec:
                             } finally { bitmap.recycle() }
                         }
                         pages += value
-                        if (structured) reviews += ReviewPage(value.source, index, value.text,
-                            if (spec.request.tool.id == "table_xlsx") emptyMap() else fields(value.text),
-                            TableRecovery.fromBoxes(value.boxes).ifEmpty { TableRecovery.fromText(value.text) })
+                        if (structured) {
+                            var rows = TableRecovery.fromBoxes(value.boxes).ifEmpty { TableRecovery.fromText(value.text) }
+                            var table: com.localdoc.scanner.models.ModelTable? = null; var note = "基础行列恢复，请复核"
+                            if (parameter("useTableModel", false)) {
+                                try { table = step("table-layout:$fileIndex:$index", "恢复表格结构") {
+                                    val bitmap = if (source.extension.equals("pdf", true)) PdfTools.renderPage(source, index, 2600) else ImageIo.loadFromFile(source, 3200)
+                                    requireNotNull(bitmap)
+                                    try { com.localdoc.scanner.models.TableModel.recover(context, bitmap, value.boxes) } finally { bitmap.recycle() }
+                                }; rows = table.rows; note = "模型建议的行列与合并格，置信度${table.score}；请逐格复核" }
+                                catch (e: Exception) { propagate(e); note = "结构模型未恢复：${e.message}；已保留基础行列和medium文字结果" }
+                            }
+                            if (spec.request.tool.id == "batch_extract" && parameter("batchKind",0) == 0) rows = com.localdoc.scanner.structure.InvoiceReview.itemRows(rows)
+                            reviews += ReviewPage(value.source, index, value.text,
+                                if (spec.request.tool.id == "table_xlsx") emptyMap() else fields(value.text), rows,
+                                columnTypes = com.localdoc.scanner.structure.ColumnInference.suggest(rows), merges = if (spec.request.tool.id == "table_xlsx") table?.merges else null, sourceBoxes = value.boxes, modelCells = if (spec.request.tool.id == "table_xlsx") table?.cells else null, layoutNote = note)
+                        }
                     } catch (e: Exception) {
                         propagate(e); val error = "${source.name} 第${index + 1}页：${e.message}"; failures += error
                         if (structured) reviews += ReviewPage(source.absolutePath, index, "", emptyMap(), emptyList(), error)
@@ -266,12 +637,12 @@ internal class ToolTaskProcessor(private val context: Context, private val spec:
             copyText = text, failures = failures)
     }
     private fun fields(raw: String) = when (parameter("batchKind", 0)) {
-        0 -> StructureExtractor.extract(StructureExtractor.Kind.INVOICE, raw).fields.associate { it.label to it.value }
+        0 -> com.localdoc.scanner.structure.InvoiceReview.fields(raw)
         1 -> ReceiptExtractor.fields(raw)
         else -> ReceiptExtractor.custom(raw, parameter("template", ""))
     }
     private suspend fun spreadsheet(): FlowOutcome = step("spreadsheet", "生成XLSX，保留复核状态与原文", { it.files }) {
-        val pages = parameter<List<ReviewPage>>("reviewPages", emptyList()); require(pages.isNotEmpty()) { "没有可导出的识别结果" }
+        val pages = parameter<List<ReviewPage>>("reviewPages", emptyList()).map { page -> if (page.fields.containsKey("发票号码")) page.copy(fields=com.localdoc.scanner.structure.InvoiceReview.revalidated(page.fields,page.rows)) else page }; require(pages.isNotEmpty()) { "没有可导出的识别结果" }
         val sheets = mutableListOf<Pair<String, List<List<String>>>>()
         if (spec.request.tool.id != "table_xlsx") {
             val keys = pages.flatMap { it.fields.keys }.distinct()

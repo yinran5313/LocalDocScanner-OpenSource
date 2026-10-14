@@ -21,7 +21,11 @@ data class DocEntity(
     @ColumnInfo(defaultValue = "") val coverPath: String = "",
     @ColumnInfo(defaultValue = "''") val ocrCorrection: String = "",
     @ColumnInfo(defaultValue = "''") val ocrLegacyText: String = "",
-    @ColumnInfo(defaultValue = "0") val favorite: Boolean = false
+    @ColumnInfo(defaultValue = "0") val favorite: Boolean = false,
+    @ColumnInfo(defaultValue = "'SCAN'") val kind: String = "SCAN",
+    @ColumnInfo(defaultValue = "''") val filePath: String = "",
+    @ColumnInfo(defaultValue = "''") val mime: String = "",
+    @ColumnInfo(defaultValue = "''") val sourceUri: String = ""
 )
 
 @Entity(tableName = "pages", indices = [Index("docId")])

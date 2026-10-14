@@ -1,0 +1,38 @@
+[
+  {
+    "name": "functions",
+    "url": "https://raw.githubusercontent.com/google/material-design-icons/master/symbols/web/functions/materialsymbolsoutlined/functions_24px.svg",
+    "sha256": "95ebc053b7c246a21f44d366abca533026503403915ca4b73fe8ef95d9cd86ca",
+    "license": "Apache-2.0"
+  },
+  {
+    "name": "draw",
+    "url": "https://raw.githubusercontent.com/google/material-design-icons/master/symbols/web/draw/materialsymbolsoutlined/draw_24px.svg",
+    "sha256": "e9543d5a751f0e0fcc4826d5197bb0f6b314f296b6d3ceda739d9c587e842eb2",
+    "license": "Apache-2.0"
+  },
+  {
+    "name": "verified_user",
+    "url": "https://raw.githubusercontent.com/google/material-design-icons/master/symbols/web/verified_user/materialsymbolsoutlined/verified_user_24px.svg",
+    "sha256": "abd70cab16bbd9d08b455421d32d7fbb6aa5b24c87403ce0dd333109db313752",
+    "license": "Apache-2.0"
+  },
+  {
+    "name": "auto_stories",
+    "url": "https://raw.githubusercontent.com/google/material-design-icons/master/symbols/web/auto_stories/materialsymbolsoutlined/auto_stories_24px.svg",
+    "sha256": "4908263e3784d9443d49728a33c30273627f9312a8934f14ea952c7e8c16ce7b",
+    "license": "Apache-2.0"
+  },
+  {
+    "name": "wallet",
+    "url": "https://raw.githubusercontent.com/google/material-design-icons/master/symbols/web/wallet/materialsymbolsoutlined/wallet_24px.svg",
+    "sha256": "6e3b7d1cbfa08306678ed02a1d0a46e16cfbc72d35e32d9fc84c7eec5dc60812",
+    "license": "Apache-2.0"
+  },
+  {
+    "name": "auto_fix_high",
+    "url": "https://raw.githubusercontent.com/google/material-design-icons/master/symbols/web/auto_fix_high/materialsymbolsoutlined/auto_fix_high_24px.svg",
+    "sha256": "f5f022a5ebff50988b8546e4e63f92577e71dda53dd28fc6dab14ed25016b622",
+    "license": "Apache-2.0"
+  }
+]

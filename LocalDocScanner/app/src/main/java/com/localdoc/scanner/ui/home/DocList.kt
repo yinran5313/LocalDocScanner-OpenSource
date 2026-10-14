@@ -32,7 +32,7 @@ fun RecentDocumentRow(doc: DocItem, onClick: () -> Unit, onMenu: () -> Unit, mod
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text((if (doc.favorite) "★ " else "") + doc.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text("${doc.pageCount} 页 · ${SimpleDateFormat("MM月dd日", Locale.CHINA).format(Date(doc.updatedAt))}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("${if (doc.kind == "FILE") doc.filePath.substringAfterLast('.').uppercase() else "${doc.pageCount} 页"} · ${SimpleDateFormat("MM月dd日", Locale.CHINA).format(Date(doc.updatedAt))}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 val organization = listOfNotNull(doc.folder, doc.tags.takeIf { it.isNotBlank() }).joinToString(" · ")
                 if (organization.isNotBlank()) Text(organization, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
@@ -54,7 +54,7 @@ fun DocumentGridCard(doc: DocItem, onClick: () -> Unit, onMenu: () -> Unit, modi
             }
             Text((if (doc.favorite) "★ " else "") + doc.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("${doc.pageCount} 页", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                Text(if (doc.kind == "FILE") doc.filePath.substringAfterLast('.').uppercase() else "${doc.pageCount} 页", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
                 IconButton(onMenu, Modifier.size(36.dp)) { AppIcon(R.drawable.ic_ui_more, "文档操作") }
             }
         }

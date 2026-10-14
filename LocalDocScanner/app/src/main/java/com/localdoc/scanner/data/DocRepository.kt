@@ -40,7 +40,73 @@ class DocRepository(context: Context) {
     private val database = AppDatabase.get(app)
     private val dao = database.docDao()
 
+    suspend fun importFile(uri: Uri, name: String, mime: String, folder: String? = null): String = withContext(Dispatchers.IO) {
+        val id = "f${UUID.randomUUID()}"
+        val safe = com.localdoc.scanner.util.FileNames.safe(name)
+        val target = File(FileStore.docDir(app, id), safe)
+        var committed=false
+        try {
+            AtomicFiles.write(target) { part ->
+                app.contentResolver.openInputStream(uri)?.use { input ->
+                    part.outputStream().buffered().use { out ->
+                        val buffer = ByteArray(64 * 1024); var bytes = 0L
+                        while (true) {
+                            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                            val n = input.read(buffer); if (n < 0) break
+                            bytes += n; require(bytes <= 2L * 1024 * 1024 * 1024 && target.parentFile!!.usableSpace > 8L * 1024 * 1024) { "文件过大或存储空间不足" }
+                            out.write(buffer, 0, n)
+                        }
+                    }
+                } ?: error("无法读取文件，请重新选择")
+            }
+            require(target.length() > 0) { "文件为空" }
+            val resources=com.localdoc.scanner.export.MarkdownLocalAssets.copyAdjacent(com.localdoc.scanner.export.MarkdownLocalAssets.ownedSource(app,uri),target)
+            val now = System.currentTimeMillis()
+            withContext(NonCancellable) {
+                dao.insertDoc(DocEntity(id, safe, now, now, 0, target.length()+resources.sumOf { it.length() }, folder = folder,
+                    kind = "FILE", filePath = target.absolutePath, mime = mime, sourceUri = uri.toString()))
+                committed=true
+            }
+            withContext(NonCancellable) { syncSearch(id) }
+            id
+        } catch (e: Exception) { if (!committed) FileStore.docDir(app,id).deleteRecursively(); throw e }
+    }
+
+    suspend fun ownedFile(id: String): File? = withContext(Dispatchers.IO) {
+        dao.getDoc(id)?.takeIf { it.kind == "FILE" && !it.deleted }?.filePath?.let(::File)?.takeIf { it.isFile }
+    }
+
+    suspend fun refreshFile(id: String) = withContext(Dispatchers.IO) {
+        val doc = dao.getDoc(id) ?: return@withContext
+        require(doc.kind == "FILE")
+        val file = File(doc.filePath)
+        require(file.isFile) { "文档文件已不存在" }
+        dao.updateFileMeta(id, file.length()+com.localdoc.scanner.export.MarkdownLocalAssets.documentFiles(file).sumOf { it.length() }, System.currentTimeMillis())
+        syncSearch(id)
+    }
+    suspend fun updateOwnedFile(id: String, edited: File): File = withContext(Dispatchers.IO) {
+        val target = ownedFile(id) ?: error("文档已删除或文件不存在")
+        com.localdoc.scanner.export.MarkdownLocalAssets.copyDocumentFiles(edited,requireNotNull(target.parentFile))
+        if (edited.canonicalFile != target.canonicalFile) AtomicFiles.copy(edited, target)
+        refreshFile(id)
+        target
+    }
+
+    suspend fun createOffice(extension: String, title: String): String = withContext(Dispatchers.IO) {
+        require(extension in setOf("docx", "xlsx", "pptx", "md"))
+        val safe = com.localdoc.scanner.util.FileNames.safe(title.ifBlank { "未命名文档" },140)
+        val name = if (safe.endsWith(".$extension", true)) safe else "$safe.$extension"
+        val temp = File(FileStore.importDir(app), "new_${UUID.randomUUID()}.$extension")
+        try {
+            if (extension == "md") AtomicFiles.text(temp, "# ${safe.removeSuffix(".md")}\n\n")
+            else com.localdoc.scanner.office.BlankOfficeTemplates.create(app, extension, temp)
+            val uri = androidx.core.content.FileProvider.getUriForFile(app, "${app.packageName}.fileprovider", temp)
+            importFile(uri, name, com.localdoc.scanner.output.OutputHistoryStore.mimeFor(temp))
+        } finally { temp.delete() }
+    }
+
     fun observeDocs(): Flow<List<DocItem>> = dao.observeDocs().map { list -> list.map { it.toItem() } }
+    suspend fun getItem(id: String): DocItem? = withContext(Dispatchers.IO) { dao.getDoc(id)?.toItem() }
     fun observeTrashed(): Flow<List<DocItem>> = dao.observeTrashed().map { list -> list.map { it.toItem() } }
     suspend fun search(q: String): List<DocItem> = dao.search(q).map { it.toItem() }
 
@@ -229,6 +295,60 @@ class DocRepository(context: Context) {
         syncSearch(docId)
     }
 
+    suspend fun batchDocuments(ids: List<String>, action: String, value: String) = withContext(Dispatchers.IO) {
+        require(ids.isNotEmpty() && ids.size <= 2000 && ids.distinct().size == ids.size) { "选择文档无效或超过2000份" }
+        require(action in setOf("folder","tags","trash"))
+        val folder = if (action == "folder") LibraryFolders.validate(value) else null
+        val before = LibraryFolders.all(app)
+        try {
+            database.withTransaction {
+                ids.forEach { id ->
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                    val doc = requireNotNull(dao.getDoc(id)) { "有文档已不存在，请重新选择" }; require(!doc.deleted) { "有文档已在回收站，请重新选择" }
+                    when(action) {
+                        "folder" -> dao.organizeDoc(id,folder,doc.tags,System.currentTimeMillis())
+                        "tags" -> {
+                            val tags = (doc.tags+","+value).split(',', '，', ';', '；').map(String::trim).filter(String::isNotBlank).distinct().joinToString(",")
+                            require(tags.length <= 1000) { "标签过长，请减少标签" }; dao.organizeDoc(id,doc.folder,tags,System.currentTimeMillis())
+                        }
+                        "trash" -> dao.moveToTrash(id)
+                    }
+                }
+                if (folder != null) LibraryFolders.add(app,folder)
+            }
+        } catch (e: Exception) { withContext(NonCancellable) { LibraryFolders.replace(app,before) }; throw e }
+        withContext(NonCancellable) { ids.forEach { syncSearch(it) } }
+    }
+
+    suspend fun changeFolder(oldName: String, newName: String?) = withContext(Dispatchers.IO) {
+        require(oldName != "证件卡包") { "证件卡包是专用分类，不能改名或移除" }
+        val before = LibraryFolders.all(app)
+        val value = newName?.let(LibraryFolders::validate)
+        val affected = dao.getAllDocs().filter { it.folder == oldName }
+        require(value == null || value == oldName || value !in (before + dao.getAllDocs().mapNotNull { it.folder })) { "名称已存在，请换一个名称" }
+        try {
+            database.withTransaction {
+                dao.renameFolder(oldName,value)
+                LibraryFolders.replace(app,(before-oldName)+listOfNotNull(value))
+            }
+        } catch (e: Exception) {
+            withContext(NonCancellable) { LibraryFolders.replace(app,before) }; throw e
+        }
+        affected.forEach { syncSearch(it.id) }
+    }
+    suspend fun sourceInfo(id: String): String = withContext(Dispatchers.IO) {
+        val doc = requireNotNull(dao.getDoc(id))
+        val date = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.CHINA)
+        buildString {
+            appendLine("类型：${if (doc.kind == "FILE") doc.mime.ifBlank { File(doc.filePath).extension } else "扫描文档"}")
+            appendLine("创建：${date.format(java.util.Date(doc.createdAt))}"); appendLine("修改：${date.format(java.util.Date(doc.updatedAt))}")
+            appendLine("大小：${doc.sizeBytes} 字节"); appendLine("文件夹：${doc.folder ?: "未分类"}"); appendLine("标签：${doc.tags}")
+            appendLine("来源：${doc.sourceUri.ifBlank { "应用内创建" }}")
+            appendLine("当前保存于应用内部文档库；备份包含此副本。导出到手机时可自行选择位置。")
+            if (doc.sourceUri.isNotBlank()) appendLine("导入后已复制文件，重开此文档不依赖来源文件的访问授权。")
+        }
+    }
+
     suspend fun setOrganization(docId: String, folder: String?, tags: String) = withContext(Dispatchers.IO) {
         val normalizedTags = tags.split(',', '，', ';', '；')
             .map { it.trim() }
@@ -343,7 +463,7 @@ class DocRepository(context: Context) {
             app.contentResolver.openOutputStream(uri, "w")?.use { raw ->
                 val output = if (password == null) raw else com.localdoc.scanner.security.EncryptedBackup.output(raw, password)
                 ZipOutputStream(output.buffered()).use { zip ->
-                    val root = JSONObject().put("format", 1).put("exportedAt", System.currentTimeMillis())
+                    val root = JSONObject().put("format", 2).put("exportedAt", System.currentTimeMillis())
                     val docsJson = JSONArray()
                     val files = mutableListOf<Pair<String, File>>()
                     docs.forEachIndexed { docIndex, doc ->
@@ -380,9 +500,20 @@ class DocRepository(context: Context) {
                                     .put("renderedEntry", renderedEntry.takeIf { rendered.exists() }.orEmpty())
                             )
                         }
+                        val attachmentEntry = if (doc.kind == "FILE") "files/d${docIndex}/attachment" else ""
+                        if (attachmentEntry.isNotBlank()) { val attachment = File(doc.filePath); require(attachment.isFile) { "${doc.title}文件缺失，备份未完成" }; files += attachmentEntry to attachment }
+                        val resources=if(doc.kind=="FILE") com.localdoc.scanner.export.MarkdownLocalAssets.documentFiles(File(doc.filePath)) else emptyList()
+                        val resourcesJson=JSONArray(resources.mapIndexed { i,resource ->
+                            val entry="files/d$docIndex/resource/r$i"; files+=entry to resource
+                            JSONObject().put("name",resource.name).put("entry",entry).put("sha256",com.localdoc.scanner.jobs.ToolCheckpoints.hash(resource))
+                        })
                         docsJson.put(
                             JSONObject()
                                 .put("title", doc.title)
+                                .put("kind", doc.kind).put("mime", doc.mime).put("attachmentEntry", attachmentEntry)
+                                .put("sourceUri",doc.sourceUri)
+                                .put("resources",resourcesJson)
+                                .put("attachmentName", if (doc.kind == "FILE") File(doc.filePath).name else "")
                                 .put("createdAt", doc.createdAt)
                                 .put("folder", doc.folder ?: JSONObject.NULL)
                                 .put("tags", doc.tags)
@@ -396,6 +527,13 @@ class DocRepository(context: Context) {
                         )
                     }
                     root.put("docs", docsJson)
+                    root.put("folders", JSONArray(LibraryFolders.all(app)))
+                    val signatures=com.localdoc.scanner.pdf.SignatureStore.all(app)
+                    require(signatures.size<=300) { "签名库超过300项，请先整理再备份" }
+                    root.put("signatures",JSONArray(signatures.mapIndexed { i,signature ->
+                        val entry="signatures/s$i.png"; files+=entry to signature.file
+                        JSONObject().put("name",signature.name).put("entry",entry).put("sha256",com.localdoc.scanner.jobs.ToolCheckpoints.hash(signature.file))
+                    }))
                     zip.putNextEntry(ZipEntry("manifest.json"))
                     zip.write(root.toString().toByteArray(Charsets.UTF_8))
                     zip.closeEntry()
@@ -429,6 +567,7 @@ class DocRepository(context: Context) {
         val createdDocIds = mutableListOf<String>()
         val preparedDocs = mutableListOf<DocEntity>()
         val preparedPages = mutableMapOf<String, List<PageEntity>>()
+        val restoredSignatures=mutableListOf<com.localdoc.scanner.pdf.SavedSignature>()
         var committed = false
         runCatching {
             var manifest: String? = null
@@ -439,7 +578,7 @@ class DocRepository(context: Context) {
                     while (true) {
                         val entry = zip.nextEntry ?: break
                         val name = entry.name.replace('\\', '/')
-                        require(!entry.isDirectory && (name == "manifest.json" || name.matches(Regex("files/d\\d+/p\\d+-(source|rendered)\\.jpg"))) && entries.add(name) && entries.size <= 50000) {
+                        require(!entry.isDirectory && (name == "manifest.json" || name.matches(Regex("files/d\\d+/(p\\d+-(source|rendered)\\.jpg|attachment|resource/r\\d+)")) || name.matches(Regex("signatures/s\\d+\\.png"))) && entries.add(name) && entries.size <= 50000) {
                             "备份包含无效路径"
                         }
                         fun copyBounded(target: OutputStream, limit: Long) {
@@ -458,7 +597,7 @@ class DocRepository(context: Context) {
                             val target = File(temporary, name)
                             require(target.canonicalPath.startsWith(temporary.canonicalPath + File.separator)) { "备份路径越界" }
                             target.parentFile?.mkdirs()
-                            target.outputStream().buffered().use { copyBounded(it, 8L * 1024 * 1024 * 1024) }
+                            target.outputStream().buffered().use { copyBounded(it, if(name.startsWith("signatures/")) 16L*1024*1024 else if(name.contains("/resource/")) 20L*1024*1024 else 8L * 1024 * 1024 * 1024) }
                         }
                         zip.closeEntry()
                     }
@@ -466,7 +605,7 @@ class DocRepository(context: Context) {
             } ?: error("无法读取备份文件")
 
             val root = JSONObject(manifest ?: error("备份缺少清单"))
-            require(root.optInt("format") == 1) { "不支持的备份版本" }
+            require(root.optInt("format") in 1..2) { "不支持的备份版本" }
             val docsJson = root.getJSONArray("docs")
             val existingTitles = dao.getAllDocs().map { it.title }.toMutableSet()
             var restoredPages = 0
@@ -486,6 +625,7 @@ class DocRepository(context: Context) {
                         sizeBytes = 0,
                         folder = item.optString("folder").takeIf { it.isNotBlank() && it != "null" },
                         tags = item.optString("tags"),
+                        sourceUri = item.optString("sourceUri").take(4096),
                         ocrText = item.optString("ocrText"),
                         ocrCorrection = item.optString("ocrCorrection"),
                         ocrLegacyText = item.optString("ocrLegacyText", item.optString("ocrText")),
@@ -531,8 +671,40 @@ class DocRepository(context: Context) {
                         ocrUpdatedAt = page.optLong("ocrUpdatedAt")
                     )
                 }
+                if (item.optString("kind", "SCAN") == "FILE") {
+                    val entry = item.optString("attachmentEntry")
+                    require(entry in entries) { "备份缺少文档文件" }
+                    val from = File(temporary, entry)
+                    require(from.isFile && from.length() > 0) { "备份文档文件为空" }
+                    val extension = item.optString("attachmentName", title).substringAfterLast('.', "bin").takeIf { it.matches(Regex("[a-zA-Z0-9]{1,12}")) } ?: "bin"
+                    val attached = File(FileStore.docDir(app, id), "attachment.$extension")
+                    AtomicFiles.copy(from, attached)
+                    val resources=item.optJSONArray("resources") ?: JSONArray()
+                    require(resources.length()<=500 && (resources.length()==0 || extension.lowercase() in setOf("md","markdown"))) { "备份附件不属于Markdown或数量过多" }
+                    val resourceNames=mutableSetOf<String>(); var resourceBytes=0L
+                    for(i in 0 until resources.length()) {
+                        val resource=resources.getJSONObject(i); val name=resource.getString("name"); val path=resource.getString("entry")
+                        require(com.localdoc.scanner.export.MarkdownLocalAssets.safeResource(name) && resourceNames.add(name.lowercase()) && path.matches(Regex("files/d$docIndex/resource/r\\d+")) && path in entries) { "备份附件路径无效" }
+                        val source=File(temporary,path); resourceBytes+=source.length()
+                        require(source.length() in 1..20L*1024*1024 && resourceBytes<=256L*1024*1024 && com.localdoc.scanner.jobs.ToolCheckpoints.hash(source)==resource.getString("sha256")) { "备份附件大小或校验无效" }
+                        AtomicFiles.copy(source,File(attached.parentFile,name))
+                    }
+                    preparedDocs[preparedDocs.lastIndex] = preparedDocs.last().copy(kind = "FILE", filePath = attached.absolutePath, mime = item.optString("mime"), sizeBytes = attached.length())
+                }
                 preparedPages[id] = restored
                 restoredPages += restored.size
+            }
+            val signatures=root.optJSONArray("signatures") ?: JSONArray()
+            require(signatures.length()<=300) { "备份签名库超过300项" }
+            val existingSignatures=com.localdoc.scanner.pdf.SignatureStore.all(app).map { it.name to com.localdoc.scanner.jobs.ToolCheckpoints.hash(it.file) }.toMutableSet()
+            for(i in 0 until signatures.length()) {
+                restoreContext.ensureActive()
+                val item=signatures.getJSONObject(i); val entry=item.getString("entry")
+                require(entry.matches(Regex("signatures/s\\d+\\.png")) && entry in entries) { "备份签名图片缺失" }
+                val image=File(temporary,entry); val hash=com.localdoc.scanner.jobs.ToolCheckpoints.hash(image)
+                require(item.getString("sha256")==hash) { "备份签名校验失败" }
+                val name=item.getString("name").trim().take(80).ifBlank { "恢复的签名" }
+                if(existingSignatures.add(name to hash)) restoredSignatures+=com.localdoc.scanner.pdf.SignatureStore.importSaved(app,name,image)
             }
             restoreContext.ensureActive()
             withContext(NonCancellable) {
@@ -541,6 +713,7 @@ class DocRepository(context: Context) {
                 }
                 committed = true
                 preparedDocs.forEach { syncSearch(it.id) }
+                root.optJSONArray("folders")?.let { folders -> for (i in 0 until folders.length()) runCatching { LibraryFolders.add(app, folders.getString(i)) } }
             }
             LibraryTransferResult(docsJson.length(), restoredPages, true)
         }.getOrElse { failure ->
@@ -552,6 +725,7 @@ class DocRepository(context: Context) {
                     }
                 }
             }
+            if(!committed) restoredSignatures.forEach { runCatching { com.localdoc.scanner.pdf.SignatureStore.remove(app,it) } }
             }
             temporary.deleteRecursively()
             if (failure is kotlinx.coroutines.CancellationException) throw failure
@@ -599,7 +773,13 @@ class DocRepository(context: Context) {
         try {
             FullTextIndex(app).use { index ->
                 val doc = dao.getDoc(docId)
-                if (doc == null || doc.deleted) index.removeScan(docId) else index.indexScan(doc.toItem())
+                if (doc == null || doc.deleted) {
+                    index.removeScan(docId)
+                    doc?.filePath?.takeIf { it.isNotBlank() }?.let(index::removeFile)
+                } else {
+                    index.indexScan(doc.toItem())
+                    if (doc.kind == "FILE") runCatching { index.indexFile(File(doc.filePath), doc.title) }
+                }
             }
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
@@ -626,7 +806,8 @@ class DocRepository(context: Context) {
     }
 
     private suspend fun refreshMeta(docId: String) {
-        if (dao.getDoc(docId) == null) return
+        val document = dao.getDoc(docId) ?: return
+        if (document.kind == "FILE") { val file=File(document.filePath); dao.updateFileMeta(docId,file.length()+com.localdoc.scanner.export.MarkdownLocalAssets.documentFiles(file).sumOf { it.length() }, System.currentTimeMillis()); return }
         val pages = dao.getPages(docId)
         val size = FileStore.docDir(app, docId).walkTopDown().filter { it.isFile }.sumOf { it.length() }
         dao.setDocMeta(docId, pages.size, size, pages.firstOrNull()?.filePath.orEmpty(), System.currentTimeMillis())
@@ -648,7 +829,8 @@ class DocRepository(context: Context) {
         tags = tags,
         ocrText = ocrCorrection.ifBlank { ocrText },
         createdAt = createdAt,
-        legacyOcrText = ocrLegacyText, favorite = favorite
+        legacyOcrText = ocrLegacyText, favorite = favorite,
+        kind = kind, filePath = filePath, mime = mime
     )
 }
 

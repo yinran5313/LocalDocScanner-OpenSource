@@ -10,6 +10,15 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface DocDao {
 
+    @Query("SELECT * FROM docs WHERE filePath = :path AND kind = 'FILE' LIMIT 1")
+    suspend fun getByFile(path: String): DocEntity?
+
+    @Query("UPDATE docs SET sizeBytes = :bytes, updatedAt = :now WHERE id = :id AND kind = 'FILE'")
+    suspend fun updateFileMeta(id: String, bytes: Long, now: Long)
+
+    @Query("UPDATE docs SET folder = :newFolder WHERE folder = :oldFolder")
+    suspend fun renameFolder(oldFolder: String, newFolder: String?)
+
     @Query("SELECT * FROM docs WHERE deleted = 0 ORDER BY updatedAt DESC")
     fun observeDocs(): Flow<List<DocEntity>>
 

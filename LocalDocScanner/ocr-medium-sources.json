@@ -1,0 +1,29 @@
+[
+  {
+    "path": "medium/det/inference.onnx",
+    "bytes": 62032837,
+    "sha256": "eb13b44b25bb36f89528b68720af8a61d9cf381176107f465db1757b65d086e1",
+    "urls": [
+      "https://modelscope.cn/api/v1/models/PaddlePaddle/PP-OCRv6_medium_det_onnx/repo?Revision=master&FilePath=inference.onnx",
+      "https://huggingface.co/PaddlePaddle/PP-OCRv6_medium_det_onnx/resolve/61323801669c338b7891481ec7bac61ce31b576a/inference.onnx"
+    ]
+  },
+  {
+    "path": "medium/rec/inference.onnx",
+    "bytes": 76554979,
+    "sha256": "9c09abf0957f7968c7586464b7397b84ad2387a0497a351af40e9acc71b673ba",
+    "urls": [
+      "https://modelscope.cn/api/v1/models/PaddlePaddle/PP-OCRv6_medium_rec_onnx/repo?Revision=master&FilePath=inference.onnx",
+      "https://huggingface.co/PaddlePaddle/PP-OCRv6_medium_rec_onnx/resolve/50c7eacafc52fa7bcf4194e8cd08e46f8558504b/inference.onnx"
+    ]
+  },
+  {
+    "path": "medium/rec/inference.yml",
+    "bytes": 150580,
+    "sha256": "991b700facf5b50a7de193468207d5f4255b538dde0d312ae3b7c7a9b6873129",
+    "urls": [
+      "https://modelscope.cn/api/v1/models/PaddlePaddle/PP-OCRv6_medium_rec_onnx/repo?Revision=master&FilePath=inference.yml",
+      "https://huggingface.co/PaddlePaddle/PP-OCRv6_medium_rec_onnx/resolve/50c7eacafc52fa7bcf4194e8cd08e46f8558504b/inference.yml"
+    ]
+  }
+]

@@ -97,6 +97,7 @@ fun EditScreen(
     pageIndex: Int,
     modifier: Modifier = Modifier,
     initialRecipe: EditRecipe? = null,
+    defaultFilter: ScanFilter = ScanFilter.AUTO,
     onConfirm: suspend (EditResult) -> Unit,
     onRetake: () -> Unit,
     onBack: () -> Unit
@@ -108,7 +109,7 @@ fun EditScreen(
     var step by remember { mutableStateOf(EditStep.CROP) }
     var quarterTurns by remember { mutableIntStateOf(initialRecipe?.quarterTurns ?: 0) }
     var corners by remember { mutableStateOf(initialRecipe?.corners ?: defaultCropCorners()) }
-    var filter by remember { mutableStateOf(initialRecipe?.filter ?: ScanFilter.AUTO) }
+    var filter by remember { mutableStateOf(initialRecipe?.filter ?: defaultFilter) }
     var brightness by remember { mutableFloatStateOf(initialRecipe?.brightness ?: 0f) }
     var contrast by remember { mutableFloatStateOf(initialRecipe?.contrast ?: 1f) }
     var fineRotation by remember { mutableFloatStateOf(initialRecipe?.fineRotation ?: 0f) }

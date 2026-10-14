@@ -12,7 +12,7 @@ import kotlinx.coroutines.sync.withLock
 /**
  * OCR 引擎抽象。
  *
- * V3 内置 PP-OCRv6 tiny（普通档）与 medium（高精度档），使用 ONNX Runtime 本地推理。
+ * 只使用内置 PP-OCRv6 medium；旧任务的 precise 参数保留兼容。
  */
 data class OcrOutcome(
     val text: String,
@@ -35,25 +35,18 @@ class PaddleOcrEngine(context: Context) : OcrEngine {
     // UI tools and background jobs share one model pool and one inference lock.
     // Closing a client releases the pool under that lock; later calls reload it.
     private companion object {
-        val mutex = Mutex()
-        var fast: PaddleOCR? = null
-        var preciseEngine: PaddleOCR? = null
+        val mutex = com.localdoc.scanner.models.ModelInference.gate
+        var mediumEngine: PaddleOCR? = null
     }
 
     override val available: Boolean = true
-    override val label: String = "PP-OCRv6 本地离线"
+    override val label: String = "PP-OCRv6 medium 本地离线"
 
     override suspend fun recognize(bitmap: Bitmap, precise: Boolean): OcrOutcome = mutex.withLock {
         check(OpenCVUtils.init(app)) {
             "OpenCV 初始化失败：${OpenCVUtils.lastError ?: "设备无法加载图像处理库"}"
         }
-        val engine = if (precise) {
-            fast?.release(); fast = null
-            preciseEngine ?: create("medium", precise = true).also { preciseEngine = it }
-        } else {
-            preciseEngine?.release(); preciseEngine = null
-            fast ?: create("tiny", precise = false).also { fast = it }
-        }
+        val engine = mediumEngine ?: create().also { mediumEngine = it }
         val result = engine.recognize(bitmap)
         OcrOutcome(
             text = result.results.joinToString("\n") { it.text.trim() }.trim(),
@@ -71,25 +64,23 @@ class PaddleOcrEngine(context: Context) : OcrEngine {
         )
     }
 
-    private suspend fun create(model: String, precise: Boolean): PaddleOCR = PaddleOCR.create(
+    private suspend fun create(): PaddleOCR = PaddleOCR.create(
         context = app,
         config = PaddleOCRConfig(
-            detLimitSideLen = if (precise) 96 else 64,
-            detMaxSideLimit = if (precise) 4000 else 2600,
-            detBoxThresh = if (precise) 0.52f else 0.60f,
-            recScoreThresh = if (precise) 0.35f else 0.45f,
-            recBatchSize = if (precise) 2 else 1
+            detLimitSideLen = 96,
+            detMaxSideLimit = 4000,
+            detBoxThresh = 0.52f,
+            recScoreThresh = 0.35f,
+            recBatchSize = 2
         ),
-        engineConfig = EngineConfig(numThreads = if (precise) 4 else 3),
-        detModelAssetPath = "models/$model/det/inference.onnx",
-        recModelAssetPath = "models/$model/rec/inference.onnx",
-        recConfigAssetPath = "models/$model/rec/inference.yml"
+        engineConfig = EngineConfig(numThreads = 4),
+        detModelAssetPath = "models/medium/det/inference.onnx",
+        recModelAssetPath = "models/medium/rec/inference.onnx",
+        recConfigAssetPath = "models/medium/rec/inference.yml"
     )
 
     override suspend fun close() = mutex.withLock {
-        fast?.release()
-        preciseEngine?.release()
-        fast = null
-        preciseEngine = null
+        mediumEngine?.release()
+        mediumEngine = null
     }
 }

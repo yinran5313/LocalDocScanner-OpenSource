@@ -11,9 +11,46 @@ import java.io.FileOutputStream
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
+import kotlinx.coroutines.ensureActive
 
 /** 图片读写：统一处理采样缩放与 EXIF 方向，避免 OOM 与"照片躺倒" */
 object ImageIo {
+
+    /** Stage original image bytes. Models/editors sample and apply EXIF when decoding later. */
+    suspend fun stageImage(context: Context, uri: Uri, directory: File): File {
+        val job=kotlinx.coroutines.currentCoroutineContext()
+        val id=java.util.UUID.randomUUID().toString(); val staged=File(directory,"image-$id.bin")
+        try {
+            AtomicFiles.write(staged) { part ->
+                context.contentResolver.openInputStream(uri)?.use { input -> part.outputStream().buffered().use { out ->
+                    val buffer=ByteArray(64*1024); var bytes=0L
+                    while(true) {
+                        job.ensureActive()
+                        val n=input.read(buffer);if(n<0)break;bytes+=n
+                        require(bytes<=512L*1024*1024 && directory.usableSpace>8L*1024*1024) { "图像过大或空间不足" };out.write(buffer,0,n)
+                    }
+                } } ?: error("无法读取图片")
+            }
+            val bounds=BitmapFactory.Options().apply { inJustDecodeBounds=true };BitmapFactory.decodeFile(staged.absolutePath,bounds)
+            require(bounds.outWidth>0 && bounds.outHeight>0) { "图片格式无法读取" }
+            val extension=when(bounds.outMimeType) {
+                "image/jpeg" -> "jpg";"image/png" -> "png";"image/webp" -> "webp";"image/gif" -> "gif"
+                "image/bmp","image/x-ms-bmp" -> "bmp";"image/heic","image/heif" -> "heic";else -> error("暂不支持此图片格式")
+            }
+            val target=File(directory,"image-$id.$extension")
+            java.nio.file.Files.move(staged.toPath(),target.toPath(),java.nio.file.StandardCopyOption.ATOMIC_MOVE)
+            return target
+        } finally { staged.delete() }
+    }
+
+    /** Decode at most twice the requested side, then fit exactly instead of halving detail. */
+    fun loadExactFromFile(file: File, maxSide: Int): Bitmap? {
+        require(maxSide in 1..4000)
+        val decoded = loadFromFile(file, maxSide * 2) ?: return null
+        val (w, h) = com.localdoc.scanner.models.RestorationGeometry.fit(decoded.width, decoded.height, maxSide)
+        return try { Bitmap.createScaledBitmap(decoded, w, h, true) }
+        finally { if (decoded.width != w || decoded.height != h) decoded.recycle() }
+    }
 
     fun loadFromUri(context: Context, uri: Uri, maxSide: Int = 2048): Bitmap? {
         require(maxSide > 0)

@@ -9,9 +9,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -45,6 +47,7 @@ object Route {
     const val TOOL = "tool"
     const val TRASH = "trash"
     const val SETTINGS = "settings"
+    const val MODELS = "models"
     const val OUTPUT_HISTORY = "output-history"
     const val DOC = "doc/{docId}"
     fun doc(id: String) = "doc/$id"
@@ -54,6 +57,7 @@ private fun mimeFor(kind: FileKind): Array<String> = when (kind) {
     FileKind.IMAGE -> arrayOf("image/*")
     FileKind.PDF -> arrayOf("application/pdf")
     FileKind.ANY -> arrayOf("*/*")
+    FileKind.NONE -> emptyArray()
 }
 
 @Composable
@@ -67,19 +71,15 @@ fun AppNav(modifier: Modifier = Modifier, vm: AppViewModel = viewModel()) {
     val draftTitle by vm.draftTitle.collectAsState()
     val editTarget = vm.editTarget
     val external by ExternalOpenBus.current.collectAsState()
+    var creating by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
 
-    if (external != null) {
-        ExternalFileScreen(
-            external = external!!,
-            onClose = ExternalOpenBus::close,
-            onEditPdf = { file, name ->
-                vm.openExternalPdfForEditing(file, name)
-                ExternalOpenBus.close()
-            },
-            modifier = modifier
-        )
-        return
-    }
+    var sourceInfo by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+    sourceInfo?.let { text -> androidx.compose.material3.AlertDialog(onDismissRequest = { sourceInfo = null }, title = { androidx.compose.material3.Text("文档信息") }, text = { androidx.compose.foundation.text.selection.SelectionContainer { androidx.compose.material3.Text(text) } }, confirmButton = { androidx.compose.material3.TextButton({ sourceInfo = null }) { androidx.compose.material3.Text("关闭") } }) }
+    if (creating) com.localdoc.scanner.ui.home.NewDocumentDialog(onDismiss = { creating = false }, onCreate = { extension, name ->
+        try { val doc = vm.newOffice(extension, name); creating = false; ExternalOpenBus.offerLibrary(context, doc) }
+        catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; vm.notify("新建失败：${e.message}") }
+    })
+
 
     val draftBackup = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         if (uri != null) scope.launch {
@@ -106,14 +106,10 @@ fun AppNav(modifier: Modifier = Modifier, vm: AppViewModel = viewModel()) {
     }
     val openFilePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) {
-            val mime = context.contentResolver.getType(uri).orEmpty().ifBlank { "application/octet-stream" }
-            ExternalOpenBus.offer(
-                Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(uri, mime)
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                },
-                context.contentResolver
-            )
+            scope.launch {
+                try { ExternalOpenBus.offerLibrary(context, vm.importLibraryFile(uri)); vm.notify("已导入文档库，原件保留") }
+                catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; vm.notify("导入失败：${e.message}") }
+            }
         }
     }
     val singlePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
@@ -125,7 +121,8 @@ fun AppNav(modifier: Modifier = Modifier, vm: AppViewModel = viewModel()) {
         if (uris.isNotEmpty()) vm.onFilesPicked(tool, uris)
     }
 
-    NavHost(navController = navController, startDestination = Route.HOME, modifier = modifier) {
+    androidx.compose.foundation.layout.Box(modifier) {
+    NavHost(navController = navController, startDestination = Route.HOME, modifier = if (external != null) modifier.clearAndSetSemantics {} else modifier) {
         composable(Route.HOME) {
             HomeScreen(
                 docs = docs,
@@ -157,9 +154,24 @@ fun AppNav(modifier: Modifier = Modifier, vm: AppViewModel = viewModel()) {
                 onSettingsClick = { navController.navigate(Route.SETTINGS) },
                 onToolClick = { tool ->
                     vm.pendingTool = tool
-                    if (tool.allowMultiple) multiPicker.launch(mimeFor(tool.accept)) else singlePicker.launch(mimeFor(tool.accept))
+                    if (tool.id == "semantic_search") navController.navigate("semantic-search")
+                    else if (tool.id == "barcode_live") navController.navigate("barcode-live")
+                    else if (tool.id == "watermark_camera") navController.navigate("watermark-camera")
+                    else if (tool.id == "card_wallet") navController.navigate("card-wallet")
+                    else if (tool.id == "sign_library") navController.navigate("signature-library")
+                    else if (tool.id.startsWith("scan_")) { if (vm.startProfile(tool.id.removePrefix("scan_"))) navController.navigate(Route.CAPTURE) }
+                    else if (tool.accept == FileKind.NONE) vm.openToolWithoutInput(tool)
+                    else if (tool.allowMultiple) multiPicker.launch(mimeFor(tool.accept)) else singlePicker.launch(mimeFor(tool.accept))
                 },
-                onDocClick = { navController.navigate(Route.doc(it.id)) },
+                onDocClick = { doc ->
+                    if (doc.kind == "FILE") try { ExternalOpenBus.offerLibrary(context, doc) } catch (e: Exception) { vm.notify(e.message.orEmpty()) }
+                    else navController.navigate(Route.doc(doc.id))
+                },
+                onModelsClick = { navController.navigate(Route.MODELS) },
+                onNewDocument = { creating = true },
+                onManageFolders = { navController.navigate("folder-management") },
+                onSourceInfo = { doc -> scope.launch { runCatching { vm.sourceInfo(doc.id) }.onSuccess { sourceInfo = it }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it; vm.notify("读取信息失败：${it.message}") } } },
+                onBatchDocuments = vm::batchDocuments,
                 onRenameDoc = { doc, title -> scope.launch { vm.rename(doc.id, title) } },
                 onOrganizeDoc = { doc, folder, tags ->
                     scope.launch { vm.setOrganization(doc.id, folder, tags) }
@@ -169,9 +181,38 @@ fun AppNav(modifier: Modifier = Modifier, vm: AppViewModel = viewModel()) {
             )
         }
 
+        composable(Route.MODELS) { com.localdoc.scanner.models.ModelsScreen(onBack = { navController.popBackStack() }) }
+        composable("folder-management") { com.localdoc.scanner.ui.home.FolderManagementScreen(vm) { navController.popBackStack() } }
+        composable("card-wallet") { com.localdoc.scanner.ui.tools.CardWalletScreen(vm, { navController.popBackStack() }, { id -> navController.navigate(Route.doc(id)) }, {
+            vm.pendingTool = com.localdoc.scanner.model.TOOL_ENTRIES.first { it.id == "card" }
+            multiPicker.launch(arrayOf("image/*"))
+        }) }
+        composable("barcode-live") { com.localdoc.scanner.barcode.LiveBarcodeScreen { navController.popBackStack() } }
+        composable("signature-library") { com.localdoc.scanner.ui.tools.SignatureLibraryScreen({ navController.popBackStack() }) }
+        composable("watermark-camera") { CaptureScreen(pageCount = 0, allowContinuous = false,
+            onCaptured = { file -> scope.launch {
+                try { val durable = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    java.io.File(com.localdoc.scanner.data.FileStore.importDir(context), "watermark-${java.util.UUID.randomUUID()}.jpg").also { com.localdoc.scanner.util.AtomicFiles.copy(file, it); it.setLastModified(file.lastModified()) }
+                }; vm.openSavedTool(com.localdoc.scanner.ui.ToolRequest(com.localdoc.scanner.model.ToolEntry("watermark_photo", "水印照片", FileKind.IMAGE), listOf(durable), listOf("拍摄照片.jpg"))) }
+                catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; vm.notify("照片保留，暂未进入编辑：${e.message}") }
+            } },
+            onFinish = { navController.popBackStack() }, onBack = { navController.popBackStack() }) }
+        composable("semantic-search") { com.localdoc.scanner.ui.home.SemanticSearchScreen({ navController.popBackStack() }) { hit ->
+            val doc = docs.firstOrNull { if (hit.key.startsWith("scan:")) it.id == hit.key.removePrefix("scan:") else it.filePath == hit.path }
+            if (doc?.kind == "FILE") ExternalOpenBus.offerLibrary(context, doc)
+            else if (doc != null) navController.navigate(Route.doc(doc.id))
+            else if (hit.path.isNotBlank()) {
+                val file = java.io.File(hit.path)
+                ExternalOpenBus.offer(Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file), com.localdoc.scanner.output.OutputHistoryStore.mimeFor(file))
+                }, context.contentResolver)
+            }
+        } }
+
         composable(Route.CAPTURE) {
             CaptureScreen(
                 pageCount = if (vm.isRetaking) 0 else session.size,
+                profile = vm.captureProfile,
                 processing = vm.captureProcessing,
                 allowContinuous = !vm.isRetaking,
                 onContinuousCaptured = vm::appendContinuousShot,
@@ -206,6 +247,7 @@ fun AppNav(modifier: Modifier = Modifier, vm: AppViewModel = viewModel()) {
                         sourcePath = target.sourcePath,
                         pageIndex = target.pageIndex,
                         initialRecipe = target.initialRecipe,
+                        defaultFilter = when(vm.captureProfile) { "ppt" -> com.localdoc.scanner.cv.ScanFilter.PROJECTOR; "handwriting" -> com.localdoc.scanner.cv.ScanFilter.GRAY; else -> com.localdoc.scanner.cv.ScanFilter.AUTO },
                         onConfirm = { result ->
                             try {
                                 when (vm.confirmEdit(result)) {
@@ -303,7 +345,11 @@ fun AppNav(modifier: Modifier = Modifier, vm: AppViewModel = viewModel()) {
         }
         composable(Route.OUTPUT_HISTORY) { OutputHistoryScreen(onBack = { navController.popBackStack() }) }
         composable("library-workbench") {
-            com.localdoc.scanner.ui.home.LibraryWorkbench(vm, { navController.popBackStack() }, { navController.navigate(Route.doc(it)) })
+            com.localdoc.scanner.ui.home.LibraryWorkbench(vm, { navController.popBackStack() }, { id ->
+                val doc = docs.firstOrNull { it.id == id }
+                if (doc?.kind == "FILE") ExternalOpenBus.offerLibrary(context, doc)
+                else navController.navigate(Route.doc(id))
+            })
         }
 
         composable(Route.TOOL) {
@@ -316,6 +362,15 @@ fun AppNav(modifier: Modifier = Modifier, vm: AppViewModel = viewModel()) {
                 }
             )
         }
+    }
+
+    if (external != null) {
+        androidx.activity.compose.BackHandler { ExternalOpenBus.close() }
+        key(external!!.uri, external!!.libraryDocId) {
+            ExternalFileScreen(external!!, ExternalOpenBus::close, onEditPdf = { file, name -> vm.openExternalPdfForEditing(file,name); ExternalOpenBus.close() }, modifier = Modifier,
+                onExtractZip={ file,name -> vm.openExternalTool(file,name,com.localdoc.scanner.model.TOOL_ENTRIES.first { it.id=="zip_import" });ExternalOpenBus.close() })
+        }
+    }
     }
 
     LaunchedEffect(vm.toolRequest) {

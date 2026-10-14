@@ -13,11 +13,13 @@ enum class ScanFilter(val label: String) {
     AUTO("自动增强"),
     GRAY("灰度"),
     BLACK_WHITE("黑白"),
-    COLOR_BOOST("彩色增强")
+    COLOR_BOOST("彩色增强"),
+    PROJECTOR("投影增强")
 }
 
 fun applyFilter(src: Bitmap, filter: ScanFilter): Bitmap {
     if (filter == ScanFilter.ORIGINAL) return src
+    if (filter == ScanFilter.PROJECTOR) ProjectionEnhancement.apply(src)?.let { return it }
     if (filter == ScanFilter.AUTO) OpenCvDocument.flattenIllumination(src)?.let { return it }
     val w = src.width
     val h = src.height
@@ -47,7 +49,7 @@ fun applyFilter(src: Bitmap, filter: ScanFilter): Bitmap {
             }
         }
         ScanFilter.AUTO -> autoEnhance(pixels, w, h)
-        ScanFilter.COLOR_BOOST -> colorBoost(pixels)
+        ScanFilter.COLOR_BOOST, ScanFilter.PROJECTOR -> colorBoost(pixels)
     }
 
     val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)

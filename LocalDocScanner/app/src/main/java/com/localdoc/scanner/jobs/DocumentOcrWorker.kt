@@ -40,13 +40,13 @@ class DocumentOcrWorker(context: Context, parameters: WorkerParameters) : Corout
                     val hash = OcrCheckpointStore.hash(file)
                     check(hash == saved.hash && OcrJobs.recipe(page) == saved.recipe) { "页面已经编辑，请重新提交该文档" }
                     if (OcrCheckpointStore.canReuse(saved, hash, saved.recipe, page.ocrUpdatedAt)) continue
-                    val bitmap = ImageIo.loadFromFile(file, if (com.localdoc.scanner.ocr.OcrLanguage.fromCode(job.language).medium(job.precise)) 3600 else 2400) ?: error("页面图片无法读取")
+                    val bitmap = ImageIo.loadFromFile(file, 3600) ?: error("页面图片无法读取")
                     val outcome = try { engine.recognize(bitmap, job.precise, com.localdoc.scanner.ocr.OcrLanguage.fromCode(job.language)) } finally { bitmap.recycle() }
                     currentCoroutineContext.ensureActive()
                     check(OcrCheckpointStore.hash(file) == saved.hash) { "识别期间页面已修改" }
                     val now = System.currentTimeMillis()
                     val written = dao.setOcrIfUnchanged(page.id, page.updatedAt, now, outcome.text,
-                        OcrLayout.encode(outcome.boxes), (if (com.localdoc.scanner.ocr.OcrLanguage.fromCode(job.language).medium(job.precise)) "PP-OCRv6-medium" else "PP-OCRv6-tiny") + ":" + (job.language ?: "AUTO"))
+                        OcrLayout.encode(outcome.boxes), "PP-OCRv6-medium" + ":" + (job.language ?: "AUTO"))
                     check(written == 1) { "识别期间页面已编辑，结果未覆盖" }
                     receipt = saved.copy(done = true, savedAt = now, error = "")
                 } catch (e: Exception) {

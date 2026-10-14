@@ -16,7 +16,7 @@ import io.noties.markwon.Markwon
 
 @Composable
 internal fun TextWorkbench(text: String, onTextChange: (String) -> Unit, extension: String,
-    status: String, modifier: Modifier = Modifier) {
+    status: String, modifier: Modifier = Modifier, sourceDirectory: java.io.File? = null) {
     var sourceMode by rememberSaveable(extension) { mutableStateOf(false) }
     val csv = extension in setOf("csv", "tsv")
     val markdown = extension in setOf("md", "markdown")
@@ -30,20 +30,25 @@ internal fun TextWorkbench(text: String, onTextChange: (String) -> Unit, extensi
             sourceMode || (!csv && !markdown) -> OutlinedTextField(text, onTextChange,
                 modifier = Modifier.fillMaxWidth().weight(1f), label = { Text("内容；保存会另存副本") })
             csv -> CsvGrid(text, onTextChange, extension == "tsv", Modifier.weight(1f))
-            else -> MarkdownPreview(text, Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()))
+            else -> MarkdownPreview(text, Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()),sourceDirectory)
         }
     }
 }
 
 @Composable
-internal fun MarkdownPreview(text: String, modifier: Modifier = Modifier) {
+internal fun MarkdownPreview(text: String, modifier: Modifier = Modifier, sourceDirectory: java.io.File? = null) {
     val color = MaterialTheme.colorScheme.onSurface.toArgb()
     val context = androidx.compose.ui.platform.LocalContext.current
-    val renderer = remember(context) { Markwon.create(context) }
+    val renderer = remember(context) { Markwon.builder(context).usePlugin(io.noties.markwon.ext.tables.TablePlugin.create(context)).build() }
     if (text.length > 500_000) Text("Markdown预览限50万字符，请使用源码查看或分段保存。", modifier)
-    else AndroidView(factory = { context -> TextView(context).apply {
+    else Column(modifier,verticalArrangement=Arrangement.spacedBy(8.dp)) {
+    AndroidView(factory = { context -> TextView(context).apply {
         textSize = 17f; setPadding(12, 8, 12, 16); setTextIsSelectable(true)
-    } }, update = { view -> view.setTextColor(color); renderer.setMarkdown(view, text) }, modifier = modifier)
+    } }, update = { view -> view.setTextColor(color); renderer.setMarkdown(view, text) }, modifier = Modifier.fillMaxWidth())
+    val images=remember(text,sourceDirectory) { com.localdoc.scanner.export.MarkdownLocalAssets.files(text,sourceDirectory) }
+    if(images.isNotEmpty()) com.localdoc.scanner.ui.tools.FilePreview(images,"原页附件")
+    else if(com.localdoc.scanner.export.MarkdownLocalAssets.names(text).isNotEmpty()) Text("图片附件不在当前文件旁；请保留完整ZIP并整体解压。",style=MaterialTheme.typography.bodySmall)
+    }
 }
 
 @Composable
