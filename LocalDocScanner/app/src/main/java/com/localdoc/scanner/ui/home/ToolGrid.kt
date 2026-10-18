@@ -5,6 +5,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.foundation.BorderStroke
@@ -65,11 +66,20 @@ private val TOOL_GROUPS = listOf(
 fun ToolGrid(onToolClick: (ToolEntry) -> Unit, modifier: Modifier = Modifier) {
     var collapsedGroups by rememberSaveable { mutableStateOf(emptyList<String>()) }
     val byId = toolsById
+    var query by rememberSaveable { mutableStateOf("") }
+    val recent by com.localdoc.scanner.data.rememberPreference("recentTools", "")
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        OutlinedTextField(query,{query=it},Modifier.fillMaxWidth(),singleLine=true,placeholder={Text("搜索工具与用途")},leadingIcon={AppIcon(R.drawable.ic_ui_search)})
+        if(query.isBlank()) {
+            val recentTools=recent.split(',').mapNotNull(byId::get).take(4)
+            if(recentTools.isNotEmpty()) { Text("最近使用",style=MaterialTheme.typography.titleSmall); CompactToolRows(recentTools,onToolClick) }
+        }
+        if(query.isNotBlank() && TOOL_ENTRIES.none { it.label.contains(query,true) || com.localdoc.scanner.model.toolGuidance(it).purpose.contains(query,true) }) Text("没有找到工具，试试“签名”“票据”或“图片”。")
         TOOL_GROUPS.forEach { group ->
-            val tools = group.toolIds.mapNotNull(byId::get)
-            val expanded = group.id !in collapsedGroups
+            val tools = group.toolIds.mapNotNull(byId::get).filter { query.isBlank() || it.label.contains(query,true) || com.localdoc.scanner.model.toolGuidance(it).purpose.contains(query,true) }
+            if(tools.isEmpty()) return@forEach
+            val expanded = query.isNotBlank() || group.id !in collapsedGroups
             Row(Modifier.fillMaxWidth().combinedClickable(onClick = { collapsedGroups = if (expanded) collapsedGroups + group.id else collapsedGroups - group.id }), verticalAlignment = Alignment.CenterVertically) {
                 Text(group.title, Modifier.weight(1f).padding(vertical = 12.dp), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                 Icon(painterResource(if (expanded) R.drawable.ic_expand_more else R.drawable.ic_chevron_right), if (expanded) "收起" else "展开", Modifier.size(24.dp))
@@ -130,13 +140,7 @@ internal fun shortToolLabel(tool: ToolEntry) = when (tool.id) {
     else -> tool.label
 }
 
-internal fun toolHelp(tool: ToolEntry) = when (tool.id) {
-    "pdf_sign" -> "选择 PDF → 导入自己的 P12/PFX 证书 → 输入证书密码 → 核对证书信息 → 生成并保存签名副本。证书数字签名与手写签名不同。"
-    "batch_extract" -> "一次选择多张票据图片或多份 PDF → 核对字段与金额 → 修正失败项 → 导出汇总表。原图保留，点击字段可对照来源。"
-    "table_xlsx" -> "选择表格图片或 PDF → 核对行列、合并格与数值格式 → 导出 XLSX。图片中不存在的公式无法恢复。"
-    else -> if (tool.accept == com.localdoc.scanner.model.FileKind.NONE) "打开工具 → 按页面提示拍摄或输入内容 → 核对结果 → 保存或分享。"
-        else "选择${if (tool.allowMultiple) "一份或多份" else "一份"}${when(tool.accept) { com.localdoc.scanner.model.FileKind.IMAGE -> "图片"; com.localdoc.scanner.model.FileKind.PDF -> "PDF"; else -> "文件" }} → 调整选项并查看预览 → 保存或分享处理后的副本。"
-}
+internal fun toolHelp(tool: ToolEntry) = com.localdoc.scanner.model.toolGuidance(tool).text
 
 @DrawableRes
 internal fun toolIcon(id: String): Int = when (id) {
@@ -147,7 +151,9 @@ internal fun toolIcon(id: String): Int = when (id) {
     "pdf_to_images" -> R.drawable.ic_tool_imagesmode
     "pdf_text" -> R.drawable.ic_tool_text_snippet
     "pdf_encrypt" -> R.drawable.ic_tool_lock
-    "pdf_office" -> R.drawable.ic_tool_tune
+    "pdf_office" -> R.drawable.ic_tool_edit
+    "batch_extract" -> R.drawable.ic_tool_receipt
+    "table_xlsx" -> R.drawable.ic_tool_grid
     "pdf_sign" -> R.drawable.ic_tool_verified_user
     "portrait" -> R.drawable.ic_tool_badge
     "count_objects" -> R.drawable.ic_tool_imagesmode
@@ -168,7 +174,8 @@ internal fun toolIcon(id: String): Int = when (id) {
     "card_wallet" -> R.drawable.ic_tool_wallet
     "formula" -> R.drawable.ic_tool_functions
     "sign_library" -> R.drawable.ic_tool_draw
-    "photo_restore", "region_erase" -> R.drawable.ic_tool_auto_fix_high
+    "photo_restore", "region_erase", "pdf_enhance" -> R.drawable.ic_tool_auto_fix_high
+    "image_ppt" -> R.drawable.ic_tool_imagesmode
     "barcode" -> R.drawable.ic_tool_qr_code_scanner
     "long_image" -> R.drawable.ic_tool_view_day
     else -> R.drawable.ic_tool_tune

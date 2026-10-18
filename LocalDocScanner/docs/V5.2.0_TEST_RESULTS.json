@@ -1,0 +1,29 @@
+{
+  "version": "5.2.0",
+  "versionCode": 21,
+  "package": "com.localdoc.scanner",
+  "abi": "arm64-v8a",
+  "apk_bytes": 308268161,
+  "apk_sha256": "406f40db09836179be4b7297560cc1cf620d9849b1699b03e98ce8e877a4bb68",
+  "signer_sha256": "8b8f9f345bf2c6662ea1f84a98bfc62f357bff04728a1de93fcf13252bb2abfe",
+  "same_signer_as_v51": true,
+  "native_libraries": 23,
+  "native_bytes_unchanged_from_v51": true,
+  "ocr_models": [
+    "assets/models/medium/det/inference.onnx",
+    "assets/models/medium/rec/inference.onnx"
+  ],
+  "zipalign_16kb": true,
+  "jvm_suites": 59,
+  "jvm": {
+    "tests": 157,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "lint_errors": 0,
+  "lint_warnings": 50,
+  "build_log": "release-check-F4.log",
+  "physical_device_tested": false,
+  "physical_capture_tested": false
+}

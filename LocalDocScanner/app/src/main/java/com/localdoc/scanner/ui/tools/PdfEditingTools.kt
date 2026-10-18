@@ -5,6 +5,16 @@ import android.graphics.Bitmap
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Surface
+import com.localdoc.scanner.R
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -56,7 +66,7 @@ import kotlinx.coroutines.withContext
 
 import com.localdoc.scanner.ui.components.*
 
-private data class PdfPlacement(val x: Float, val y: Float, val width: Float, val height: Float)
+private data class PdfPlacement(val x: Float, val y: Float, val width: Float, val height: Float, val removed:Boolean=false, val pending:List<PendingPdfEdit>?=null, val selected:Int?=null, val operation:Int?=null, val annotationDelete:Boolean?=null)
 
 @Composable
 internal fun PdfSignFlow(request: ToolRequest, vm: AppViewModel, onBack: () -> Unit, onOpenDoc: (String) -> Unit, modifier: Modifier) {
@@ -108,6 +118,7 @@ internal fun PdfSignFlow(request: ToolRequest, vm: AppViewModel, onBack: () -> U
 }
 
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun PdfOfficeFlow(
     request: ToolRequest, vm: AppViewModel, onBack: () -> Unit, onOpenDoc: (String) -> Unit,
@@ -140,6 +151,8 @@ internal fun PdfOfficeFlow(
         }
     }
     var operation by rememberToolState(request, "operation") { 0 }
+    var placementActive by rememberToolState(request,"placementActive") {true}
+    var editingIndex by rememberToolState<Int?>(request,"pdfEditingIndex") {null}
     val pageCount = remember(source) { PdfTools.pageCount(source).coerceAtLeast(1) }
     var pageIndex by rememberToolState(request, "pageIndex") { 0 }
     var text by rememberToolState(request, "text") { "" }
@@ -157,8 +170,8 @@ internal fun PdfOfficeFlow(
     var y by rememberToolState(request, "y") { 0.20f }
     var width by rememberToolState(request, "width") { 0.42f }
     var height by rememberToolState(request, "height") { 0.08f }
-    var undoPlacements by rememberToolState<List<PdfPlacement>>(request, "undoPlacements") { emptyList() }
-    var redoPlacements by rememberToolState<List<PdfPlacement>>(request, "redoPlacements") { emptyList() }
+    var undoPlacements by remember(request) {mutableStateOf(emptyList<PdfPlacement>())}
+    var redoPlacements by remember(request) {mutableStateOf(emptyList<PdfPlacement>())}
     var markup by rememberToolState(request, "markup") { 0 }
     var strokes by rememberToolState<List<List<PdfInkPoint>>>(request, "strokes") { emptyList() }
     var signatureUri by rememberToolState<Uri?>(request, "signatureUri") { null }
@@ -171,6 +184,7 @@ internal fun PdfOfficeFlow(
     var annotationKey by rememberToolState(request, "annotationKey") { "" }
     var annotationText by rememberToolState(request, "annotationText") { "" }
     var annotationDelete by rememberToolState(request, "annotationDelete") { false }
+    val annotationMovable=annotations.firstOrNull {it.key==annotationKey}?.placement!=null
     var textObjects by remember(source, pageIndex) { mutableStateOf<List<com.localdoc.scanner.pdf.PdfTextObject>>(emptyList()) }
     var textObjectError by remember(source, pageIndex) { mutableStateOf("") }
     var textObjectKey by rememberToolState(request, "textObjectKey") { "" }
@@ -195,28 +209,9 @@ internal fun PdfOfficeFlow(
         formFields.filter { !it.readOnly && it.type != "PDSignatureField" }.forEach { field -> if (field.name !in formValues) formValues = formValues + (field.name to field.value) }
     }
 
-    var preview by remember(source) { mutableStateOf<Bitmap?>(null) }
-    LaunchedEffect(source, pageIndex) {
-        val next = withContext(Dispatchers.IO) { PdfTools.renderPage(source, pageIndex, 1200) }
-        preview?.takeIf { it !== next }?.recycle()
-        preview = next
-    }
-    DisposableEffect(source) { onDispose { preview?.recycle() } }
-    var signaturePreview by remember { mutableStateOf<Bitmap?>(null) }
-    var watermarkPreview by remember { mutableStateOf<Bitmap?>(null) }
-    LaunchedEffect(signatureUri) {
-        val next = signatureUri?.let { withContext(Dispatchers.IO) { ImageIo.loadFromUri(context, it, 1200) } }
-        signaturePreview?.takeIf { it !== next }?.recycle()
-        signaturePreview = next
-    }
-    LaunchedEffect(watermarkUri) {
-        val next = watermarkUri?.let { withContext(Dispatchers.IO) { ImageIo.loadFromUri(context, it, 1200) } }
-        watermarkPreview?.takeIf { it !== next }?.recycle()
-        watermarkPreview = next
-    }
-    DisposableEffect(Unit) {
-        onDispose { signaturePreview?.recycle(); watermarkPreview?.recycle() }
-    }
+    val preview by rememberDisplayBitmap(source to pageIndex) {PdfTools.renderPage(source,pageIndex,1200)}
+    val signaturePreview by rememberDisplayBitmap(signatureUri) {signatureUri?.let {ImageIo.loadFromUri(context,it,1200)}}
+    val watermarkPreview by rememberDisplayBitmap(watermarkUri) {watermarkUri?.let {ImageIo.loadFromUri(context,it,1200)}}
 
     val signaturePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { runCatching { context.contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION) } }
@@ -246,12 +241,12 @@ internal fun PdfOfficeFlow(
         signatureUri = signatureUri,
         watermarkUri = watermarkUri,
         formValues = formValues.filterKeys { name -> formFields.any { it.name == name && !it.readOnly && it.type != "PDSignatureField" } },
-        annotationChange = if (operation == 8) com.localdoc.scanner.pdf.PdfAnnotationChange(annotationKey, pageIndex, annotationDelete, annotationText) else null,
+        annotationChange = if (operation == 8) com.localdoc.scanner.pdf.PdfAnnotationChange(annotationKey,pageIndex,annotationDelete,annotationText,if(annotationMovable && !annotationDelete) com.localdoc.scanner.pdf.NormalizedRect(x,y,width,height).takeIf {rect -> val old=annotations.firstOrNull {it.key==annotationKey}?.placement;old==null || listOf(rect.x-old.x,rect.y-old.y,rect.width-old.width,rect.height-old.height).any {kotlin.math.abs(it)>0.00001f}} else null) else null,
         decoration = com.localdoc.scanner.pdf.PdfDecorationOptions(numberStart.toIntOrNull() ?: 0, numberPrefix, numberSuffix, numberPosition, watermarkAngle),
         textChange = if (operation == 9) com.localdoc.scanner.pdf.PdfTextChange(textObjectKey, pageIndex, replacementText) else null
     )
 
-    fun currentCanApply(): Boolean = when (operation) {
+    fun currentCanApply(): Boolean = placementActive && when (operation) {
         0 -> (numberStart.toIntOrNull() ?: 0) in 1..999999 && numberPrefix.length <= 40 && numberSuffix.length <= 40
         1 -> text.isNotBlank() && text.length <= 300 && !text.contains('\n')
         3 -> text.isNotBlank() && text.length <= 1000
@@ -261,6 +256,36 @@ internal fun PdfOfficeFlow(
         8 -> annotations.any { it.key == annotationKey && it.pageIndex == pageIndex && it.editable } && (annotationDelete || annotationText.length <= 1000)
         9 -> textObjects.any { it.key == textObjectKey && it.editable } && replacementText.length <= 300 && '\n' !in replacementText && '\r' !in replacementText
         else -> true
+    }
+
+    var settingsOpen by remember { mutableStateOf(false) }
+    fun placement()=PdfPlacement(x,y,width,height,!placementActive,pendingEdits,editingIndex,operation,annotationDelete)
+    fun pushPlacement() {val old=placement();if(undoPlacements.lastOrNull()!=old) undoPlacements=(undoPlacements+old).takeLast(30);redoPlacements=emptyList()}
+    fun restore(value:PdfPlacement) {x=value.x;y=value.y;width=value.width;height=value.height;placementActive=!value.removed;value.pending?.let {pendingEdits=it};editingIndex=value.selected;value.operation?.let {operation=it};value.annotationDelete?.let {annotationDelete=it}}
+    fun undoPlacement() {val previous=undoPlacements.lastOrNull() ?: return;redoPlacements=(redoPlacements+placement()).takeLast(30);undoPlacements=undoPlacements.dropLast(1);restore(previous)}
+    fun redoPlacement() {val next=redoPlacements.lastOrNull() ?: return;undoPlacements=(undoPlacements+placement()).takeLast(30);redoPlacements=redoPlacements.dropLast(1);restore(next)}
+    fun chooseOperation(index:Int) {operation=index;placementActive=true;editingIndex=null;undoPlacements=emptyList();redoPlacements=emptyList()}
+    fun queueCurrent() {
+        if(!currentCanApply()) return
+        pushPlacement();val edit=snapshotCurrent();val index=editingIndex
+        if(index!=null && index in pendingEdits.indices) pendingEdits=pendingEdits.mapIndexed {i,old ->if(i==index) edit else old}
+        else {pendingEdits=pendingEdits.filter {(edit.annotationChange==null || it.annotationChange?.key!=edit.annotationChange.key) && (edit.textChange==null || it.textChange?.key!=edit.textChange.key)}+edit;editingIndex=pendingEdits.lastIndex}
+    }
+    fun removePending(index:Int) {
+        val wasSelected=editingIndex==index
+        pushPlacement();pendingEdits=pendingEdits.filterIndexed {i,_ ->i!=index}
+        editingIndex=editingIndex?.let {if(it==index) null else if(it>index) it-1 else it}
+        if(wasSelected) placementActive=false
+    }
+    fun removeCurrent() {pushPlacement();if(operation==8 && annotationKey.isNotBlank()) {annotationDelete=true;val edit=snapshotCurrent();pendingEdits=pendingEdits.filter {it.annotationChange?.key!=annotationKey}+edit} else {editingIndex?.let {index ->pendingEdits=pendingEdits.filterIndexed {i,_ ->i!=index}}};editingIndex=null;placementActive=false}
+    fun selectPending(index:Int) {
+        val edit=pendingEdits[index];editingIndex=index;operation=edit.operation;pageIndex=edit.pageIndex
+        text=edit.text;header=edit.header;footer=edit.footer;watermark=edit.watermark;addPageNumbers=edit.addPageNumbers;opacity=edit.opacity
+        x=edit.x;y=edit.y;width=edit.width;height=edit.height;markup=edit.markup.ordinal;strokes=edit.strokes;signatureUri=edit.signatureUri;watermarkUri=edit.watermarkUri;formValues=edit.formValues
+        edit.annotationChange?.let {annotationKey=it.key;annotationText=it.contents;annotationDelete=it.delete}
+        edit.textChange?.let {textObjectKey=it.key;replacementText=it.replacement}
+        edit.decoration?.let {numberStart=it.numberStart.toString();numberPrefix=it.numberPrefix;numberSuffix=it.numberSuffix;numberPosition=it.numberPosition;watermarkAngle=it.watermarkAngle}
+        placementActive=true;undoPlacements=emptyList();redoPlacements=emptyList();settingsOpen=false
     }
 
     @Composable
@@ -274,24 +299,15 @@ internal fun PdfOfficeFlow(
     }
 
     @Composable
-    fun panel() {
-        Text("编辑类型", style = MaterialTheme.typography.titleSmall)
-        ChipRow(operations, operation) { operation = it }
-        if (operation != 0 && pageCount > 1) {
-            Text("第 ${pageIndex + 1} / $pageCount 页")
-            Slider(
-                value = pageIndex.toFloat(),
-                onValueChange = { pageIndex = it.toInt().coerceIn(0, pageCount - 1) },
-                valueRange = 0f..(pageCount - 1).toFloat(),
-                steps = (pageCount - 2).coerceAtLeast(0)
-            )
-        }
+    fun previewCanvas(canvasModifier: Modifier) {
         PdfEditPreview(
             source = source,
+            fillCanvas = true,
+            modifier = canvasModifier,
             bitmap = preview,
             pageIndex = pageIndex,
             pageCount = pageCount,
-            operation = operation,
+            operation = if(placementActive && (operation!=8 || annotationMovable)) operation else -1,
             text = text,
             header = header,
             footer = footer,
@@ -308,50 +324,48 @@ internal fun PdfOfficeFlow(
             watermarkBitmap = watermarkPreview,
             decoration = snapshotCurrent().decoration!!,
             onRectChange = { nx, ny, nw, nh -> x = nx; y = ny; width = nw; height = nh },
-            onInteractionStart = {
-                val current = PdfPlacement(x, y, width, height)
-                if (undoPlacements.lastOrNull() != current) undoPlacements = (undoPlacements + current).takeLast(30)
-                redoPlacements = emptyList()
+            onInteractionStart = ::pushPlacement,
+            selectionActions={
+                if(operation in 1..5 || operation==7 || operation==8) Surface(Modifier.align(Alignment.TopEnd).padding(6.dp),shape=MaterialTheme.shapes.small,tonalElevation=4.dp) {
+                    Row {
+                        androidx.compose.material3.IconButton(::undoPlacement,enabled=undoPlacements.isNotEmpty()) {AppIcon(R.drawable.ic_ui_undo,"撤销位置或移除")}
+                        androidx.compose.material3.IconButton(::redoPlacement,enabled=redoPlacements.isNotEmpty()) {AppIcon(R.drawable.ic_ui_redo,"重做位置或移除")}
+                        androidx.compose.material3.IconButton(::removeCurrent,enabled=placementActive) {AppIcon(R.drawable.ic_ui_delete,"移除当前对象")}
+                    }
+                }
             },
             onPreviousPage = { pageIndex = (pageIndex - 1).coerceAtLeast(0) },
             onNextPage = { pageIndex = (pageIndex + 1).coerceAtMost(pageCount - 1) },
             onSelectPage = { pageIndex = it.coerceIn(0, pageCount - 1) }
         )
-        if (operation in 1..5 || operation == 7) {
-            WrappingOptions {
-                TextButton(onClick = {
-                    val previous = undoPlacements.lastOrNull() ?: return@TextButton
-                    redoPlacements = (redoPlacements + PdfPlacement(x, y, width, height)).takeLast(30)
-                    undoPlacements = undoPlacements.dropLast(1)
-                    x = previous.x; y = previous.y; width = previous.width; height = previous.height
-                }, enabled = undoPlacements.isNotEmpty()) { Text("撤销位置") }
-                TextButton(onClick = {
-                    val next = redoPlacements.lastOrNull() ?: return@TextButton
-                    undoPlacements = (undoPlacements + PdfPlacement(x, y, width, height)).takeLast(30)
-                    redoPlacements = redoPlacements.dropLast(1)
-                    x = next.x; y = next.y; width = next.width; height = next.height
-                }, enabled = redoPlacements.isNotEmpty()) { Text("重做位置") }
-            }
+    }
+
+    @Composable
+    fun panel() {
+        Text("编辑类型", style = MaterialTheme.typography.titleSmall)
+        ChipRow(operations, operation,::chooseOperation)
+        if (operation != 0 && pageCount > 1) {
+            Text("第 ${pageIndex + 1} / $pageCount 页")
+            Slider(
+                value = pageIndex.toFloat(),
+                onValueChange = { pageIndex = it.toInt().coerceIn(0, pageCount - 1) },
+                valueRange = 0f..(pageCount - 1).toFloat(),
+                steps = (pageCount - 2).coerceAtLeast(0)
+            )
         }
         WrappingOptions {
-            Button(
-                onClick = {
-                    val edit = snapshotCurrent()
-                    pendingEdits = pendingEdits.filter {
-                        (edit.annotationChange == null || it.annotationChange?.key != edit.annotationChange.key) &&
-                            (edit.textChange == null || it.textChange?.key != edit.textChange.key)
-                    } + edit
-                },
-                enabled = currentCanApply()
-            ) { Text("加入本次编辑") }
-            if (pendingEdits.isNotEmpty()) TextButton(onClick = { pendingEdits = emptyList() }) { Text("清空清单") }
+            TextButton(::undoPlacement,enabled=undoPlacements.isNotEmpty()) {Text("撤销")}
+            TextButton(::redoPlacement,enabled=redoPlacements.isNotEmpty()) {Text("重做")}
+            Button(::queueCurrent,enabled=currentCanApply()) {Text(if(editingIndex!=null) "更新所选编辑" else "加入本次编辑")}
+            if(pendingEdits.isNotEmpty()) TextButton({pushPlacement();pendingEdits=emptyList();editingIndex=null;placementActive=false}) {Text("清空清单")}
         }
         if (pendingEdits.isNotEmpty()) {
             Text("本次将一次生成 ${pendingEdits.size} 项编辑：", style = MaterialTheme.typography.titleSmall)
             pendingEdits.forEachIndexed { index, edit ->
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text("${index + 1}. ${edit.label}", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                    TextButton(onClick = { pendingEdits = pendingEdits.toMutableList().also { it.removeAt(index) } }) { Text("移除") }
+                    TextButton({selectPending(index)}) {Text("选中编辑")}
+                    TextButton({removePending(index)}) {Text("移除")}
                 }
             }
             Text("清单非空时只生成清单里的项目；当前设置请先加入。生成后会重新渲染全部编辑供核对。", style = MaterialTheme.typography.bodySmall)
@@ -434,7 +448,7 @@ internal fun PdfOfficeFlow(
             8 -> {
                 if (annotationError.isNotBlank()) Text(annotationError, color = MaterialTheme.colorScheme.error)
                 PdfAnnotationPanel(annotations.filter { it.pageIndex == pageIndex }, annotationKey, annotationText, annotationDelete,
-                    onSelect = { annotationKey = it.key; annotationText = it.contents; annotationDelete = false },
+                    onSelect = { annotationKey = it.key; annotationText = it.contents; annotationDelete = false;placementActive=true;it.placement?.let {rect ->x=rect.x;y=rect.y;width=rect.width;height=rect.height};settingsOpen=false },
                     onContents = { annotationText = it }, onDelete = { annotationDelete = it })
             }
             9 -> {
@@ -453,12 +467,48 @@ internal fun PdfOfficeFlow(
         vm = vm,
         onBack = onBack,
         onOpenDoc = onOpenDoc,
-        runLabel = if (pendingEdits.isEmpty()) "生成当前编辑副本" else "生成 ${pendingEdits.size} 项编辑副本",
+        runLabel = if (pendingEdits.isEmpty()) "生成副本" else "生成副本 · ${pendingEdits.size}项",
         showInputPreview = false,
+        runEnabled=pendingEdits.isNotEmpty() || currentCanApply(),
         modifier = modifier,
+        workspace = { onRun,ready ->
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+            if(maxWidth>maxHeight && maxWidth>=600.dp) Row(Modifier.fillMaxSize(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                Column(Modifier.weight(1f).fillMaxHeight()) { previewCanvas(Modifier.weight(1f)) }
+                Column(Modifier.width(190.dp).fillMaxHeight().verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                    Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+                        Button(onRun,Modifier.weight(1f),enabled=ready) {Text("生成副本")}
+                        androidx.compose.material3.IconButton({settingsOpen=true}) {AppIcon(R.drawable.ic_tool_tune,"参数 / 清单")}
+                    }
+                    operations.forEachIndexed { index,label -> FilterChip(operation==index,{chooseOperation(index); settingsOpen=true},label={Text(label)}) }
+                    FilledTonalButton(::queueCurrent,enabled=currentCanApply()) { Text("加入本次编辑") }
+                }
+            } else Column(Modifier.fillMaxSize(), verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                previewCanvas(Modifier.weight(1f))
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                    operations.forEachIndexed { index,label ->
+                        FilterChip(operation==index,{ chooseOperation(index); if(index in listOf(0,1,3,4,5,6,8,9)) settingsOpen=true },label={ Text(label) })
+                    }
+                }
+                Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                    OutlinedButton({ settingsOpen=true },Modifier.weight(1f)) { Text("参数 / 清单${if(pendingEdits.isNotEmpty()) " · ${pendingEdits.size}" else ""}") }
+                    FilledTonalButton(::queueCurrent,enabled=currentCanApply()) { Text("加入") }
+                }
+                Button(onRun,Modifier.fillMaxWidth(),enabled=ready) {Text("生成副本")}
+            }
+            }
+        },
         config = { panel() },
         extraParameters = { mapOf("edits" to ToolDrafts.gson.toJson(if (pendingEdits.isEmpty()) listOf(snapshotCurrent()) else pendingEdits)) }
     )
+    if(settingsOpen) ModalBottomSheet(onDismissRequest={ settingsOpen=false }) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).imePadding().padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+            ToolGuide(request.tool)
+            TextButton({ settingsOpen=false }) { Text("返回画布") }
+            panel()
+            TextButton({ settingsOpen=false }) { Text("完成设置，返回画布") }
+        }
+    }
 }
 
 

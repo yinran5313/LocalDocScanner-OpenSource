@@ -2,7 +2,10 @@ package com.localdoc.scanner.ui.tools
 
 import android.graphics.Bitmap
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.*
+import androidx.compose.ui.input.pointer.*
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -102,30 +105,37 @@ private fun OpenXmlFilePreview(file: File) {
 }
 
 @Composable
-internal fun ZoomableImage(model: Any, key: Any, modifier: Modifier = Modifier.fillMaxWidth().height(300.dp)) {
+internal fun ZoomableImage(model: Any, key: Any, modifier: Modifier = Modifier.fillMaxWidth().height(300.dp), overlay: @Composable BoxScope.() -> Unit = {}) {
     var scale by remember(key) { mutableFloatStateOf(1f) }
     var offset by remember(key) { mutableStateOf(Offset.Zero) }
-    Box(
-        modifier.background(Color(0xFF15171A)),
-        contentAlignment = Alignment.Center
-    ) {
-        AsyncImage(
-            model = model,
-            contentDescription = "文件预览",
-            contentScale = ContentScale.Fit,
-            modifier = Modifier.fillMaxSize()
-                .graphicsLayer(scaleX = scale, scaleY = scale, translationX = offset.x, translationY = offset.y)
-                .pointerInput(key) {
-                    detectTransformGestures { _, pan, zoom, _ ->
-                        scale = (scale * zoom).coerceIn(1f, 6f)
-                        offset = if (scale <= 1f) Offset.Zero else offset + pan
-                    }
+    val currentScale by androidx.compose.runtime.rememberUpdatedState(scale)
+    val currentOffset by androidx.compose.runtime.rememberUpdatedState(offset)
+    Box(modifier.background(Color(0xFF15171A)).clipToBounds(),contentAlignment=Alignment.Center) {
+        Box(Modifier.fillMaxSize().graphicsLayer(scaleX=scale,scaleY=scale,translationX=offset.x,translationY=offset.y)
+            .pointerInput(key) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed=false,pass=PointerEventPass.Initial)
+                    var accumulated=Offset.Zero
+                    do {
+                        val event=awaitPointerEvent(PointerEventPass.Initial)
+                        val multiple=event.changes.count { it.pressed }>=2
+                        accumulated+=event.calculatePan()
+                        if(event.changes.any { it.pressed } && (multiple || currentScale>1f && accumulated.getDistance()>viewConfiguration.touchSlop)) {
+                            val next=(currentScale*event.calculateZoom()).coerceIn(1f,6f)
+                            val pan=event.calculatePan()
+                            val center=event.calculateCentroid(useCurrent=false)-Offset(size.width/2f,size.height/2f)
+                            val moved=(currentOffset-center)*(next/currentScale)+center+pan
+                            scale=next
+                            offset=if(next<=1f) Offset.Zero else Offset(moved.x.coerceIn(-size.width*(next-1)/2f,size.width*(next-1)/2f),moved.y.coerceIn(-size.height*(next-1)/2f,size.height*(next-1)/2f))
+                            event.changes.forEach { it.consume() }
+                        }
+                    } while(event.changes.any { it.pressed })
                 }
-        )
-        if (scale > 1f) TextButton(
-            onClick = { scale = 1f; offset = Offset.Zero },
-            modifier = Modifier.align(Alignment.TopEnd).padding(4.dp)
-        ) { Text("适合屏幕") }
+            }.pointerInput(key) { detectTapGestures(onDoubleTap={ scale=if(currentScale>1f) 1f else 2f; offset=Offset.Zero }) }) {
+            AsyncImage(model=model,contentDescription="文件预览",contentScale=ContentScale.Fit,modifier=Modifier.fillMaxSize())
+            overlay()
+        }
+        if(scale>1f) TextButton({scale=1f;offset=Offset.Zero},Modifier.align(Alignment.TopEnd).padding(4.dp)) {Text("适合屏幕")}
     }
 }
 

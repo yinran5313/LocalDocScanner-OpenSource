@@ -19,6 +19,18 @@ internal class PdfPageGeometry(page: PDPage) {
         270 -> Matrix(0f, -1f, 1f, 0f, crop.lowerLeftX, crop.upperRightY)
         else -> Matrix(1f, 0f, 0f, 1f, crop.lowerLeftX, crop.lowerLeftY)
     }
+    fun normalizedRectangle(rect:PDRectangle):NormalizedRect {
+        fun point(x:Float,y:Float):Pair<Float,Float> = when(rotation) {
+            90 -> (y-crop.lowerLeftY)/crop.height to (x-crop.lowerLeftX)/crop.width
+            180 -> (crop.upperRightX-x)/crop.width to (y-crop.lowerLeftY)/crop.height
+            270 -> (crop.upperRightY-y)/crop.height to (crop.upperRightX-x)/crop.width
+            else -> (x-crop.lowerLeftX)/crop.width to (crop.upperRightY-y)/crop.height
+        }
+        val corners=listOf(point(rect.lowerLeftX,rect.lowerLeftY),point(rect.upperRightX,rect.lowerLeftY),point(rect.lowerLeftX,rect.upperRightY),point(rect.upperRightX,rect.upperRightY))
+        val x=corners.minOf {it.first};val y=corners.minOf {it.second};val w=corners.maxOf {it.first}-x;val h=corners.maxOf {it.second}-y
+        require(listOf(x,y,w,h).all {it.isFinite()} && w>0 && h>0 && x>=0 && y>=0 && x+w<=1.0001f && y+h<=1.0001f)
+        return NormalizedRect(x,y,w.coerceAtMost(1f-x),h.coerceAtMost(1f-y))
+    }
     fun point(u: Float, v: Float): Pair<Float, Float> {
         require(u.isFinite() && v.isFinite())
         val x = u.coerceIn(0f, 1f); val y = v.coerceIn(0f, 1f)

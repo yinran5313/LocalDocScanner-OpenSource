@@ -58,7 +58,8 @@ object ToolTasks {
     fun all(context: Context): List<ToolTaskStatus> = root(context).listFiles().orEmpty().mapNotNull { status(context, it.name) }.sortedByDescending { it.updatedAt }
     fun update(context: Context, value: ToolTaskStatus, worker: Boolean = false) = synchronized(filesLock) {
         // A cancellation must not race the worker into overwriting the user's pause.
-        if (worker && status(context, value.id)?.state == ToolTaskState.PAUSED) return@synchronized
+        val current = status(context, value.id)
+        if (worker && (current?.state == ToolTaskState.PAUSED || current?.workId != value.workId)) return@synchronized
         AtomicFiles.text(File(dir(context, value.id), "status.json"), gson.toJson(value.copy(updatedAt = System.currentTimeMillis())))
         updates.tryEmit(Unit)
     }
@@ -68,11 +69,17 @@ object ToolTasks {
     ).map { withContext(Dispatchers.IO) { reconcile(context); all(context) } }.distinctUntilChanged()
 
     private fun reconcile(context: Context) {
+        val observedAt = System.currentTimeMillis()
         val work = WorkManager.getInstance(context).getWorkInfosByTag("scanner-tools").get()
-        all(context).filter { it.state in setOf(ToolTaskState.QUEUED, ToolTaskState.RUNNING) }.forEach { task ->
-            val found = work.filter { name(task.id) in it.tags }
-            if ((found.isEmpty() && System.currentTimeMillis() - task.updatedAt > 30_000) || found.isNotEmpty() && found.all { it.state.isFinished }) {
-                update(context, task.copy(state = ToolTaskState.PAUSED, label = "任务已中断，可以续跑"))
+        all(context).forEach { task ->
+            val found = work.filter { name(task.id) in it.tags }.map { it.id.toString() to it.state.isFinished }
+            synchronized(filesLock) {
+                // Re-read under the write lock: an older WorkManager snapshot must
+                // not pause a freshly resumed generation or overwrite its progress.
+                val current = status(context, task.id)
+                if (current == task && ToolTaskLifecycle.interrupted(task, observedAt, found)) {
+                    update(context, task.copy(state = ToolTaskState.PAUSED, label = "任务已中断，可以续跑"))
+                }
             }
         }
     }
@@ -133,22 +140,23 @@ object ToolTasks {
             require(password != null && (specification.request.tool.id != "pdf_encrypt" || password.isNotEmpty())) { "请重新输入密码，再点续跑" }
             secrets.put(id, password.copyOf())?.fill('\u0000')
         }
-        update(context, (status(context, id) ?: ToolTaskStatus(id)).copy(state = ToolTaskState.QUEUED, error = "", label = "准备校验并续跑"))
         enqueue(context, id)
     } }
-    suspend fun pause(context: Context, id: String) = withContext(Dispatchers.IO) {
-        val previous = status(context, id) ?: return@withContext
-        if (previous.state !in setOf(ToolTaskState.RUNNING, ToolTaskState.QUEUED)) return@withContext
+    suspend fun pause(context: Context, id: String) = withContext(Dispatchers.IO) { submitLock.withLock {
+        val previous = status(context, id) ?: return@withLock
+        if (previous.state !in setOf(ToolTaskState.RUNNING, ToolTaskState.QUEUED)) return@withLock
         update(context, previous.copy(state = ToolTaskState.PAUSED, label = "已暂停，已完成单元保留"))
         WorkManager.getInstance(context).cancelUniqueWork(name(id)).result.get()
         secrets.remove(id)?.fill('\u0000')
-    }
+    } }
     internal fun secret(id: String) = secrets.remove(id)
     private fun enqueue(context: Context, id: String) {
         val request = OneTimeWorkRequestBuilder<ToolTaskWorker>().setInputData(workDataOf("task" to id))
             .addTag("scanner-tools").addTag(name(id))
             .setConstraints(Constraints.Builder().setRequiresStorageNotLow(true).build())
             .setBackoffCriteria(BackoffPolicy.LINEAR, 10, java.util.concurrent.TimeUnit.SECONDS).build()
+        update(context, (status(context, id) ?: ToolTaskStatus(id)).copy(
+            state = ToolTaskState.QUEUED, error = "", label = "准备校验并续跑", workId = request.id.toString()))
         WorkManager.getInstance(context).enqueueUniqueWork(name(id), ExistingWorkPolicy.KEEP, request).result.get()
     }
 }

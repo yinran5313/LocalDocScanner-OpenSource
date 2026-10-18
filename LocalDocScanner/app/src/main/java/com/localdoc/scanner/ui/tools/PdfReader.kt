@@ -27,6 +27,8 @@ import java.io.File
 internal fun PdfReader(file: File, modifier: Modifier = Modifier, initialPage: Int = 0,
     onWorkingCopyReady: ((File) -> Unit)? = null) {
     val context = LocalContext.current
+    val focusManager=androidx.compose.ui.platform.LocalFocusManager.current
+    val keyboard=androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     val scope = rememberCoroutineScope()
     var preparingCopy by remember(file) { mutableStateOf(false) }
     var session by remember(file) { mutableStateOf<PdfReadSession?>(null) }
@@ -46,6 +48,7 @@ internal fun PdfReader(file: File, modifier: Modifier = Modifier, initialPage: I
     var jumpOpen by remember { mutableStateOf(false) }
     var jumpError by remember { mutableStateOf("") }
     var snapPages by rememberSaveable(file.absolutePath) { mutableStateOf(false) }
+    fun closeSearch() { focusManager.clearFocus(); keyboard?.hide(); query=""; searchOpen=false }
     fun goTo(target:Int) { page=target; scope.launch { listState.scrollToItem(target) } }
     LaunchedEffect(session, initialPage) { session?.let { listState.scrollToItem(page.coerceIn(0,(it.pageCount-1).coerceAtLeast(0))) } }
     var text by remember(file) { mutableStateOf("") }
@@ -132,17 +135,17 @@ internal fun PdfReader(file: File, modifier: Modifier = Modifier, initialPage: I
             Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
                 TextButton(onClick={ pageInput=(page+1).toString(); jumpError=""; jumpOpen=true }) { Text("${page+1} / $count 页") }
                 Spacer(Modifier.weight(1f))
-                IconButton(onClick={ searchOpen=!searchOpen }) { AppIcon(R.drawable.ic_ui_search,"文内搜索") }
+                IconButton(onClick={ if(searchOpen) closeSearch() else searchOpen=true }) { AppIcon(R.drawable.ic_ui_search,"文内搜索") }
                 Box {
                     IconButton(onClick={ menuOpen=true }) { AppIcon(R.drawable.ic_ui_more,"阅读选项") }
                     DropdownMenu(menuOpen,{ menuOpen=false }) {
-                        DropdownMenuItem(text={ Text(if(showText) "返回页面" else "文字 · 长按复制") },onClick={ showText=!showText; menuOpen=false })
+                        DropdownMenuItem(text={ Text(if(showText) "返回页面" else "文字 · 长按复制") },onClick={ focusManager.clearFocus();keyboard?.hide();showText=!showText;menuOpen=false })
                         DropdownMenuItem(text={ Text(if(snapPages) "✓ 整页吸附" else "整页吸附") },onClick={ snapPages=!snapPages; menuOpen=false })
                     }
                 }
             }
             if(searchOpen) {
-                OutlinedTextField(query,{ query=it },placeholder={ Text("搜索文内文字") },singleLine=true,modifier=Modifier.fillMaxWidth(),trailingIcon={ IconButton(onClick={ query=""; searchOpen=false }) { AppIcon(R.drawable.ic_ui_close,"关闭搜索") } })
+                OutlinedTextField(query,{ query=it },placeholder={ Text("搜索文内文字") },singleLine=true,modifier=Modifier.fillMaxWidth(),trailingIcon={ IconButton(onClick={ closeSearch() }) { AppIcon(R.drawable.ic_ui_close,"关闭搜索") } })
                 if(query.isNotBlank()) Row(verticalAlignment=Alignment.CenterVertically) {
                     Text(searchStatus,modifier=Modifier.weight(1f),style=MaterialTheme.typography.bodySmall)
                     TextButton(onClick={ (hits.lastOrNull { it<page } ?: hits.lastOrNull())?.let(::goTo) },enabled=hits.isNotEmpty()) { Text("上个") }

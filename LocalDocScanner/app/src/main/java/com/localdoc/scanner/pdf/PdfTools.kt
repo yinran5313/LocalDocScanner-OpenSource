@@ -40,37 +40,24 @@ object PdfTools {
     fun pageCount(file: File): Int = withRenderer(file) { it.pageCount } ?: 0
 
     /** Bounded single-page rendering allows export tasks to checkpoint each page. */
-    fun renderPageAtDpi(file: File, index: Int, dpi: Int): Bitmap? = withRenderer(file) { renderer ->
-        if (index !in 0 until renderer.pageCount) return@withRenderer null
-        renderer.openPage(index).use { page ->
-            val scale = minOf(dpi.coerceIn(72, 300) / 72f, 5000f / maxOf(page.width, page.height))
-            val width = (page.width * scale).toInt().coerceAtLeast(1)
-            val height = (page.height * scale).toInt().coerceAtLeast(1)
-            Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also { bitmap ->
-                bitmap.eraseColor(Color.WHITE)
-                page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-            }
-        }
-    }
+    fun renderPageAtDpi(file: File, index: Int, dpi: Int): Bitmap? =
+        runCatching { PdfReadSession.open(file).use { session ->
+            if(index !in 0 until session.pageCount) null else session.renderAtDpi(index,dpi.coerceIn(72,300))
+        } }.getOrNull()
 
     fun render(file: File, dpi: Int = 150): List<Bitmap> {
         val out = mutableListOf<Bitmap>()
-        withRenderer(file) { renderer ->
-            for (i in 0 until renderer.pageCount) {
-                val page = renderer.openPage(i)
-                val w = page.width * dpi / 72
-                val h = page.height * dpi / 72
-                val bmp = Bitmap.createBitmap(w.coerceAtLeast(1), h.coerceAtLeast(1), Bitmap.Config.ARGB_8888)
-                bmp.eraseColor(android.graphics.Color.WHITE)
-                page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                page.close()
-                out.add(bmp)
+        try { PdfReadSession.open(file).use { session ->
+            for (i in 0 until session.pageCount) {
+                out.add(checkNotNull(session.renderAtDpi(i,dpi)))
             }
-        }
+        } } catch(e:Exception) {out.forEach {it.recycle()}; throw e}
         return out
     }
 
-    fun renderPage(file: File, index: Int, maxSide: Int = 1800): Bitmap? = withRenderer(file) { renderer ->
+    fun renderPage(file: File, index: Int, maxSide: Int = 1800): Bitmap? {
+        if(android.os.Build.VERSION.SDK_INT<35) return runCatching {PdfReadSession.open(file).use {it.render(index,maxSide)}}.getOrNull()
+        return withRenderer(file) { renderer ->
         if (index !in 0 until renderer.pageCount) return@withRenderer null
         val page = renderer.openPage(index)
         try {
@@ -79,11 +66,12 @@ object PdfTools {
             val height = (page.height * scale).toInt().coerceAtLeast(1)
             Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also { bitmap ->
                 bitmap.eraseColor(android.graphics.Color.WHITE)
-                page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                PdfNativeRender.page(page,bitmap)
             }
         } finally {
             page.close()
         }
+    }
     }
 
     /** 多份 PDF 合成一份 */
@@ -255,43 +243,32 @@ object PdfTools {
     fun toImages(input: File, outDir: File, dpi: Int = 150): List<File> {
         val files = mutableListOf<File>()
         outDir.mkdirs()
-        withRenderer(input) { renderer ->
-            for (index in 0 until renderer.pageCount) {
-                val bmp = rasterPage(renderer, index, dpi)
+        PdfReadSession.open(input).use { session ->
+            for (index in 0 until session.pageCount) {
+                val bmp = checkNotNull(session.renderAtDpi(index,dpi))
                 try {
                     val out = File(outDir, "${input.nameWithoutExtension}_${index + 1}.jpg")
                     check(ImageIo.saveJpeg(bmp, out, 92)) { "第${index + 1}页保存失败" }
                     files.add(out)
                 } finally { bmp.recycle() }
             }
-        } ?: error("PDF转图片失败；原件已保留")
-        return files
-    }
-
-    private fun rasterPage(renderer: PdfRenderer, index: Int, dpi: Int): Bitmap = renderer.openPage(index).use { page ->
-        require(dpi in 72..600) { "分辨率不合法" }
-        val scale = (dpi / 72f).coerceAtMost(5000f / maxOf(page.width, page.height))
-        Bitmap.createBitmap((page.width * scale).toInt().coerceAtLeast(1),
-            (page.height * scale).toInt().coerceAtLeast(1), Bitmap.Config.ARGB_8888).also { bitmap ->
-            bitmap.eraseColor(Color.WHITE)
-            try { page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY) }
-            catch (e: Exception) { bitmap.recycle(); throw e }
         }
+        return files
     }
 
     private fun streamRasterPages(input: File, output: File, dpi: Int, quality: Int, requiredPage: Int,
         transform: (Int, Bitmap) -> Unit): Boolean {
         require(input.canonicalFile != output.canonicalFile) { "输出不能覆盖原件" }
         output.parentFile?.mkdirs()
-        return withRenderer(input) { renderer ->
-            require(renderer.pageCount > 0) { "PDF没有页面" }
-            require(requiredPage in 0 until renderer.pageCount) { "打码页码不合法" }
+        return PdfReadSession.open(input).use { session ->
+            require(session.pageCount > 0) { "PDF没有页面" }
+            require(requiredPage in 0 until session.pageCount) { "打码页码不合法" }
             PDDocument(MemoryUsageSetting.setupTempFileOnly()).use { document ->
-                for (index in 0 until renderer.pageCount) {
-                    val bitmap = rasterPage(renderer, index, dpi)
+                for (index in 0 until session.pageCount) {
+                    val bitmap = checkNotNull(session.renderAtDpi(index,dpi))
                     try {
                         transform(index, bitmap)
-                        val size = renderer.openPage(index).use { it.width to it.height }
+                        val size = session.pageSize(index)
                         val page = com.tom_roush.pdfbox.pdmodel.PDPage(
                             com.tom_roush.pdfbox.pdmodel.common.PDRectangle(size.first.toFloat(), size.second.toFloat()))
                         document.addPage(page)
@@ -304,7 +281,7 @@ object PdfTools {
                 document.save(output)
             }
             output.isFile && output.length() > 0
-        } ?: false
+        }
     }
 
     private fun write(pages: List<Bitmap>, output: File): Boolean = try {

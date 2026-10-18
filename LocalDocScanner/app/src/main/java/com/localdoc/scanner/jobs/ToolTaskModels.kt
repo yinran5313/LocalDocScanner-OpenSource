@@ -10,7 +10,9 @@ data class FlowOutcome(val summary: List<Pair<String, String>>, val files: List<
     val reviewPages: List<ReviewPage> = emptyList(), val failures: List<String> = emptyList(),
     val sensitiveRegions: List<SensitiveRegion> = emptyList(),
     val fileFolders: Map<String,String> = emptyMap(), val fileLabels: Map<String,String> = emptyMap(),
-    val primaryFiles: List<File>? = null, val libraryFiles: List<File>? = null) {
+    val primaryFiles: List<File>? = null, val libraryFiles: List<File>? = null,
+    val barcodeRecords: List<com.localdoc.scanner.barcode.BarcodeRecord> = emptyList(),
+    val ocrReviewTaskId: String? = null, val ocrReviewKeys: List<String> = emptyList()) {
     val deliverables get() = primaryFiles.orEmpty().ifEmpty { files }
     val libraryOutputs get() = libraryFiles.orEmpty().ifEmpty { files }
 }
@@ -33,6 +35,7 @@ data class ToolTaskSpec(val id: String, val request: ToolRequest, val parameters
     val createdAt: Long = System.currentTimeMillis())
 data class ToolTaskStatus(val id: String, val state: ToolTaskState = ToolTaskState.QUEUED,
     val completed: Int = 0, val total: Int = 0, val label: String = "等待后台处理",
-    val error: String = "", val updatedAt: Long = System.currentTimeMillis())
+    val error: String = "", val updatedAt: Long = System.currentTimeMillis(),
+    val workId: String? = null)
 data class ToolFileReceipt(val path: String, val hash: String)
 data class ToolUnitReceipt(val key: String, val payload: String, val files: List<ToolFileReceipt>)

@@ -1,6 +1,8 @@
 package com.localdoc.scanner.ui.tools
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 
@@ -77,6 +79,8 @@ internal fun ToolFlow(
     modifier: Modifier = Modifier,
     runLabel: String = "开始处理",
     showInputPreview: Boolean = true,
+    workspace: (@Composable (() -> Unit, Boolean) -> Unit)? = null,
+    runEnabled: Boolean = true,
     resultExtra: @Composable (FlowOutcome) -> Unit = {},
     config: @Composable () -> Unit,
     extraParameters: () -> Map<String, String> = { emptyMap() },
@@ -91,6 +95,9 @@ internal fun ToolFlow(
     var expandedInputPreview by remember(request) { mutableStateOf(false) }
     var pendingSaveFiles by rememberToolState<List<File>>(request, "pendingSaveFiles") { emptyList() }
     var saveStatus by rememberToolState(request, "saveStatus") { "" }
+    var saveAsFile by remember { mutableStateOf<File?>(null) }
+    var saveAsName by remember { mutableStateOf("") }
+    var continueFile by remember { mutableStateOf<File?>(null) }
     var showInputAfterProcessing by rememberToolState(request, "showInputAfterProcessing") { false }
 
     var taskId by remember(request) { mutableStateOf(ToolTasks.latest(context, request)) }
@@ -215,13 +222,13 @@ internal fun ToolFlow(
     Scaffold(
         modifier = modifier,
         topBar = {
-            ScannerTopBar(request.tool.label, onBack, "配置 · 处理 · 保存")
+            ScannerTopBar(request.tool.label, onBack, if(workspace==null) "配置 · 处理 · 保存" else null)
         },
         bottomBar = {
-            ActionDock {
+            if(stage!=0 || workspace==null) ActionDock {
                 when (stage) {
                     0 -> {
-                        AdaptiveActions(listOf(DockAction(runLabel, { start() }, enabled = !busy), DockAction("取消", onBack, style = ActionStyle.TEXT)))
+                        AdaptiveActions(listOf(DockAction(runLabel, { start() }, enabled = !busy && runEnabled)) + if(workspace==null) listOf(DockAction("取消", onBack, style = ActionStyle.TEXT)) else emptyList())
                     }
                     1 -> {
                         AdaptiveActions(listOf(
@@ -256,7 +263,9 @@ internal fun ToolFlow(
         }
     ) { padding ->
         when (stage) {
-            0 -> Column(
+            0 -> if (workspace != null) {
+                Column(Modifier.fillMaxSize().padding(padding).padding(horizontal=8.dp)) { workspace(::start,!busy && runEnabled) }
+            } else Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
@@ -264,8 +273,9 @@ internal fun ToolFlow(
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                InfoCard("已选 ${request.files.size} 个文件", request.names.take(2).joinToString("\n") + if (request.names.size > 2) "\n另 ${request.names.size - 2} 个文件" else "", R.drawable.ic_ui_folder)
-                if (showInputPreview) {
+                ToolGuide(request.tool)
+                if (request.files.isNotEmpty()) InfoCard("已选 ${request.files.size} 个文件", request.names.take(2).joinToString("\n") + if (request.names.size > 2) "\n另 ${request.names.size - 2} 个文件" else "", R.drawable.ic_ui_folder)
+                if (showInputPreview && request.files.isNotEmpty()) {
                     TextButton(onClick = { expandedInputPreview = !expandedInputPreview }) { Text(if (expandedInputPreview) "收起输入预览" else "查看输入预览") }
                     if (expandedInputPreview) FilePreview(request.files, "输入预览")
                 }
@@ -321,13 +331,15 @@ internal fun ToolFlow(
                         SectionHeading("输出文件")
                         o.files.forEach { f ->
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                Text("${f.name} · ${fmtSize(f.length())}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                                OutputFileDetails(f,saveStatus,Modifier.weight(1f))
                                 var menu by remember(f) { mutableStateOf(false) }
                                 Box {
                                     TextButton(onClick={ menu=true }) { Text("操作") }
                                     DropdownMenu(menu,{ menu=false }) {
                                         DropdownMenuItem(text={ Text("打开 / 预览") },onClick={ menu=false; openHere(f) })
                                         DropdownMenuItem(text={ Text("保存此文件") },onClick={ menu=false; saveToPhone(listOf(f)) })
+                                        DropdownMenuItem(text={ Text("另存为 / 修改保存名") },onClick={ menu=false; saveAsFile=f; saveAsName=f.nameWithoutExtension })
+                                        if(f.extension.lowercase() in listOf("pdf","jpg","png","jpeg","webp")) DropdownMenuItem(text={ Text("继续处理") },onClick={menu=false;continueFile=f})
                                         DropdownMenuItem(text={ Text("分享此文件") },onClick={ menu=false; Share.files(context,listOf(f),guessMime(f)) })
                                     }
                                 }
@@ -377,6 +389,21 @@ internal fun ToolFlow(
             }
         }
     }
+    saveAsFile?.let {file -> AlertDialog(onDismissRequest={saveAsFile=null},title={Text("另存结果")},text={
+        Column { OutlinedTextField(saveAsName,{saveAsName=it.take(100)},label={Text("文件名，不含扩展名")},singleLine=true,modifier=Modifier.fillMaxWidth()); Text("格式保持为 ${file.extension.uppercase()}，原结果保留。",style=MaterialTheme.typography.bodySmall) }
+    },confirmButton={TextButton({
+        val base=saveAsName.trim().map {if(it in "\\/:*?\"<>|" || it.isISOControl()) '_' else it}.joinToString("").trim('.',' ').ifBlank {file.nameWithoutExtension}
+        pendingSaveFiles=listOf(file);saveAsFile=null;saveSingle.launch("$base.${file.extension}")
+    },enabled=saveAsName.isNotBlank()){Text("选择保存位置")}},dismissButton={TextButton({saveAsFile=null}){Text("取消")}}) }
+    continueFile?.let {file ->
+        val ids=if(file.extension.equals("pdf",true)) listOf("pdf_office","pdf_pages","pdf_compress","pdf_to_images","pdf_long","pdf_enhance","pdf_text","ocr","table_xlsx") else listOf("image_edit","images_to_pdf","photo_restore","ocr","table_xlsx")
+        AlertDialog(onDismissRequest={continueFile=null},title={Text("继续处理 · ${file.name}")},text={Column(Modifier.verticalScroll(rememberScrollState())) {
+            com.localdoc.scanner.model.TOOL_ENTRIES.filter {it.id in ids}.forEach {tool -> TextButton({continueFile=null;scope.launch {
+                try {vm.openExternalTool(file,file.name,tool)} catch(e:Exception) {if(e is kotlinx.coroutines.CancellationException) throw e;toast(e.message ?: "无法继续处理")}
+            }}) {Text(tool.label)} }
+        }},confirmButton={TextButton({continueFile=null}){Text("关闭")}})
+    }
+
 }
 
 private fun guessMime(file: File): String = OutputHistoryStore.mimeFor(file)

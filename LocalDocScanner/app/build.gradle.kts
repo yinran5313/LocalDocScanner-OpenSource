@@ -13,8 +13,8 @@ android {
         applicationId = "com.localdoc.scanner"
         minSdk = 26
         targetSdk = 35
-        versionCode = 20
-        versionName = "5.1.0"
+        versionCode = 21
+        versionName = "5.2.0"
 
         // 当前交付目标为近年的小米手机。OCR/OpenCV 原生库仅保留 ARM64，
         // 避免把 x86 模拟器和旧 32 位手机的三套二进制重复塞进安装包。

@@ -158,6 +158,7 @@ fun EditScreen(
             val loaded = withContext(Dispatchers.IO) {
                 ImageIo.loadFromFile(File(sourcePath), MAX_OUTPUT_SIDE)?.also { pending = ownership.adopt(it) }
             }
+            loaded?.let(ownership::display)
             source = loaded; pending = null
             loaded?.let { bitmap ->
                 if (ownership.acquire(bitmap)) try {
@@ -179,6 +180,7 @@ fun EditScreen(
         var pending: Bitmap? = null
         try {
             val next = withContext(Dispatchers.Default) { ImageIo.rotate(input, quarterTurns * 90f).also { pending = ownership.adopt(it) } }
+            ownership.display(next)
             val old = rotatedPreview; rotatedPreview = next; pending = null
             if (old !== source && old !== next) ownership.retire(old)
         } finally { if (pending !== source) ownership.retire(pending); ownership.release(input) }
@@ -195,6 +197,7 @@ fun EditScreen(
             val output = withContext(Dispatchers.Default) {
                 renderProcessed(input, corners, filter, brightness, contrast, PREVIEW_SIDE, fineRotation, cropRatio).also { pending = ownership.adopt(it) }
             }
+            ownership.display(output)
             val old = processedPreview; processedPreview = output; pending = null
             if (old !== rotatedPreview && old !== output) ownership.retire(old)
         } finally { if (pending !== input) ownership.retire(pending); ownership.release(input) }
@@ -579,12 +582,14 @@ private fun CropCanvas(
             }
             if (activeCorner >= 0) {
                 val p = corners[activeCorner]
+                val bubbleRadius = min(58.dp.toPx(),min(size.width,size.height)*.35f).coerceAtLeast(1f)
+                val marginX=min(bubbleRadius+12.dp.toPx(),size.width/2)
+                val marginY=min(bubbleRadius+12.dp.toPx(),size.height/2)
                 val bubbleCenter = Offset(
-                    points[activeCorner].x.coerceIn(70.dp.toPx(), size.width - 70.dp.toPx()),
-                    (points[activeCorner].y - 96.dp.toPx()).coerceAtLeast(70.dp.toPx())
+                    points[activeCorner].x.coerceIn(marginX,size.width-marginX),
+                    (points[activeCorner].y-bubbleRadius-38.dp.toPx()).coerceIn(marginY,size.height-marginY)
                 )
-                val bubbleRadius = 58.dp.toPx()
-                val sourceSide = max(36, min(bitmap.width, bitmap.height) / 7)
+                val sourceSide = max(36, min(bitmap.width, bitmap.height) / 7).coerceAtMost(min(bitmap.width,bitmap.height))
                 val sourceX = (p.x * bitmap.width).toInt().coerceIn(0, bitmap.width - 1)
                 val sourceY = (p.y * bitmap.height).toInt().coerceIn(0, bitmap.height - 1)
                 val srcX = (sourceX - sourceSide / 2).coerceIn(0, max(0, bitmap.width - sourceSide))

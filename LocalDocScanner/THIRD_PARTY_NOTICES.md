@@ -84,3 +84,24 @@ Noto Sans SC来自Google Fonts，OFL-1.1；字体固定版本及SHA256见ui-font
 - commons-math3 3.6.1、commons-collections4 4.4和SparseBitSet1.3，Apache-2.0；POI传递依赖，原许可及通知已保留。SparseBitSet许可依据1.3 Maven POM，Apache全文沿用上述许可文件。
 - Office zh_CN/zh_TW翻译覆盖，MPL-2.0；来源和哈希见docs/OFFICE_ZH_SOURCES.json，数据构建脚本tools/build_office_zh_data.py。
 - 拾页品牌栅格标记为imagegen生成的项目自有资源；内部Google Material矢量许可不变。
+
+## V5.1.0新增复用
+
+|用途|仓库/源码位置|类/函数|依赖|许可证与接入|
+|---|---|---|---|---|
+|公式识别|RapidAI/RapidLaTeXOCR, `rapid_latex_ocr/main.py`, `utils.py`, `models.py`; release v0.0.0 weights|LaTeXOCR.loop_image_resizer, PreProcess.pad/normalize, EncoderDecoder, Decoder.__call__|ONNX Runtime|MIT，移植至FormulaRecognition；改用有上限的贪心解码与资源释放。许可副本assets/third_party/RapidLaTeXOCR_LICENSE.txt|
+|高清修复|xinntao/Real-ESRGAN, `realesrgan/utils.py`; cix/ai_model_hub_25_Q3, `models/ComputeVision/Super_Resolution/onnx_real_esrgan`|RealESRGANer.tile_process|ONNX Runtime|BSD-3-Clause，PhotoRestoration固定224输入，160px核心与32px扩边，2/4倍输出；许可副本assets/third_party/RealESRGAN_LICENSE.txt|
+|区域擦除|opencv/opencv, `modules/photo/src/inpaint.cpp`; `samples/python/inpaint.py`|cv::inpaint, INPAINT_TELEA|既有OpenCV4.12.0|Apache-2.0，RegionRepair直接调用共享库，仅替换蒙版内像素|
+|公式预览|KaTeX/KaTeX, `src/katex.js`; npm katex0.16.22 dist|katex.render|Android WebView|MIT，离线JS/CSS/字体；来源与npm完整性在assets/katex/SOURCE.json，完整许可assets/katex/LICENSE；禁网络、禁受信宏|
+|Markdown表格|noties/Markwon, `markwon-ext-tables`|TablePlugin.create|Markwon4.6.2|Apache-2.0，复用GFM表格预览与PDF排版，保留源码编辑入口|
+
+图标继续采用Google Material Symbols Apache-2.0，新增来源与SHA在assets/third_party/v51_material_icons_sources.json；没有自绘或复制商业App图标。
+
+
+## LaMa 选区背景修补
+
+Apache-2.0，Carve-Photos/lama（bin/predict.py main、saicinpainting/training/modules/ffc.py FourierUnitJIT），advimman/lama。使用Carve/LaMa-ONNX的固定512 FP32权重；模型卡和完整许可证存于交付调研/模型包，APK内保留LICENSE。权重不内置。输入RGB [0,1] / binary mask、输出RGB [0,255]；Android适配仅修改涂抹选区，原图与选区外像素保留。没有使用GPL/AGPL实现。
+
+## V5.2.0
+
+Google Material Design Icons 的 undo、redo、delete_outline、edit、receipt、grid_on 原始SVG路径转换为Android VectorDrawable，Apache-2.0；具体文件与SHA256见 docs/V52_ICON_SOURCES.json，许可证沿用assets/third_party/google_material_symbols_LICENSE.txt。PDF批注几何沿用PdfBox-Android的PDAnnotationMarkup/PDAnnotationTextMarkup（Apache-2.0）及现有页面坐标工具，无新增PDF引擎。

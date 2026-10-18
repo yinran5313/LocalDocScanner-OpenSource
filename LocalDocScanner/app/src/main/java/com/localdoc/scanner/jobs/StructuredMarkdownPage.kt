@@ -41,9 +41,10 @@ internal object StructuredMarkdownPage {
                     val imageText="![$label](${reference.name})"
                     if(region.kind=="table" && useTables) {
                         try {
-                            val local=selected.map { it.copy(left=((it.left*image.width-left)/crop.width).coerceIn(0f,1f),right=((it.right*image.width-left)/crop.width).coerceIn(0f,1f),top=((it.top*image.height-top)/crop.height).coerceIn(0f,1f),bottom=((it.bottom*image.height-top)/crop.height).coerceIn(0f,1f)) }.filter(OcrLayout::valid)
+                            val coordinates=RegionCoordinates(region,image.width,image.height)
+                            val local=selected.map(coordinates::local).filter(OcrLayout::valid)
                             val recovered=TableModel.recover(context,crop,local)
-                            table=recovered.copy(cells=recovered.cells.map { c -> c.copy(left=(left+c.left*crop.width)/image.width,top=(top+c.top*crop.height)/image.height,right=(left+c.right*crop.width)/image.width,bottom=(top+c.bottom*crop.height)/image.height) })
+                            table=recovered.copy(cells=recovered.cells.map(coordinates::page))
                             val remaining=selected.filter { word -> table.cells.none { c -> word.left<c.right && word.right>c.left && word.top<c.bottom && word.bottom>c.top } }
                             text=LayoutMarkdown.modelTable(recovered)+"\n\n"+imageText+if(remaining.isNotEmpty()) "\n\n"+LayoutMarkdown.render(remaining,"SINGLE") else ""
                         } catch(e: Exception) { if(e is CancellationException || e is ToolSliceEnded) throw e

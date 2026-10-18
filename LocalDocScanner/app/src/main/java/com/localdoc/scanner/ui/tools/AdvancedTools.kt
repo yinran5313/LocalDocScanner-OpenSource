@@ -15,6 +15,9 @@ import com.localdoc.scanner.ui.ToolRequest
 @Composable
 internal fun AdvancedToolsFlow(request: ToolRequest, vm: AppViewModel, onBack: () -> Unit, onOpenDoc: (String) -> Unit, modifier: Modifier) {
     val context = LocalContext.current
+    var translationReview by remember(request) {mutableStateOf<com.localdoc.scanner.jobs.FlowOutcome?>(null)}
+    var translationSource by rememberToolState(request,"translationSource") {""}
+    var countReview by remember(request) {mutableStateOf<com.localdoc.scanner.jobs.FlowOutcome?>(null)}
     var background by rememberToolState(request, "background") { 0 }
     var mdColumns by rememberToolState(request,"mdColumns") { "AUTO" }
     var mdTable by rememberToolState(request,"mdTable") { false }
@@ -34,6 +37,7 @@ internal fun AdvancedToolsFlow(request: ToolRequest, vm: AppViewModel, onBack: (
     var category by rememberToolState(request, "category") { 0 }
     var chineseToEnglish by rememberToolState(request, "chineseToEnglish") { true }
     var pages by rememberToolState(request, "selectedPages") { "" }
+    var selectionCount by remember { androidx.compose.runtime.mutableIntStateOf(0) }
     var qrText by rememberToolState(request, "qrText") { "" }
     var watermarkText by rememberToolState(request, "watermarkText") { "" }
     var watermarkLocation by rememberToolState(request, "watermarkLocation") { "" }
@@ -52,7 +56,15 @@ internal fun AdvancedToolsFlow(request: ToolRequest, vm: AppViewModel, onBack: (
     var openModels by remember { mutableStateOf(false) }
     if (openModels) { ModelsScreen(onBack = { openModels = false }); return }
     val modelId = when (request.tool.id) { "photo_restore" -> when(restoreMode) { "DEBLUR" -> "deblur"; "DENOISE" -> null; else -> "restore" }; "pdf_enhance" -> if(pdfSuperResolution) "restore" else null; "portrait" -> "portrait"; "book_unwarp" -> "unwarp"; "structured_markdown" -> if(mdLayout) "layout" else if (mdTable) "table" else null; "translate" -> if (chineseToEnglish) "translate-zh-en" else "translate-en-zh"; "count_objects" -> "objects"; else -> null }
-    ToolFlow(request, vm, onBack, onOpenDoc, modifier, config = {
+    val requiredIds=if(request.tool.id=="structured_markdown") (if(mdLayout || mdTable) listOf("layout") else emptyList())+(if(mdTable) listOf("table") else emptyList()) else listOfNotNull(modelId)
+    val packs=requiredIds.distinct().map {ModelCatalog.get(context,it)}
+    val modelsReady=packs.all {ModelCatalog.installed(context,it)}
+    ToolFlow(request, vm, onBack, onOpenDoc, modifier, runLabel=if(request.tool.id in listOf("pdf_long","pdf_enhance")) "开始处理 · ${selectionCount}页" else "开始处理", runEnabled=modelsReady && (request.tool.id!="translate" || translationSource.length<=8000) && (request.tool.id !in listOf("pdf_long","pdf_enhance") || selectionCount>0),
+        resultExtra={outcome ->
+            if(request.tool.id=="translate" && outcome.reviewPages.isNotEmpty()) Button({translationReview=outcome}) {Text("对照原文与译文 / 校订")}
+            if(request.tool.id=="count_objects" && outcome.files.any {it.name=="计数位置.json"}) {
+            Button({countReview=outcome}) {Text("在图上复核数量 / 补点 / 删除")}
+        }},config = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(when(request.tool.id) {
                 "photo_restore" -> "选择高清、去模糊或降噪 → 对照原图 → 保存副本。高清和去模糊逐图块续跑，降噪无需模型。无法保证恢复丢失的真实文字。"
@@ -64,13 +76,12 @@ internal fun AdvancedToolsFlow(request: ToolRequest, vm: AppViewModel, onBack: (
                 "pdf_enhance" -> "选页 → 按页增强 → 预览 → 保存副本。保持原可见页面尺寸，可选高清模型与新的medium文字层；原表单和批注不迁移，请保留原PDF。"
                 "zip_import" -> "解压ZIP到私有结果区 → 检查各文件 → 保存、分享或导入文档库。不会自动执行压缩包内容。"
                 "watermark_photo" -> "设置时间、地点和自定义文字 → 预览水印照片 → 保存或分享副本。地点可留空或手动填写，仅在你点按钮时请求设备位置。"
-                "count_objects" -> "选择计数类别 → 本地识别 → 对照编号框检查遗漏与重复。仅支持列表中的类别，数量是识别建议；点开CSV可以记录人工复核数量。"
+                "count_objects" -> "选择计数类别 → 本地识别 → 对照编号框检查遗漏与重复。仅支持列表中的类别，数量是识别建议；结果页可在图上补点、删除并生成独立复核版。"
                 else -> "输入文字或链接 → 生成二维码 → 保存PNG或分享。链接是否打开由接收方选择。"
             }, style = MaterialTheme.typography.bodySmall)
-            if (modelId != null) {
-                val pack = ModelCatalog.get(context, modelId)
-                Text(if (ModelCatalog.installed(context, pack)) "${pack.title}已安装，处理不需要联网" else "先下载或导入${pack.title}（${"%.1f".format(pack.bytes / 1048576.0)} MiB）")
-                TextButton({ openModels = true }) { Text("打开模型管理") }
+            if(packs.isNotEmpty()) {
+                packs.forEach {pack -> Text(if(ModelCatalog.installed(context,pack)) "${pack.title}已安装，本地处理" else "请先下载或导入${pack.title}（${"%.1f".format(pack.bytes/1048576.0)} MiB）",style=MaterialTheme.typography.bodySmall)}
+                TextButton({openModels=true}) {Text("打开模型管理")}
             }
             when(request.tool.id) {
                 "book_unwarp" -> {
@@ -111,9 +122,13 @@ internal fun AdvancedToolsFlow(request: ToolRequest, vm: AppViewModel, onBack: (
                     }
                 }
                 "count_objects" -> ChipRow(ObjectCounting.labels, category) { category = it }
-                "translate" -> Row(verticalAlignment=androidx.compose.ui.Alignment.CenterVertically) { Switch(chineseToEnglish, { chineseToEnglish = it }); Text(if (chineseToEnglish) "中文 → 英文" else "英文 → 中文",modifier=Modifier.weight(1f)) }
+                "translate" -> Column(verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                    Row(verticalAlignment=androidx.compose.ui.Alignment.CenterVertically) {Switch(chineseToEnglish,{chineseToEnglish=it});Text(if(chineseToEnglish) "中文 → 英文" else "英文 → 中文",Modifier.weight(1f))}
+                    OutlinedTextField(translationSource,{translationSource=it},label={Text("先校订原文，可留空自动识别")},supportingText={Text("${translationSource.length}/8000 字符；超过时请分段翻译")},isError=translationSource.length>8000,minLines=2,maxLines=6,modifier=Modifier.fillMaxWidth())
+                    Text("有原文时直接本地翻译；留空时先用medium识别。结果可继续对照和校订。",style=MaterialTheme.typography.bodySmall)
+                }
                 "pdf_long", "pdf_enhance" -> {
-                    OutlinedTextField(pages, { pages = it }, label = { Text("页码范围") }, supportingText={ Text("如1-3,5；留空为全部页面") }, modifier = Modifier.fillMaxWidth())
+                    PageScopePicker(request.files.first(),pages,{pages=it},{selectionCount=it})
                     if(request.tool.id=="pdf_enhance") {
                         Row(verticalAlignment=androidx.compose.ui.Alignment.CenterVertically) { Switch(pdfSuperResolution,{ pdfSuperResolution=it }); Text("2倍高清修复",modifier=Modifier.weight(1f)) }
                         Text("需要可选高清模型，逐页/逐图块保存进度；大文档处理时间较长。",style=MaterialTheme.typography.bodySmall)
@@ -136,4 +151,13 @@ internal fun AdvancedToolsFlow(request: ToolRequest, vm: AppViewModel, onBack: (
             }
         }
     })
+    countReview?.let {outcome ->
+        val detail=outcome.files.firstOrNull {it.name=="计数位置.json"}
+        if(detail!=null) CountReviewDialog(request,detail,outcome.summary.firstOrNull {it.first=="类别"}?.second.orEmpty(),{countReview=null})
+    }
+
+    translationReview?.let {outcome -> outcome.reviewPages.firstOrNull()?.let {page ->
+        TranslationReviewDialog(request,page,outcome.summary.firstOrNull {it.first=="方向"}?.second!="英文→中文",outcome.files.firstOrNull()?.absolutePath.orEmpty(),{translationReview=null})
+    }}
+
 }

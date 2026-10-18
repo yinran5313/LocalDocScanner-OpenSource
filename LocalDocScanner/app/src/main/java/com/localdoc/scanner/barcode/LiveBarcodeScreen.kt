@@ -75,18 +75,12 @@ fun LiveBarcodeScreen(onBack: () -> Unit) {
             Column(Modifier.fillMaxWidth().heightIn(max = 230.dp).verticalScroll(rememberScrollState()).padding(12.dp)) {
                 Text(error.ifBlank { "对准二维码或条形码，识别成功会暂停；链接由你选择是否打开。" }, style = MaterialTheme.typography.bodySmall)
                 Row { Text("最近扫码 · ${history.size}条", Modifier.weight(1f)); TextButton({ clear = true }, enabled = history.isNotEmpty()) { Text("清空历史") } }
-                history.forEach { record -> TextButton({ selected = record }) { Text(record.text.take(100), maxLines = 2) } }
+                history.forEach { record -> TextButton({ selected = record }) { Text(record.name.ifBlank {record.text.take(100)}+" · "+if(record.format=="QR_CODE") "二维码" else record.format, maxLines = 2) } }
             }
         }
     }
-    selected?.let { record -> AlertDialog(onDismissRequest = { selected = null }, title = { Text("扫码结果") }, text = {
-        androidx.compose.foundation.text.selection.SelectionContainer { Text(record.text) }
-    }, confirmButton = { TextButton({ selected = null }) { Text("继续扫描") } }, dismissButton = { Column {
-        val uri = runCatching { Uri.parse(record.text.trim()) }.getOrNull()
-        if (uri?.scheme?.lowercase() in listOf("https", "http") && !uri?.host.isNullOrBlank()) TextButton({
-            runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, uri)) }.onFailure { error = "没有可打开此链接的浏览器" }
-        }) { Text("在浏览器打开") }
-        TextButton({ context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, record.text) }, "分享扫码结果")) }) { Text("分享文字") }
-    } }) }
+    selected?.let {record -> BarcodeResultDialog(record,onClose={selected=null},onRename={name ->
+        BarcodeHistory.rename(context,record.text,name);history=BarcodeHistory.all(context);selected=history.firstOrNull {it.text==record.text}
+    }) }
     if (clear) AlertDialog(onDismissRequest = { clear = false }, title = { Text("清空扫码历史？") }, confirmButton = { TextButton({ BarcodeHistory.clear(context); history = emptyList(); clear = false }) { Text("清空") } }, dismissButton = { TextButton({ clear = false }) { Text("取消") } })
 }

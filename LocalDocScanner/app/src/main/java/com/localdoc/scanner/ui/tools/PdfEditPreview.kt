@@ -8,6 +8,14 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.ui.draw.rotate
+import com.localdoc.scanner.R
+import androidx.compose.ui.platform.testTag
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -53,9 +61,11 @@ import kotlin.math.min
 import com.localdoc.scanner.ui.components.*
 import androidx.compose.ui.platform.LocalConfiguration
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun PdfEditPreview(
     source: File,
+    fillCanvas: Boolean = false,
     bitmap: Bitmap?,
     pageIndex: Int,
     pageCount: Int,
@@ -80,6 +90,7 @@ internal fun PdfEditPreview(
     onPreviousPage: () -> Unit,
     onNextPage: () -> Unit,
     onSelectPage: (Int) -> Unit,
+    selectionActions: @Composable BoxScope.() -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val latestRect by androidx.compose.runtime.rememberUpdatedState(NormalizedRect(x, y, width, height))
@@ -87,24 +98,33 @@ internal fun PdfEditPreview(
     val latestStart by androidx.compose.runtime.rememberUpdatedState(onInteractionStart)
     val density = LocalDensity.current
     val canvasHeight = (LocalConfiguration.current.screenHeightDp * 0.55f).coerceIn(220f, 430f).dp
-    val canvasHeightPx = with(density) { canvasHeight.toPx() }
     val image = remember(bitmap) { bitmap?.asImageBitmap() }
     val signature = remember(signatureBitmap) { signatureBitmap?.asImageBitmap() }
     val watermarkImage = remember(watermarkBitmap) { watermarkBitmap?.asImageBitmap() }
 
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("${pageIndex + 1} / $pageCount · 实时预览", style = MaterialTheme.typography.bodySmall)
-        AdaptiveActions(listOf(DockAction("上一页", onPreviousPage, style = ActionStyle.TEXT, enabled = pageIndex > 0),
-            DockAction("下一页", onNextPage, style = ActionStyle.TEXT, enabled = pageIndex + 1 < pageCount)))
-        LazyRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            items((0 until pageCount.coerceAtMost(200)).toList(), key = { it }) { index ->
-                PdfPageThumbnail(source, index, selected = index == pageIndex, onClick = { onSelectPage(index) })
-            }
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+    val compact=fillCanvas && maxHeight<240.dp
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        var thumbnails by remember { mutableStateOf(false) }
+        Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+            IconButton(onPreviousPage,enabled=pageIndex>0) { AppIcon(R.drawable.ic_ui_back,"上一页") }
+            TextButton({ thumbnails=!thumbnails },Modifier.weight(1f)) { Text("${pageIndex+1} / $pageCount") }
+            IconButton(onNextPage,enabled=pageIndex+1<pageCount) { AppIcon(R.drawable.ic_ui_back,"下一页",Modifier.rotate(180f)) }
         }
-        Box(Modifier.fillMaxWidth().height(canvasHeight).background(Color(0xFF111318))) {
+        @Composable fun thumbnailStrip() { LazyRow(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+            items((0 until pageCount.coerceAtMost(200)).toList(),key={it}) { index ->
+                PdfPageThumbnail(source,index,selected=index==pageIndex,onClick={onSelectPage(index); thumbnails=false})
+            }
+        } }
+        if(thumbnails) {
+            if(fillCanvas) ModalBottomSheet(onDismissRequest={thumbnails=false}) { thumbnailStrip(); TextButton({thumbnails=false}) {Text("返回画布")} }
+            else thumbnailStrip()
+        }
+        Box(Modifier.fillMaxWidth().then(if(fillCanvas) Modifier.weight(1f) else Modifier.height(canvasHeight)).background(Color(0xFF111318)).testTag("pdf-edit-canvas")) {
             if (bitmap == null || image == null) {
                 Text("正在渲染页面…", color = Color.White, modifier = Modifier.align(Alignment.Center))
-            } else androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth().height(canvasHeight)) {
+            } else androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
+                val canvasHeightPx = with(density) { maxHeight.toPx() }
                 val areaWidthPx = with(density) { maxWidth.toPx() }
                 val scale = min(areaWidthPx / bitmap.width, canvasHeightPx / bitmap.height)
                 val pageWidth = bitmap.width * scale
@@ -114,10 +134,10 @@ internal fun PdfEditPreview(
                 val handleRadius = with(density) { 18.dp.toPx() }
 
                 Canvas(
-                    Modifier.fillMaxWidth().height(canvasHeight)
+                    Modifier.fillMaxSize()
                         .pointerInput(bitmap, operation, areaWidthPx, canvasHeightPx) {
                             detectTapGestures { point ->
-                                if (operation in 1..5 || operation == 7) {
+                                if (operation in 1..5 || operation == 7 || operation == 8) {
                                     val nx = ((point.x - left) / pageWidth).coerceIn(0f, 1f)
                                     val ny = ((point.y - top) / pageHeight).coerceIn(0f, 1f)
                                     if (point.x in left..(left + pageWidth) && point.y in top..(top + pageHeight)) {
@@ -134,13 +154,13 @@ internal fun PdfEditPreview(
                             detectDragGestures(
                                 onDragStart = { point ->
                                     dragRect = latestRect
-                                    if (operation in 1..5 || operation == 7) latestStart()
+                                    if (operation in 1..5 || operation == 7 || operation == 8) latestStart()
                                     val right = left + (dragRect.x + dragRect.width) * pageWidth
                                     val bottom = top + (dragRect.y + dragRect.height) * pageHeight
-                                    resizing = operation in setOf(2, 4, 7) && abs(point.x - right) <= handleRadius * 1.8f && abs(point.y - bottom) <= handleRadius * 1.8f
+                                    resizing = operation in setOf(2, 4, 5, 7, 8) && abs(point.x - right) <= handleRadius * 1.8f && abs(point.y - bottom) <= handleRadius * 1.8f
                                 },
                                 onDrag = { change, drag ->
-                                    if (operation in 1..5 || operation == 7) {
+                                    if (operation in 1..5 || operation == 7 || operation == 8) {
                                         if (resizing) {
                                             val rect = PdfPlacementMath.resize(
                                                 dragRect, drag.x / pageWidth, drag.y / pageHeight
@@ -240,37 +260,33 @@ internal fun PdfEditPreview(
                         ) else drawRect(Color(0x22007A43), Offset(rectLeft, rectTop), androidx.compose.ui.geometry.Size(rectWidth, rectHeight))
                         7 -> drawRect(Color.Black, Offset(rectLeft, rectTop), androidx.compose.ui.geometry.Size(rectWidth, rectHeight))
                     }
-                    if (operation in 1..5 || operation == 7) {
+                    if (operation in 1..5 || operation == 7 || operation == 8) {
                         drawRect(Color(0xFF00A15D), Offset(rectLeft, rectTop), androidx.compose.ui.geometry.Size(rectWidth, rectHeight), style = androidx.compose.ui.graphics.drawscope.Stroke(3f))
-                        if (operation in setOf(2, 4, 7)) drawCircle(Color(0xFF00A15D), handleRadius * 0.55f, Offset(rectLeft + rectWidth, rectTop + rectHeight))
+                        if (operation in setOf(2, 4, 5, 7, 8)) drawCircle(Color(0xFF00A15D), handleRadius * 0.55f, Offset(rectLeft + rectWidth, rectTop + rectHeight))
                     }
                 }
             }
+            selectionActions()
         }
-        Text(
+        if(!compact) Text(
             when (operation) {
-                0 -> "当前显示页眉、页脚、页码和水印示意；生成后会重新读取真实PDF。"
-                6 -> "表单字段直接填写；生成后在结果预览中核对真实显示。"
-                else -> "点按页面定位；按住绿色框拖动位置。标记、手写和打码可拖右下圆点改变范围。"
+                0 -> "水印示意 · 导出后核对"
+                6 -> "在参数中填写表单 · 生成后核对"
+                8 -> "拖框调整批注 · 组合预览核对实际效果"
+                1, 3 -> "点按定位 · 拖框移动 · 参数中填写内容"
+                else -> "点按定位 · 拖框移动 · 拖圆点缩放"
             },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 2.dp)
         )
     }
+    }
 }
 
 @Composable
 private fun PdfPageThumbnail(file: File, index: Int, selected: Boolean, onClick: () -> Unit) {
-    var bitmap by remember(file, index) { mutableStateOf<Bitmap?>(null) }
-    LaunchedEffect(file, index) {
-        var pending: Bitmap? = null
-        try {
-            val rendered = withContext(Dispatchers.IO) { PdfTools.renderPage(file, index, 260).also { pending = it } }
-            bitmap = rendered; pending = null
-        } finally { pending?.recycle() }
-    }
-    DisposableEffect(file, index) { onDispose { bitmap?.recycle() } }
+    val bitmap by rememberDisplayBitmap(file to index) {PdfTools.renderPage(file,index,260)}
     Column(
         Modifier.width(74.dp).clickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally

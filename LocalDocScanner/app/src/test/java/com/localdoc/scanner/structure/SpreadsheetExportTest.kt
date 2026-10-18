@@ -19,7 +19,24 @@ class SpreadsheetExportTest {
             ZipFile(output).use { zip ->
                 val sheet = zip.getInputStream(zip.getEntry("xl/worksheets/sheet1.xml")).bufferedReader().readText()
                 assertFalse(sheet.contains("<f>"))
+                assertTrue(sheet.contains("<dimension ref=\"A1:C2\"/>"))
                 assertNotNull(zip.getEntry("[Content_Types].xml"))
+            }
+        } finally { dir.deleteRecursively() }
+    }
+    @Test fun everySheetAdvertisesItsActualRaggedAndWideRange() {
+        val dir = Files.createTempDirectory("xlsx-ranges").toFile()
+        try {
+            val output = java.io.File(dir, "ranges.xlsx")
+            SpreadsheetExport.write(output, listOf(
+                "收据" to listOf(listOf("商户", "日期", "金额", "票号"), listOf("甲", "2026-10-17", "40", "001")),
+                "宽表" to listOf(listOf("标题"), List(28) { "列$it" }, listOf("尾")),
+                "空表" to emptyList()))
+            ZipFile(output).use { zip ->
+                listOf("A1:D2", "A1:AB3", "A1:A1").forEachIndexed { i, range ->
+                    val xml = zip.getInputStream(zip.getEntry("xl/worksheets/sheet${i + 1}.xml")).bufferedReader().readText()
+                    assertTrue(xml, xml.contains("<dimension ref=\"$range\"/>"))
+                }
             }
         } finally { dir.deleteRecursively() }
     }

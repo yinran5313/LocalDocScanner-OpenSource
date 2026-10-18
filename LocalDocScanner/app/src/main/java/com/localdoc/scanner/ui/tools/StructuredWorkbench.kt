@@ -10,6 +10,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.testTag
+import com.localdoc.scanner.ui.components.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.localdoc.scanner.ui.components.ScannerTopBar
@@ -44,6 +47,8 @@ internal fun StructuredWorkbench(request: ToolRequest, vm: AppViewModel, onBack:
     var template by rememberToolState(request, "template") { "编号=(?:号码|编号)[：:\\s]*(\\S+)" }
     var pages by rememberToolState<List<ReviewPage>>(request, "reviewPages") { emptyList() }
     var focus by remember { mutableStateOf<SourceFocus?>(null) }
+    var settingsOpen by remember { mutableStateOf(false) }
+    var resultOpen by remember { mutableStateOf(false) }
     var selected by rememberToolState(request, "selectedPage") { 0 }
     var rowPage by rememberToolState(request, "rowPage") { 0 }
     var status by rememberToolState(request, "batchStatus") { "" }
@@ -75,6 +80,7 @@ internal fun StructuredWorkbench(request: ToolRequest, vm: AppViewModel, onBack:
         if (exportTask?.state == ToolTaskState.SUCCEEDED) {
             exported = withContext(Dispatchers.IO) { ToolTasks.outcome(context, exportTask!!.id)?.files?.firstOrNull() }
             status = "已生成XLSX，复核状态与原文已保留，请保存到手机。"
+            resultOpen = true
         }
     }
     fun extract(raw: String): Map<String, String> = when (kind) {
@@ -97,10 +103,13 @@ internal fun StructuredWorkbench(request: ToolRequest, vm: AppViewModel, onBack:
     }
     fun recognize() {
         if (busy) return
+        if(useTableModel && !com.localdoc.scanner.models.ModelCatalog.installed(context,com.localdoc.scanner.models.ModelCatalog.get(context,"table"))) {
+            status="尚未安装表格结构模型，可在模型管理下载或导入；也可关闭结构模型，使用基础行列识别。";return
+        }
         val parameters = ToolDrafts.snapshot(context, request)
         submitting = true
         scope.launch {
-            try { recognizeId = ToolTasks.submit(context, request, parameters); pages = emptyList(); exported = null }
+            try { recognizeId = ToolTasks.submit(context, request, parameters); exported = null; settingsOpen = false }
             catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; status = "提交失败：${e.message}" }
             finally { submitting = false }
         }
@@ -115,10 +124,10 @@ internal fun StructuredWorkbench(request: ToolRequest, vm: AppViewModel, onBack:
             finally { submitting = false }
         }
     }
-    Scaffold(modifier, topBar = { ScannerTopBar(request.tool.label, onBack, "识别与人工复核") }) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    @Composable
+    fun configuration() {
             Text("表格行列和票据字段为识别建议，请对照原图复核。合并单元格和复杂版面需要手工调整。")
-            if (!tableOnly) Row {
+            if (!tableOnly) WrappingOptions {
                 listOf("发票", "小票/收据", "自定义").forEachIndexed { i, name -> FilterChip(kind == i, { kind = i }, label = { Text(name) }) }
             }
             if (kind == 2 && !tableOnly) OutlinedTextField(template, { template = it }, label = { Text("一行一个字段名=正则，第一捕获组为值") }, modifier = Modifier.fillMaxWidth())
@@ -135,30 +144,18 @@ internal fun StructuredWorkbench(request: ToolRequest, vm: AppViewModel, onBack:
                     catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; status = e.message.orEmpty() }
                 } })
             }
-            if (status.isNotBlank()) Text(status)
-            val unfinished = pages.count { it.error.isNotBlank() || !it.reviewed }
-            if (pages.isNotEmpty()) {
-                Text("${pages.count { it.reviewed }}/${pages.size}份已复核 · $unfinished 份待处理")
-                TextButton({ val next = ((selected + 1 until pages.size) + (0..selected)).firstOrNull { pages[it].error.isNotBlank() || !pages[it].reviewed }; if (next != null) { selected = next; rowPage = 0; focus = null } }) { Text("跳到下一份待复核") }
-            }
-            if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-            if (pages.isNotEmpty()) {
-                selected = selected.coerceIn(0, pages.lastIndex)
-                val current = pages[selected]
-                focus?.let { SourceLocatorDialog(current, it) { focus = null } }
-                com.localdoc.scanner.ui.components.WrappingOptions {
-                    TextButton(onClick = { selected--; rowPage = 0; focus = null }, enabled = selected > 0) { Text("上一份") }
-                    Text("${selected + 1}/${pages.size} · 第${current.page + 1}页")
-                    TextButton(onClick = { selected++; rowPage = 0; focus = null }, enabled = selected < pages.lastIndex) { Text("下一份") }
-                }
-                FilePreview(listOf(File(current.source)), "原文件 ${File(current.source).name} · 第${current.page + 1}页", pdfInitialPage = current.page)
+
+    }
+    @Composable
+    fun fieldEditor(current: ReviewPage, paneModifier: Modifier) {
+        Column(paneModifier.verticalScroll(rememberScrollState()).imePadding().padding(horizontal=4.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
                 if (current.error.isNotBlank()) Text(current.error, color = MaterialTheme.colorScheme.error)
                 current.layoutNote?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                 OutlinedTextField(current.raw, { replace(current.copy(raw = it, error = "")) }, label = { Text("识别原文，可修正后重新提取") }, minLines = 3, maxLines = 6, modifier = Modifier.fillMaxWidth())
                 if (!tableOnly) {
                     TextButton(onClick = { runCatching { extract(current.raw) }.onSuccess { replace(current.copy(fields = it)) }.onFailure { status = "模板错误：${it.message}" } }) { Text("按当前类型重新提取字段") }
                     current.fields.filterKeys { it != "勾稽校验" }.forEach { (key, value) ->
-                        OutlinedTextField(value, { replace(current.copy(fields = current.fields + (key to it))) }, label = { Text(key) }, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(value, { replace(current.copy(fields = current.fields + (key to it))) }, label = { Text(key) }, modifier = Modifier.fillMaxWidth().testTag("review-field-$key").onFocusChanged { if(it.isFocused) focus=SourceFocus(key,value) })
                         TextButton({ focus = SourceFocus(key, value) }) { Text("对照原图 · $key") }
                     }
                     if (kind == 0) { Text(InvoiceReview.revalidated(current.fields,current.rows)["勾稽校验"].orEmpty()); InvoiceReview.issues(current.fields, current.rows).forEach { Text(it, color = MaterialTheme.colorScheme.error) } }
@@ -171,13 +168,13 @@ internal fun StructuredWorkbench(request: ToolRequest, vm: AppViewModel, onBack:
                         row.forEachIndexed { column, cell -> Column { OutlinedTextField(cell, { value ->
                             val rows = current.rows.mapIndexed { r, old -> if (r == rowStart + offset) old.mapIndexed { c, oldCell -> if (c == column) value else oldCell } else old }
                             replace(current.copy(rows = rows))
-                        }, label = { Text("${rowStart + offset + 1}:${column + 1}") }, modifier = Modifier.width(130.dp))
+                        }, label = { Text("${rowStart + offset + 1}:${column + 1}") }, modifier = Modifier.width(130.dp).onFocusChanged { if(it.isFocused) focus=SourceFocus("第${rowStart+offset+1}行第${column+1}列",cell,rowStart+offset,column) })
                             TextButton({ focus = SourceFocus("第${rowStart + offset + 1}行第${column + 1}列", cell, rowStart + offset, column) }) { Text("定位原图") }
                         } }
                         TextButton(onClick = { replace(current.copy(rows = current.rows.filterIndexed { r, _ -> r != rowStart + offset })) }) { Text("删行") }
                     } }
                 }
-                Row {
+                WrappingOptions {
                     TextButton(onClick = { rowPage-- }, enabled = rowStart > 0) { Text("前10行") }
                     TextButton(onClick = { rowPage++ }, enabled = rowStart + 10 < current.rows.size) { Text("后10行") }
                     TextButton(onClick = { replace(current.copy(rows = current.rows + listOf(List(current.rows.maxOfOrNull { it.size }?.coerceAtLeast(1) ?: 1) { "" }))) }) { Text("加行") }
@@ -187,18 +184,55 @@ internal fun StructuredWorkbench(request: ToolRequest, vm: AppViewModel, onBack:
                 TableReviewOptions(current) { replace(it) }
                 Row { Switch(combinePages, { combinePages = it; exported = null }); Text("将同列数的跨页表格合并为一张表") }
                 if(combinePages) Row { Switch(skipHeaders, { skipHeaders = it; exported = null }); Text("移除完全相同的重复表头") }
-                Button(onClick = { pages = pages.mapIndexed { i, p -> if (i == selected) p.copy(reviewed = true) else p } }) { Text(if (current.reviewed) "此页已确认" else "确认此页已复核") }
-                Button(onClick = ::export, enabled = !busy) { Text("生成XLSX汇总与明细") }
-            } else FilePreview(request.files, "输入文件")
+        }
+    }
+    LaunchedEffect(pages.size) {selected=selected.coerceIn(0,pages.lastIndex.coerceAtLeast(0))}
+    val current=pages.getOrNull(selected.coerceIn(0,pages.lastIndex.coerceAtLeast(0)))
+    Scaffold(modifier,topBar={ ScannerTopBar(request.tool.label,onBack,if(pages.isEmpty()) "识别与人工复核" else "已复核 ${pages.count { it.reviewed }} / ${pages.size}") },bottomBar={
+        if(current!=null && !(resultOpen && exported?.isFile==true)) ActionDock {
+            AdaptiveActions(listOf(
+                DockAction(if(current.reviewed) "已确认 · 下一份" else "确认本份",{
+                    pages=pages.mapIndexed { i,p -> if(i==selected) p.copy(reviewed=true) else p }
+                    val next=((selected+1 until pages.size)+(0 until selected)).firstOrNull { !pages[it].reviewed }
+                    if(next!=null) {selected=next;rowPage=0;focus=null}
+                },enabled=!busy && current.error.isBlank()),
+                DockAction("导出XLSX · ${pages.size}份",::export,style=ActionStyle.OUTLINED,enabled=!busy)))
+        }
+    }) { padding ->
+        if(resultOpen && exported?.isFile==true) Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(14.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+            Text(status)
             exported?.takeIf(File::isFile)?.let { file ->
+                OutputFileDetails(file,status)
                 FilePreview(listOf(file), "导出预览")
                 com.localdoc.scanner.ui.components.SaveDefaultButton(listOf(file)) { status = it }
-                Row {
-                    Button(onClick = { save.launch(file.name) }) { Text("保存到手机") }
-                    TextButton(onClick = { Share.file(context, file, OutputHistoryStore.mimeFor(file)) }) { Text("分享") }
-                    TextButton(onClick = { Share.open(context, file, OutputHistoryStore.mimeFor(file)) }) { Text("完整表格") }
-                }
+                AdaptiveActions(listOf(DockAction("另存为",{save.launch(file.name)}),DockAction("分享",{Share.file(context,file,OutputHistoryStore.mimeFor(file))},style=ActionStyle.OUTLINED)))
+                TextButton({Share.open(context,file,OutputHistoryStore.mimeFor(file))}) {Text("在内置Office打开完整表格")}
             }
+
+            TextButton({resultOpen=false}) {Text("继续复核 / 修改")}
+        } else if(current==null) Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(14.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+            ToolGuide(request.tool)
+            configuration()
+            if(status.isNotBlank()) Text(status)
+            FilePreview(request.files,"输入文件")
+        } else Column(Modifier.fillMaxSize().padding(padding).padding(horizontal=10.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+            Row(Modifier.fillMaxWidth(),verticalAlignment=androidx.compose.ui.Alignment.CenterVertically) {
+                TextButton({selected=(selected-1).coerceAtLeast(0);rowPage=0;focus=null},enabled=selected>0) {Text("上一份")}
+                Text("${selected+1}/${pages.size} · 第${current.page+1}页",Modifier.weight(1f),style=MaterialTheme.typography.labelMedium)
+                TextButton({selected=(selected+1).coerceAtMost(pages.lastIndex);rowPage=0;focus=null},enabled=selected<pages.lastIndex) {Text("下一份")}
+            }
+            Row(Modifier.fillMaxWidth(),verticalAlignment=androidx.compose.ui.Alignment.CenterVertically) {
+                Text(if(current.reviewed) "已确认" else if(current.error.isNotBlank()) "识别失败 · 可重新识别" else "待复核 · 改动后需重新确认",Modifier.weight(1f),style=MaterialTheme.typography.bodySmall,color=if(current.reviewed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                TextButton({settingsOpen=true}) {Text("识别设置")}
+                if(exported?.isFile==true) TextButton({resultOpen=true}) {Text("导出结果")}
+            }
+            if(busy) { LinearProgressIndicator(Modifier.fillMaxWidth()); Text(recognition?.label.orEmpty(),style=MaterialTheme.typography.bodySmall) }
+            ReviewSplit(Modifier.weight(1f),source={SourceReviewPane(current,focus,it)},fields={fieldEditor(current,it)})
+        }
+    }
+    if(settingsOpen) ModalBottomSheet(onDismissRequest={settingsOpen=false}) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).imePadding().padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+            ToolGuide(request.tool); configuration(); TextButton({settingsOpen=false}) {Text("返回复核")}
         }
     }
 }

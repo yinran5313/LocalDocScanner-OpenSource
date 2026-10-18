@@ -1,6 +1,8 @@
 # 拾页 · LocalDocScanner
 
-Android 离线扫描、文档库、PP-OCRv6 tiny/medium、PDF工具及同包Office编辑器。开发候选版 **5.0.2 / V5.0.2**，ARM64，Android8.0及以上。
+Android 离线扫描、文档库、PP-OCRv6 medium、PDF工具及同包Office编辑器。当前版本 **5.2.0 / versionCode 21**，ARM64，Android8.0及以上。OCR仅内置medium，其它模型可选下载或离线导入。
+
+V5.2修复收据金额/商户、XLSX范围、工具任务续跑、PDF搜索退页与表格五列恢复；补大画布/底部工具、范围选择、原图联动校订、计数纠错、翻译原文复核、批注对象撤销重做和统一文件结果入口。范围、验证和保留边界见 [V5.2说明](docs/V5.2.0_PROGRESS.md)。
 
 支持多页拍摄与手动四角裁边、OpenCV 透视和增强、连续扫描换页判断、可调书籍双页拆分、OCR 与可搜索 PDF、PDF 批注/手写/表单、工作副本预览、另存和分享。文档保存在手机本地。
 

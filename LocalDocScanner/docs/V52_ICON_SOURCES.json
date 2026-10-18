@@ -1,0 +1,47 @@
+[
+  {
+    "file": "app/src/main/res/drawable/ic_ui_undo.xml",
+    "source": "https://github.com/google/material-design-icons/blob/master/src/content/undo/materialicons/24px.svg",
+    "license": "Apache-2.0",
+    "sha256": "a6c4ac59d01c9cbfddbb47ba1e588078c1f06a2cc2da482e7d0d03f83e1ab63d",
+    "adaptation": "VectorDrawable conversion; original path geometry unchanged"
+  },
+  {
+    "file": "app/src/main/res/drawable/ic_ui_redo.xml",
+    "source": "https://github.com/google/material-design-icons/blob/master/src/content/redo/materialicons/24px.svg",
+    "license": "Apache-2.0",
+    "sha256": "fc40f7791ea08a850177e6d88d771cebfd6fd0883f30f51afd5151fac1fcbdd9",
+    "adaptation": "VectorDrawable conversion; original path geometry unchanged"
+  },
+  {
+    "file": "app/src/main/res/drawable/ic_ui_delete.xml",
+    "source": "https://github.com/google/material-design-icons/blob/master/src/action/delete_outline/materialicons/24px.svg",
+    "license": "Apache-2.0",
+    "sha256": "5b900071bfcfdf4ce9716f8afad5fe5e99b72ded8e05000f5a061577f12e24b0",
+    "adaptation": "VectorDrawable conversion; original path geometry unchanged"
+  },
+  {
+    "file": "app/src/main/res/drawable/ic_tool_edit.xml",
+    "source": "https://github.com/google/material-design-icons/blob/master/src/image/edit/materialicons/24px.svg",
+    "license": "Apache-2.0",
+    "sha256": "b6b153a7a6952df2f6017481a14f47f46836a37c830255555075c2762f09e44c",
+    "original_svg_sha256": "2301568113724db8d9e6c1cdf649d16af34da24e223a1f6a295d867a2b2037c9",
+    "adaptation": "VectorDrawable conversion; original path geometry unchanged"
+  },
+  {
+    "file": "app/src/main/res/drawable/ic_tool_receipt.xml",
+    "source": "https://github.com/google/material-design-icons/blob/master/src/action/receipt/materialicons/24px.svg",
+    "license": "Apache-2.0",
+    "sha256": "0f48e505600bdbabf3a074868f363dca7acc211d9d86dac6b195f94a5c070649",
+    "original_svg_sha256": "f9de1e89d1191c6845a8213f1cfb0128bc96096823a1eabdf0a291ffadfae660",
+    "adaptation": "VectorDrawable conversion; original path geometry unchanged"
+  },
+  {
+    "file": "app/src/main/res/drawable/ic_tool_grid.xml",
+    "source": "https://github.com/google/material-design-icons/blob/master/src/image/grid_on/materialicons/24px.svg",
+    "license": "Apache-2.0",
+    "sha256": "1e371c8e7611845449ed33d3b22dd3c07a89d91e99f21459f1a41a70a86603e7",
+    "original_svg_sha256": "311f4b21332b9b44095763385acb4945aff2251f5d7569d14c347e5565c6a51d",
+    "adaptation": "VectorDrawable conversion; original path geometry unchanged"
+  }
+]

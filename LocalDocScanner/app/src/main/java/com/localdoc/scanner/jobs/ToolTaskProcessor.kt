@@ -66,7 +66,7 @@ internal class ToolTaskProcessor(private val context: Context, private val spec:
         val page = parameter("pageIndex", 0)
         val found = SensitiveRegionDetector.detect(context, first, page, parameter("keywords", emptyList<String>()))
         FlowOutcome(listOf("结果" to "找到${found.size}个候选，请人工确认"), emptyList(), sensitiveRegions = found)
-    } else when (spec.request.tool.id) {
+    } else if(spec.action=="translate_review") translateImage() else when (spec.request.tool.id) {
         "images_to_pdf" -> imagesToPdf()
         "image_ppt" -> {
             val order = parameter("order", inputs)
@@ -353,19 +353,25 @@ internal class ToolTaskProcessor(private val context: Context, private val spec:
     }
 
     private suspend fun translateImage(): FlowOutcome {
-        total = 2
-        val sourceText = step("translate-ocr", "medium识别原文") {
+        val supplied=parameter("translationSource", "").trim()
+        total = if(supplied.isBlank()) 2 else 1
+        val sourceOcr = if(supplied.isNotBlank()) OcrOutcome(supplied,supplied.lines().size,0,0) else step("translate-ocr-v52", "medium识别原文") {
+            // Preserve a completed V5.1 text-only receipt instead of running OCR again.
+            val legacy=journal.load("translate-ocr")?.payload?.let {runCatching {com.google.gson.JsonParser.parseString(it).takeIf {json ->json.isJsonPrimitive}?.asString}.getOrNull()}
+            if(!legacy.isNullOrBlank()) return@step OcrOutcome(legacy,legacy.lines().size,0,0)
             val bitmap = ImageIo.loadFromFile(first, 3600) ?: error("无法读取图片")
-            val engine = PaddleOcrEngine(context)
-            try { engine.recognize(bitmap, true).text.also { require(it.isNotBlank()) { "没有识别到文字" } } }
+            val engine = recognizerForTest ?: PaddleOcrEngine(context)
+            try { engine.recognize(bitmap, true).also { require(it.text.isNotBlank()) { "没有识别到文字" } } }
             finally { bitmap.recycle(); engine.close() }
         }
+        val sourceText=sourceOcr.text
         val translated = step("translate", "本地翻译") {
             com.localdoc.scanner.models.LocalTranslation.translate(context, sourceText, parameter("chineseToEnglish", true))
         }
         val text = "原文\n$sourceText\n\n译文\n$translated"
         val target = file("翻译结果.txt"); AtomicFiles.text(target, text)
-        return FlowOutcome(listOf("结果" to "译文请核对姓名、数字和专有名词"), listOf(target), copyText = text)
+        return FlowOutcome(listOf("方向" to if(parameter("chineseToEnglish",true)) "中文→英文" else "英文→中文", "结果" to "译文请核对姓名、数字和专有名词"), listOf(target), copyText = text,
+            reviewPages=listOf(ReviewPage(first.absolutePath,0,sourceText,mapOf("译文" to translated),emptyList(),sourceBoxes=sourceOcr.boxes)))
     }
 
     private suspend fun structuredMarkdown(): FlowOutcome {
@@ -571,7 +577,7 @@ internal class ToolTaskProcessor(private val context: Context, private val spec:
         val medium = true // All new and legacy tool requests use the bundled medium model.
         val searchable = !structured && !card && parameter("searchable", true)
         val counts = inputs.map { if (it.extension.equals("pdf", true)) PdfTools.pageCount(it) else 1 }
-        total = counts.sum() + if (structured || card) 0 else if (searchable) 2 else 1
+        total = counts.sum() * (if (structured && parameter("useTableModel",false)) 2 else 1) + if (structured || card) 0 else if (searchable) 2 else 1
         val failures = mutableListOf<String>()
         val pages = mutableListOf<RecognizedPage>()
         val reviews = mutableListOf<ReviewPage>()
@@ -598,11 +604,11 @@ internal class ToolTaskProcessor(private val context: Context, private val spec:
                             var rows = TableRecovery.fromBoxes(value.boxes).ifEmpty { TableRecovery.fromText(value.text) }
                             var table: com.localdoc.scanner.models.ModelTable? = null; var note = "基础行列恢复，请复核"
                             if (parameter("useTableModel", false)) {
-                                try { table = step("table-layout:$fileIndex:$index", "恢复表格结构") {
+                                try { val recovered = step("table-region-v52:$fileIndex:$index", "定位表格并恢复行列") {
                                     val bitmap = if (source.extension.equals("pdf", true)) PdfTools.renderPage(source, index, 2600) else ImageIo.loadFromFile(source, 3200)
                                     requireNotNull(bitmap)
-                                    try { com.localdoc.scanner.models.TableModel.recover(context, bitmap, value.boxes) } finally { bitmap.recycle() }
-                                }; rows = table.rows; note = "模型建议的行列与合并格，置信度${table.score}；请逐格复核" }
+                                    try { PageTableRecovery.recover(context, bitmap, value.boxes) } finally { bitmap.recycle() }
+                                }; table = recovered.table; rows = table.rows; note = recovered.note }
                                 catch (e: Exception) { propagate(e); note = "结构模型未恢复：${e.message}；已保留基础行列和medium文字结果" }
                             }
                             if (spec.request.tool.id == "batch_extract" && parameter("batchKind",0) == 0) rows = com.localdoc.scanner.structure.InvoiceReview.itemRows(rows)
@@ -634,7 +640,8 @@ internal class ToolTaskProcessor(private val context: Context, private val spec:
             else failures += "存在未成功页面，可搜索PDF暂不合并；续跑成功后再生成完整PDF"
         }
         return FlowOutcome(listOf("字数" to "${text.length}", "识别页数" to "${pages.size}/${counts.sum()}") + failureSummary(failures), outputs,
-            copyText = text, failures = failures)
+            copyText = text, failures = failures, ocrReviewTaskId = spec.id,
+            ocrReviewKeys = pages.map { "ocr:${inputs.indexOf(File(it.source))}:${it.page}" })
     }
     private fun fields(raw: String) = when (parameter("batchKind", 0)) {
         0 -> com.localdoc.scanner.structure.InvoiceReview.fields(raw)
@@ -660,15 +667,16 @@ internal class ToolTaskProcessor(private val context: Context, private val spec:
     }
     private suspend fun barcode(): FlowOutcome {
         total = inputs.size + 1
-        val found = inputs.flatMapIndexed { i, source -> step("barcode:$i", "识别条码 ${i + 1}/${inputs.size}") {
+        val found = inputs.flatMapIndexed { i, source -> step("barcode-v52:$i", "识别条码 ${i + 1}/${inputs.size}") {
             val bitmap = ImageIo.loadFromFile(source, 2000) ?: error("图片读取失败")
-            try { BarcodeDecoder.decode(bitmap).map { it.text } } finally { bitmap.recycle() }
+            try { BarcodeDecoder.decode(bitmap).map { com.localdoc.scanner.barcode.BarcodeRecord(it.text,it.barcodeFormat.name,System.currentTimeMillis()) } } finally { bitmap.recycle() }
         } }
         if (found.isEmpty()) return FlowOutcome(listOf("结果" to "没有识别到条码"), emptyList())
         val target = step("barcode-text:${version(found)}", "保存条码结果", { listOf(it) }) {
-            file("条码.txt").also { AtomicFiles.text(it, found.joinToString("\n")) }
+            file("条码.txt").also { AtomicFiles.text(it, found.joinToString("\n") {it.text}) }
         }
-        return FlowOutcome(found.mapIndexed { i, s -> "结果${i + 1}" to s }, listOf(target), copyText = found.first())
+        found.forEach {com.localdoc.scanner.barcode.BarcodeHistory.add(context,it.text,it.format)}
+        return FlowOutcome(found.mapIndexed { i, s -> "结果${i + 1}" to s.text }, listOf(target), copyText = found.first().text,barcodeRecords=found)
     }
     private data class ImageUnit(val files: List<File>, val notes: List<String>)
     private suspend fun editImages(): FlowOutcome {
@@ -682,6 +690,9 @@ internal class ToolTaskProcessor(private val context: Context, private val spec:
         val flatten = parameter("flattenBook", false)
         val reverse = parameter("bookRightFirst", false)
         val makePdf = parameter("imageBatchPdf", true)
+        val targets = if(mode==2) order.map {it.absolutePath}.toSet() else com.localdoc.scanner.cv.ImageApplyScope.resolve(
+            order.map {it.absolutePath},parameter("imageScope",0),parameter("imageSelected",0),parameter("imageTargets",emptyList<String>()))
+        require(targets.isNotEmpty()) { "请至少选择一张要修改的图片" }
         total = (if (mode == 2) 1 else order.size) + if (makePdf) 1 else 0
         val outputs = mutableListOf<File>(); val notes = mutableListOf<String>(); val failures = mutableListOf<String>()
         val groups = if (mode == 2) { require(order.size == 2) { "证件拼版须选正反面两张图" }; listOf(order) } else order.map(::listOf)
@@ -696,6 +707,10 @@ internal class ToolTaskProcessor(private val context: Context, private val spec:
                             ImageBatchProcessor.render(bitmap, rotation, skew, filter).bitmap.also { owned += it }
                         }
                         val sheet = DocumentLayouts.idCardSheet(sides[0], sides[1]).also { owned += it }; save(sheet, "证件双面")
+                    } else if(group.first().absolutePath !in targets) {
+                        val original=group.first()
+                        val copy=file("图片${index+1}_保留原图.${original.extension}")
+                        AtomicFiles.copy(original,copy);generated+=copy
                     } else {
                         val source = requireNotNull(ImageIo.loadFromFile(group.first(), 3200)).also { owned += it }
                         val pages = if (mode == 1) {

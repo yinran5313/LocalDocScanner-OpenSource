@@ -55,7 +55,7 @@ class V51AdvancedLayoutTest {
                 for((w,h,f) in listOf(Triple(280,640,1.5f),Triple(320,640,2f),Triple(600,800,1.3f),Triple(800,360,1.5f))) {
                     compose.runOnIdle { tool=id; width=w; height=h; font=f }
                     compose.waitForIdle()
-                    val action=compose.onNodeWithText(if(id=="region_erase") "修补选区并预览" else "开始处理",useUnmergedTree=true)
+                    val action=compose.onNodeWithText(if(id=="region_erase") "修补选区并预览" else "开始处理",substring=true,useUnmergedTree=true)
                     action.assertIsDisplayed()
                     val controls=compose.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsActions.GetTextLayoutResult),useUnmergedTree=true).fetchSemanticsNodes()
                     for(node in controls) {
@@ -65,7 +65,7 @@ class V51AdvancedLayoutTest {
                         if(clipped) compose.onRoot().captureToImage().asAndroidBitmap().let { image -> File(app.filesDir,"testmodels/layout-failure.png").outputStream().use { image.compress(Bitmap.CompressFormat.PNG,100,it) } }
                         assertFalse("Text clips at $id $w/$f: ${layouts.map { "${it.layoutInput.text}: size=${it.size} paragraph=${it.multiParagraph.width}x${it.multiParagraph.height} overflow=${it.didOverflowWidth}/${it.didOverflowHeight}" }}",clipped)
                     }
-                    if(id=="pdf_enhance") compose.onNodeWithText("页码范围",useUnmergedTree=true).performScrollTo().assertIsDisplayed()
+                    if(id=="pdf_enhance") compose.onNodeWithText("处理范围",useUnmergedTree=true).performScrollTo().assertIsDisplayed()
                 }
             }
         } finally { input.delete() }

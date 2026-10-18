@@ -1,10 +1,12 @@
-# LocalDocScanner 本地文档扫描
+# 拾页 · LocalDocScanner
 
-Android 离线扫描、文档库、PP-OCRv6 tiny/medium、PDF工具及同包Office编辑器。开发候选版 **4.3.2-rc1**，ARM64，Android8.0及以上。
+Android 离线扫描、文档库、PP-OCRv6 medium、PDF工具及同包Office编辑器。当前版本 **5.2.0 / versionCode 21**，ARM64，Android8.0及以上。OCR仅内置medium，其它模型可选下载或离线导入。
 
 支持多页拍摄与手动四角裁边、OpenCV 透视和增强、连续扫描换页判断、可调书籍双页拆分、OCR 与可搜索 PDF、PDF 批注/手写/表单、工作副本预览、另存和分享。文档保存在手机本地。
 
-本版将Collabora完整Office引擎接入同一APK，打开Office文件后进入内置真实排版界面；无需另装Office App。书籍双页可启用Leptonica文字行曲率展平，不可靠的模型保留原页。PDF压缩只处理图片对象并保留文字/表单/批注，转图片与永久打码按页释放位图。**当前为构建候选版，Office往返、相机和展平效果尚未通过手机验收；任意PDF转完整可编辑Office及证书数字签名尚未实现。** 详细复用入口见 [源码复用矩阵](../docs/SOURCE_REUSE.md)。
+同一APK内含Collabora Office引擎，可新建、打开和编辑Word/Excel/PPT工作副本。支持任务检查点、PDF批注/表单/手写与证书签名、表格和票据复核，以及可选本地模型。V5.2修复收据抽取、XLSX维度、续跑竞态、搜索退页和五列表格，改善大画布/底部工具、原图联动校订与结果保存分享。详见 [V5.2说明](docs/V5.2.0_PROGRESS.md) 和 [复用矩阵](docs/SOURCE_REUSE.md)。
+
+新版的模拟器、静态与文件回读验证不代替手机验收。真实拍摄、曲面/反光处理效果、手机Office编辑往返、外部接收与打印仍需真机专项验证。不提供文档问答摘要、PDF转完整可编辑Word或元素可编辑PPT，不依赖云端会员服务。
 
 ## 构建
 

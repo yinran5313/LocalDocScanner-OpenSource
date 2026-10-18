@@ -18,6 +18,8 @@ import androidx.compose.ui.input.pointer.*
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import com.localdoc.scanner.pdf.*
 import kotlinx.coroutines.*
@@ -35,7 +37,11 @@ internal fun PdfContinuousPages(session:PdfReadSession, listState:LazyListState,
         catch (e: Exception) { if (e is CancellationException) throw e }
     }
     val pageCallback by rememberUpdatedState(onPageChanged)
-    LaunchedEffect(listState,session) { snapshotFlow { listState.firstVisibleItemIndex }.collect { pageCallback(it) } }
+    LaunchedEffect(listState,session,snapPages) { snapshotFlow {
+        val first = listState.firstVisibleItemIndex
+        val size = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == first }?.size ?: 0
+        PdfViewportMath.resizedAnchor(first,listState.firstVisibleItemScrollOffset,size,size,snapPages && zoom==1f,session.pageCount).first
+    }.collect { pageCallback(it) } }
     LaunchedEffect(listState, snapPages, zoom == 1f) {
         if (!snapPages || zoom != 1f) return@LaunchedEffect
         snapshotFlow { listState.isScrollInProgress }.collect { moving ->
@@ -49,9 +55,20 @@ internal fun PdfContinuousPages(session:PdfReadSession, listState:LazyListState,
     }
     val snap=rememberSnapFlingBehavior(listState,SnapPosition.Start)
     val normal=ScrollableDefaults.flingBehavior()
-    BoxWithConstraints(modifier.clipToBounds().background(MaterialTheme.colorScheme.surfaceContainer).testTag("pdf-pages")) {
+    BoxWithConstraints(modifier.clipToBounds().background(MaterialTheme.colorScheme.surfaceContainer).testTag("pdf-pages").semantics {stateDescription="缩放${(zoom*100).toInt()}%"}) {
         val viewWidth=with(density) { maxWidth.toPx() }
         val viewHeight=maxHeight
+        val geometry = Triple(maxWidth,maxHeight,snapPages && zoom==1f)
+        var previousGeometry by remember(session) { mutableStateOf(geometry) }
+        if (previousGeometry != geometry) {
+            // Capture before LazyColumn remeasures. Pixel offsets from the old
+            // viewport otherwise land one page early when a search bar closes.
+            val index=listState.firstVisibleItemIndex
+            val oldSize=listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index==index }?.size ?: 0
+            val newSize=with(density) { (if(snapPages && zoom==1f) maxHeight else (maxWidth-16.dp)*zoom/ratios.getOrElse(index) { .707f }).roundToPx() }
+            val anchor=PdfViewportMath.resizedAnchor(index,listState.firstVisibleItemScrollOffset,oldSize,newSize,snapPages && zoom==1f,session.pageCount)
+            SideEffect { previousGeometry=geometry; listState.requestScrollToItem(anchor.first,anchor.second) }
+        }
         val latestZoom by rememberUpdatedState(zoom)
         val latestPan by rememberUpdatedState(pan)
         val transform by rememberUpdatedState<(Float,Offset,Offset)->Unit>({ factor,center,movement ->
@@ -104,22 +121,12 @@ internal fun PdfContinuousPages(session:PdfReadSession, listState:LazyListState,
 
 @Composable
 private fun PdfRenderedPage(session:PdfReadSession,index:Int,resolution:Int,modifier:Modifier) {
-    val ownership=remember(session,index) { com.localdoc.scanner.util.BitmapOwnership() }
-    var bitmap by remember(session,index) { mutableStateOf<Bitmap?>(null) }
-    var error by remember { mutableStateOf("") }
+    var error by remember(session,index) {mutableStateOf("")}
     val tier=(resolution/200)*200
-    LaunchedEffect(session,index,tier) {
+    val bitmap by com.localdoc.scanner.ui.components.rememberDisplayBitmap(session to index,tier,onError={error="页面读取失败：${it.message}"}) {
         delay(120)
-        var pending:Bitmap?=null
-        try {
-            val image=withContext(Dispatchers.IO) { session.render(index,tier)?.also { pending=ownership.adopt(it) } }
-            val old=bitmap; bitmap=image; pending=null
-            ownership.retire(old)
-            if(image==null) error="无法显示第${index+1}页"
-        } catch(e:Exception) { if(e is CancellationException) throw e; error="页面读取失败：${e.message}" }
-        finally { ownership.retire(pending) }
+        session.render(index,tier).also {if(it==null) error="无法显示第${index+1}页"}
     }
-    DisposableEffect(ownership) { onDispose { ownership.dispose() } }
     val value=bitmap
     if(value!=null && !value.isRecycled) Image(value.asImageBitmap(),"第${index+1}页",modifier,contentScale=ContentScale.Fit)
     else Box(modifier,contentAlignment=Alignment.Center) { if(error.isBlank()) CircularProgressIndicator() else Text(error) }

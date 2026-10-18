@@ -1,6 +1,13 @@
 package com.localdoc.scanner.ui.tools
 
 import android.graphics.Bitmap
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.text.style.TextOverflow
+import com.localdoc.scanner.R
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -91,6 +98,7 @@ internal fun LongImageFlow(
 
 
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ImageEditFlow(
     request: ToolRequest, vm: AppViewModel, onBack: () -> Unit, onOpenDoc: (String) -> Unit,
@@ -109,7 +117,12 @@ internal fun ImageEditFlow(
     var previewNote by remember { mutableStateOf("") }
     var previewError by remember { mutableStateOf("") }
     var livePreview by remember { mutableStateOf<Bitmap?>(null) }
+    var scopeMode by rememberToolState(request,"imageScope") {0}
+    var chosen by rememberToolState<List<String>>(request,"imageTargets") {request.files.map {it.absolutePath}}
+    var settingsOpen by remember {mutableStateOf(false)}
     val selectedIndex = selected.coerceIn(order.indices)
+    val targets=if(mode==2) order.map {it.absolutePath}.toSet() else com.localdoc.scanner.cv.ImageApplyScope.resolve(order.map {it.absolutePath},scopeMode,selectedIndex,chosen)
+    val outputPages=if(mode==2) 1 else order.size+if(mode==1) targets.size else 0
     val selectedFile = order[selectedIndex]
     val split = splits[selectedFile.absolutePath] ?: .5f
     LaunchedEffect(selectedFile, mode) {
@@ -122,7 +135,7 @@ internal fun ImageEditFlow(
             splits = splits + (selectedFile.absolutePath to (hint?.ratio ?: .5f))
         }
     }
-    LaunchedEffect(selectedFile, order, filter, rotation, mode, split, flattenBook, deskew, rightFirst) {
+    LaunchedEffect(selectedFile, order, filter, rotation, mode, split, flattenBook, deskew, rightFirst,targets) {
         kotlinx.coroutines.delay(200)
         var pending: Bitmap? = null
         previewError = ""
@@ -137,8 +150,12 @@ internal fun ImageEditFlow(
                     return result.bitmap
                 }
                 try {
-                    pending = when (mode) {
-                        1 -> {
+                    pending = when {
+                        selectedFile.absolutePath !in targets && mode!=2 -> {
+                            note="此图未在应用范围内，输出会保留原图。"
+                            ImageIo.loadFromFile(selectedFile,1400) ?: error("图片读取失败")
+                        }
+                        mode==1 -> {
                             val source = ImageIo.loadFromFile(selectedFile, if (flattenBook) 4000 else 1400)
                                 ?: error("图片读取失败")
                             owned.add(source)
@@ -152,7 +169,7 @@ internal fun ImageEditFlow(
                             if (rightFirst) pages = pages.reversed()
                             Stitch.vertical(pages, 900) ?: error("无法生成双页预览")
                         }
-                        2 -> {
+                        mode==2 -> {
                             require(order.size == 2) { "证件拼版请只选择正反面两张图" }
                             val pages = order.map { file ->
                                 (ImageIo.loadFromFile(file, 1200) ?: error("图片读取失败")).also { owned.add(it) }
@@ -166,17 +183,15 @@ internal fun ImageEditFlow(
                     }
                 } finally { owned.distinct().filter { it !== pending }.forEach { it.recycle() } }
             }
-            livePreview?.takeIf { it !== pending }?.recycle()
             livePreview = pending; pending = null
             previewNote = note.trim()
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
-            livePreview?.recycle(); livePreview = null
+            livePreview = null
             previewError = e.message ?: "无法生成预览"
         } finally { pending?.recycle() }
     }
-    val currentPreview by rememberUpdatedState(livePreview)
-    DisposableEffect(Unit) { onDispose { currentPreview?.recycle() } }
+    // Displayed images are retained by Compose frames; Android releases their last reference.
 
     fun moveSelected(delta: Int) {
         val next = selectedIndex + delta
@@ -184,8 +199,7 @@ internal fun ImageEditFlow(
         order = order.toMutableList().apply { add(next, removeAt(selectedIndex)) }
         selected = next
     }
-    ToolFlow(request, vm, onBack, onOpenDoc, modifier, runLabel = "处理并生成文件", showInputPreview = false,
-        config = {
+    @Composable fun panel() {
             Text("处理方式", style = MaterialTheme.typography.titleSmall)
             ChipRow(listOf("编辑图片", "书本双页拆分", "证件双面拼版"), mode) { mode = it }
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -199,7 +213,18 @@ internal fun ImageEditFlow(
                 TextButton(onClick = { moveSelected(-1) }, enabled = selectedIndex > 0) { Text("向前移") }
                 TextButton(onClick = { moveSelected(1) }, enabled = selectedIndex < order.lastIndex) { Text("向后移") }
             }
-            Text("共${order.size}张；旋转、滤镜与纠偏应用于全部图片。请逐张检查预览。", style = MaterialTheme.typography.bodySmall)
+            Text("修改${targets.size}/${order.size}张，预计输出${outputPages}页；未选中的图片原样保留。",style=MaterialTheme.typography.bodySmall)
+            if(mode!=2) {
+                Text("应用范围",style=MaterialTheme.typography.titleSmall)
+                WrappingOptions {
+                    FilterChip(scopeMode==0,{scopeMode=0},label={Text("全部 · ${order.size}张")})
+                    FilterChip(scopeMode==1,{scopeMode=1},label={Text("当前 · 第${selectedIndex+1}张")})
+                    FilterChip(scopeMode==2,{scopeMode=2},label={Text("所选 · ${chosen.count {path -> order.any {it.absolutePath==path}}}张")})
+                }
+                if(scopeMode==2) WrappingOptions {order.forEachIndexed {index,file ->
+                    FilterChip(file.absolutePath in chosen,{chosen=if(file.absolutePath in chosen) chosen-file.absolutePath else chosen+file.absolutePath},label={Text("第${index+1}张")})
+                }}
+            }
             if (mode == 1) {
                 Text("当前第${selectedIndex + 1}张书缝：左 ${(split * 100).toInt()}% / 右 ${((1 - split) * 100).toInt()}%")
                 Slider(split, { splits = splits + (selectedFile.absolutePath to it) }, valueRange = .2f.. .8f)
@@ -213,11 +238,47 @@ internal fun ImageEditFlow(
             ChipRow(listOf("0°", "90°", "180°", "270°"), rotation) { rotation = it }
             Row(verticalAlignment = Alignment.CenterVertically) { Text("自动纠偏（保留完整边缘）", Modifier.weight(1f)); Switch(deskew, { deskew = it }) }
             Row(verticalAlignment = Alignment.CenterVertically) { Text("同时生成按序合并PDF", Modifier.weight(1f)); Switch(makePdf, { makePdf = it }) }
-            Text("实时处理预览", style = MaterialTheme.typography.titleSmall)
-            if (previewError.isNotBlank()) Text(previewError, color = MaterialTheme.colorScheme.error)
-            else livePreview?.let { ZoomableImage(it, "${selectedFile.path}:$mode:$split:$rotation:$filter", Modifier.fillMaxWidth().height(360.dp)) }
-                ?: Text("正在生成预览…")
-            if (previewNote.isNotBlank()) Text(previewNote, style = MaterialTheme.typography.bodySmall)
+    }
+    @Composable fun canvas(pane:Modifier) {
+        BoxWithConstraints(pane) {
+        val compact=maxHeight<240.dp
+        Column(Modifier.fillMaxSize(),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+            Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+                IconButton({selected=(selectedIndex-1).coerceAtLeast(0)},enabled=selectedIndex>0) {AppIcon(R.drawable.ic_ui_back,"上一张")}
+                Text("${selectedIndex+1} / ${order.size}",Modifier.weight(1f),style=MaterialTheme.typography.labelMedium,textAlign=androidx.compose.ui.text.style.TextAlign.Center)
+                IconButton({selected=(selectedIndex+1).coerceAtMost(order.lastIndex)},enabled=selectedIndex<order.lastIndex) {AppIcon(R.drawable.ic_ui_back,"下一张",Modifier.rotate(180f))}
+            }
+            if(previewError.isNotBlank()) Text(previewError,color=MaterialTheme.colorScheme.error)
+            else livePreview?.let {ZoomableImage(it,"${selectedFile.path}:$mode:$split:$rotation:$filter",Modifier.fillMaxWidth().weight(1f).testTag("image-edit-canvas"))}
+                ?: Box(Modifier.fillMaxWidth().weight(1f)) {Text("正在生成预览…")}
+            if(!compact) Text(if(selectedFile.absolutePath in targets) "本图将修改 · 双指缩放 / 双击恢复" else "本图保留原样",style=MaterialTheme.typography.labelSmall)
         }
-    )
+        }
+    }
+    ToolFlow(request,vm,onBack,onOpenDoc,modifier,runLabel="生成文件",showInputPreview=false,runEnabled=targets.isNotEmpty() && (mode!=2 || order.size==2),workspace={onRun,ready ->
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            if(maxWidth>=600.dp && maxWidth>maxHeight) Row(Modifier.fillMaxSize(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                canvas(Modifier.weight(1f).fillMaxHeight())
+                Column(Modifier.width(220.dp).fillMaxHeight().verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                    Button(onRun,enabled=ready,modifier=Modifier.fillMaxWidth()) {Text("生成${outputPages}页")}
+                    FilterPresetRow(selectedFile,filter) {filter=it}
+                    panel()
+                }
+            } else Column(Modifier.fillMaxSize(),verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                canvas(Modifier.weight(1f))
+                FilterPresetRow(selectedFile,filter) {filter=it}
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp),verticalAlignment=Alignment.CenterVertically) {
+                    OutlinedButton({settingsOpen=true},Modifier.weight(1f)) {Text("参数 / 范围")}
+                    Button(onRun,Modifier.weight(1f),enabled=ready) {Text("生成${outputPages}页")}
+                }
+            }
+        }
+    },config={panel()})
+    if(settingsOpen) ModalBottomSheet(onDismissRequest={settingsOpen=false}) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).imePadding().padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            ToolGuide(request.tool);TextButton({settingsOpen=false}) {Text("返回画布")};panel()
+            if(previewNote.isNotBlank()) Text(previewNote,style=MaterialTheme.typography.bodySmall)
+            TextButton({settingsOpen=false}) {Text("完成设置")}
+        }
+    }
 }

@@ -140,6 +140,14 @@ object OutputHistoryStore {
             context.packageManager.resolveContentProvider(authority, 0)?.loadLabel(context.packageManager)?.toString()
         }.orEmpty()
         val name = displayName(context, uri)
+        if (uri.authority == "com.android.externalstorage.documents") {
+            val id = runCatching { android.provider.DocumentsContract.getDocumentId(uri) }.getOrDefault("")
+            if (':' in id) {
+                val volume = id.substringBefore(':')
+                val relative = id.substringAfter(':').trimStart('/')
+                if (relative.isNotBlank()) return "${if(volume=="primary") "内部存储" else "存储卡 $volume"}/$relative"
+            }
+        }
         return listOf(provider, name).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "系统选择的位置" }
     }
 
@@ -202,8 +210,15 @@ object OutputHistoryStore {
         "pdf" -> "application/pdf"
         "jpg", "jpeg" -> "image/jpeg"
         "png" -> "image/png"
+        "webp" -> "image/webp"
+        "gif" -> "image/gif"
+        "bmp" -> "image/bmp"
+        "heic", "heif" -> "image/heif"
         "txt" -> "text/plain"
         "csv" -> "text/csv"
+        "json" -> "application/json"
+        "md", "markdown" -> "text/markdown"
+        "zip" -> "application/zip"
         else -> OfficeFormats.mimeFor(file.name)
     }
 }

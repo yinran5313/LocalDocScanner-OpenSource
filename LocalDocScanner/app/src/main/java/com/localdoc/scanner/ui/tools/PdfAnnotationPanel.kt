@@ -27,6 +27,6 @@ internal fun PdfAnnotationPanel(entries: List<PdfAnnotationEntry>, selected: Str
             OutlinedTextField(contents, onContents, label = { Text("批注备注（最多1000字）") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
             Text("${contents.length}/1000", color = if (contents.length > 1000) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Text(if (delete) "生成副本时移除所选批注；原PDF仍保留。" else "修改便签内容或高亮、笔迹附带的备注，保留原标记形状。", style = MaterialTheme.typography.bodySmall)
+        Text(if (delete) "生成副本时移除所选批注；原PDF仍保留。" else if(it.placement!=null) "选中后可在画布移动和缩放；修改备注不改变页面原文。" else "此对象可修改备注或移除，暂不支持移动。", style = MaterialTheme.typography.bodySmall)
     }
 }

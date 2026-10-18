@@ -28,3 +28,6 @@ device-backups/
 private-audit/
 tools/adb_audit.py
 tools/backup_phone_v501.py
+private/
+*.log
+tools/history/

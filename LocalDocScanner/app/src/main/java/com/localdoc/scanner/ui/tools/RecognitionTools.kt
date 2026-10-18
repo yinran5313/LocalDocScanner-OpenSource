@@ -66,9 +66,8 @@ internal fun OcrFlow(
 ) {
     var language by rememberToolState(request, "ocrLanguage") { "AUTO" }
     var searchable by rememberToolState(request, "searchable") { true }
-    var manual by rememberToolState(request, "manual") { "" }
+    var reviewOutcome by remember(request) {mutableStateOf<FlowOutcome?>(null)}
     val clipboard = LocalClipboardManager.current
-    val engineAvailable = true
 
     @Composable
     fun panel() {
@@ -76,21 +75,7 @@ internal fun OcrFlow(
             OcrLanguagePicker(language) { language = it }
             Text("高精度 OCR · medium 已内置", style = MaterialTheme.typography.titleSmall)
             Row { Switch(searchable, { searchable = it }); Text("同时生成可搜索PDF") }
-            if (engineAvailable) {
-                Text("模型已内置，直接点下方按钮识别。", style = MaterialTheme.typography.bodySmall)
-            } else {
-                Text(
-                    "本地 OCR 暂不可用，可以手工粘贴或录入文字。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                OutlinedTextField(
-                    value = manual, onValueChange = { manual = it },
-                    label = { Text("文字内容") },
-                    modifier = Modifier.fillMaxWidth().height(160.dp),
-                    maxLines = 8
-                )
-            }
+            Text("模型已内置，直接点下方按钮识别。",style=MaterialTheme.typography.bodySmall)
         }
     }
 
@@ -98,6 +83,7 @@ internal fun OcrFlow(
         request = request, vm = vm, onBack = onBack, onOpenDoc = onOpenDoc,
         runLabel = "识别", modifier = modifier,
         resultExtra = { o ->
+            if(o.ocrReviewTaskId!=null && o.ocrReviewKeys.orEmpty().isNotEmpty()) Button({reviewOutcome=o}) {Text("对照原图校订文字")}
             val txt = o.copyText.orEmpty()
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 TextButton(onClick = { clipboard.setText(AnnotatedString(txt)) }) { Text("复制") }
@@ -105,6 +91,7 @@ internal fun OcrFlow(
         },
         config = { panel() }
     )
+    reviewOutcome?.let {o -> o.ocrReviewTaskId?.let {job -> OcrReviewDialog(request,job,o.ocrReviewKeys.orEmpty(),{reviewOutcome=null})}}
 }
 
 
@@ -116,11 +103,13 @@ internal fun BarcodeFlow(
 ) {
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
+    var selectedRecord by remember { mutableStateOf<com.localdoc.scanner.barcode.BarcodeRecord?>(null) }
 
     ToolFlow(
         request = request, vm = vm, onBack = onBack, onOpenDoc = onOpenDoc,
         runLabel = "识别条码", modifier = modifier,
         resultExtra = { o ->
+            o.barcodeRecords.orEmpty().forEach {record -> TextButton({selectedRecord=com.localdoc.scanner.barcode.BarcodeHistory.all(context).firstOrNull {it.text==record.text} ?: record}) {Text("${if(record.format=="QR_CODE") "二维码" else record.format} · 命名与历史")}}
             val txt = o.copyText ?: o.files.firstOrNull()?.readText()?.lineSequence()?.firstOrNull() ?: ""
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 TextButton(onClick = { clipboard.setText(AnnotatedString(txt)) }) { Text("复制") }
@@ -142,6 +131,9 @@ internal fun BarcodeFlow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     )
+    selectedRecord?.let {record -> com.localdoc.scanner.barcode.BarcodeResultDialog(record,onClose={selectedRecord=null},onRename={name ->
+        com.localdoc.scanner.barcode.BarcodeHistory.rename(context,record.text,name);selectedRecord=record.copy(name=name)
+    }) }
 }
 
 

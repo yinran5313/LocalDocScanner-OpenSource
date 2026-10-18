@@ -42,7 +42,7 @@ object ToolDrafts {
         return context.getSharedPreferences("tool_drafts_v44", Context.MODE_PRIVATE).all
             .filterKeys { it.startsWith(prefix) }.mapKeys { it.key.removePrefix(prefix) }
             .mapValues { it.value as String }
-            .filterKeys { it !in setOf("outcome", "stage", "pendingSaveFiles", "saveStatus", "showInputAfterProcessing", "taskId") }
+            .filterKeys { !it.startsWith("count-review:") && !it.startsWith("ocr-review:") && !it.startsWith("translation-review:") && it !in setOf("outcome", "stage", "pendingSaveFiles", "saveStatus", "showInputAfterProcessing", "taskId", "importedOutputs", "undoPlacements", "redoPlacements") }
     }
     @Suppress("UNCHECKED_CAST")
     @Synchronized fun <T> state(context: Context, key: String, type: Type, initial: () -> T): MutableState<T> {

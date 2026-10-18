@@ -85,6 +85,11 @@ fun HomeScreen(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val preferences = remember { com.localdoc.scanner.data.AppPreferences(context) }
+    fun launchTool(tool: ToolEntry) {
+        val recent=(listOf(tool.id)+preferences.text("recentTools").split(',')).filter(String::isNotBlank).distinct().take(8)
+        preferences.set("recentTools",recent.joinToString(","))
+        onToolClick(tool)
+    }
     val sort by com.localdoc.scanner.data.rememberPreference("sort", "updated")
     val layout by com.localdoc.scanner.data.rememberPreference("layout", "list")
     var favoritesOnly by rememberSaveable { mutableStateOf(false) }
@@ -166,7 +171,7 @@ fun HomeScreen(
                         Row(verticalAlignment = Alignment.CenterVertically) { Text("常用工具", Modifier.weight(1f).padding(start = 8.dp), style = MaterialTheme.typography.titleSmall); TextButton({ tab = 2 }) { Text("全部工具") } }
                         CompactToolRows(com.localdoc.scanner.model.TOOL_ENTRIES.filter { it.id in listOf("image_edit", "images_to_pdf", "pdf_office", "ocr", "card", "batch_extract") } +
                             listOf(ToolEntry("home_import", "导入文件", com.localdoc.scanner.model.FileKind.NONE), ToolEntry("home_new", "新建文档", com.localdoc.scanner.model.FileKind.NONE))) { tool ->
-                            when(tool.id) { "home_import" -> importMenuOpen = true; "home_new" -> onNewDocument(); else -> onToolClick(tool) }
+                            when(tool.id) { "home_import" -> importMenuOpen = true; "home_new" -> onNewDocument(); else -> launchTool(tool) }
                         }
                     }
                 }
@@ -231,7 +236,7 @@ fun HomeScreen(
                     }
                 }
             }
-            if (tab == 2) item { ToolGrid(onToolClick) }
+            if (tab == 2) item { ToolGrid(::launchTool) }
             if (tab == 3) {
                 item { InfoCard("文件留在本机", "扫描、编辑与已下载模型的处理都在本机完成。", R.drawable.ic_tool_lock) }
                 val actions = listOf("模型管理" to onModelsClick, "工具任务" to onToolTasks, "文档整理与备份" to onLibraryWorkbench,

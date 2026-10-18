@@ -50,7 +50,8 @@ internal fun PdfMergeFlow(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text("${index + 1}. ${file.name}", modifier = Modifier.weight(1f),
+                    val displayName=request.names.getOrNull(request.files.indexOf(file)) ?: file.name
+                    Text("${index + 1}. $displayName", modifier = Modifier.weight(1f),
                         style = MaterialTheme.typography.bodySmall)
                     TextButton(onClick = {
                         if (index > 0) {
@@ -158,19 +159,20 @@ internal fun PdfToImagesFlow(
     val src = request.files.first()
     var dpi by rememberToolState(request, "dpi") { 1 }
     var selectedPages by rememberToolState(request, "selectedPages") { "" }
+    var selectionCount by remember { androidx.compose.runtime.mutableIntStateOf(0) }
 
     @Composable
     fun panel() {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("导出清晰度", style = MaterialTheme.typography.titleSmall)
             ChipRow(listOf("高(200dpi)", "中(150dpi)", "低(110dpi)"), dpi) { dpi = it }
-            OutlinedTextField(selectedPages, { selectedPages = it }, label = { Text("页码，如1-3,5；留空导出全部") }, modifier = Modifier.fillMaxWidth())
+            PageScopePicker(src,selectedPages,{selectedPages=it},{selectionCount=it})
         }
     }
 
     ToolFlow(
         request = request, vm = vm, onBack = onBack, onOpenDoc = onOpenDoc,
-        runLabel = "导出图片", modifier = modifier, config = { panel() }
+        runLabel = "导出图片 · ${selectionCount}页", runEnabled=selectionCount>0, modifier = modifier, config = { panel() }
     )
 }
 

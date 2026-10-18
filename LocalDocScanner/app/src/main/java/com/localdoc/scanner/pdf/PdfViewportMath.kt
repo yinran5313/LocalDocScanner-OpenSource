@@ -6,4 +6,9 @@ object PdfViewportMath {
         return if(value.isFinite()) value.coerceIn(-bound,bound) else 0f
     }
     fun offset(old:Int,ratio:Float,centroid:Float,movement:Float)=(old*ratio+centroid*(ratio-1f)-movement).toInt().coerceAtLeast(0)
+    fun resizedAnchor(index: Int, offset: Int, oldSize: Int, newSize: Int, snap: Boolean, count: Int): Pair<Int, Int> {
+        if (snap) return (index + if (oldSize > 0 && offset >= oldSize / 2) 1 else 0).coerceIn(0, (count - 1).coerceAtLeast(0)) to 0
+        val scaled = if (oldSize > 0) (offset.toDouble() * newSize / oldSize).toInt() else offset
+        return index to scaled.coerceAtLeast(0)
+    }
 }

@@ -1,0 +1,14 @@
+# Local device evidence and signing material are never public source.
+private/
+private-audit/
+device-backups/
+*.log
+*.apk
+*.aab
+*.jks
+*.keystore
+*.p12
+*.pfx
+.env
+.env.*
+!.env.example
